@@ -97,25 +97,18 @@ def admin_dashboard():
         key="menu",
     )
 
-    # Personalizar colores en Streamlit
-    st.sidebar.markdown(""" 
-        <style>
-        .sidebar .sidebar-content {
-            background-color: #f0f2f6;  /* Fondo más claro */
-            color: #333333;  /* Color de texto oscuro */
-        }
-        .sidebar .sidebar-header {
-            color: #3b3b3b;
-        }
-        .sidebar .sidebar-button {
-            background-color: #8e44ad;
-            color: white;
-        }
-        .sidebar .sidebar-radio {
-            background-color: #e6e6e6;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # Agregar botón de Cerrar sesión en la barra lateral
+    with st.sidebar:
+        if st.button("Cerrar sesión"):
+            # Eliminar los datos de la sesión
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+
+            # Mensaje de confirmación
+            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+
+            # Redirigir a la página de login después de un breve retraso
+            st.rerun()  # Usamos st.rerun() en lugar de st.experimental_rerun()
 
     # Mostrar las diferentes secciones
     if opcion == "📈 Ver Datos":

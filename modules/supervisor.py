@@ -17,6 +17,19 @@ def supervisor_dashboard():
 
     st.write("Desde aquí puedes visualizar los datos del Excel y descargarlos.")
 
+    # Botón de Cerrar Sesión en la barra lateral
+    with st.sidebar:
+        if st.button("Cerrar sesión"):
+            # Eliminar los datos de la sesión
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+
+            # Mensaje de confirmación
+            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+
+            # Redirigir a la página de login después de un breve retraso
+            st.rerun()  # Usamos st.rerun() en lugar de st.experimental_rerun()
+
     # Verificar si el dataframe está en session_state y eliminarlo si existe
     if "df" in st.session_state:
         del st.session_state["df"]
