@@ -128,7 +128,8 @@ def admin_dashboard():
             del st.session_state["df"]
 
         # Cargar los datos nuevamente
-        df = cargar_datos()
+        with st.spinner("Cargando datos..."):
+            df = cargar_datos()
 
         # Convertir columnas que tienen valores como 'true'/'false' a tipo booleano
         for col in df.select_dtypes(include=["object"]).columns:
@@ -156,17 +157,35 @@ def admin_dashboard():
             # Mostrar la tabla (solo la versión filtrada si se aplica algún filtro)
             st.dataframe(df[columnas], use_container_width=True)
 
-            # Opción para descargar en Excel
-            towrite = io.BytesIO()
-            with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Datos')
-            towrite.seek(0)  # Volver al inicio del buffer
-            st.download_button(
-                label="📥 Descargar Excel",
-                data=towrite,
-                file_name="datos.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            # Opción para elegir formato de descarga
+            st.subheader("Selecciona el formato para la descarga:")
+            download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"])
+
+            # Agregar spinner para la descarga
+            if download_format == "Excel":
+                towrite = io.BytesIO()
+                with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Datos')
+                towrite.seek(0)  # Volver al inicio del buffer
+
+                with st.spinner("Preparando archivo Excel..."):
+                    st.download_button(
+                        label="📥 Descargar Excel",
+                        data=towrite,
+                        file_name="datos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+            elif download_format == "CSV":
+                csv = df.to_csv(index=False).encode()
+
+                with st.spinner("Preparando archivo CSV..."):
+                    st.download_button(
+                        label="📥 Descargar CSV",
+                        data=csv,
+                        file_name="datos.csv",
+                        mime="text/csv"
+                    )
 
     elif opcion == "👥 Gestionar Usuarios":
         # Mostrar la lista de usuarios

@@ -6,8 +6,6 @@ import os
 import re
 from modules.data_loader import cargar_datos
 from streamlit_folium import st_folium
-#from streamlit_extras.let_it_rain import rain
-#from streamlit_extras.stylable_container import stylable_container
 
 
 def comercial_dashboard():
@@ -16,7 +14,10 @@ def comercial_dashboard():
     st.title("📍 Mapa de Ubicaciones")
 
     comercial = st.session_state.get("usuario")
-    df = cargar_datos(comercial)
+
+    # Spinner mientras se cargan los datos
+    with st.spinner("⏳ Cargando los datos del comercial..."):
+        df = cargar_datos(comercial)
 
     # Asegurarse de que df es un DataFrame válido
     if not isinstance(df, pd.DataFrame):
@@ -34,41 +35,29 @@ def comercial_dashboard():
             st.error(f"❌ No se encuentra la columna '{col}'.")
             return
 
-    # Eliminar filas con valores faltantes en las coordenadas
-    #df = df.dropna(subset=['lat_corregida', 'long_corregida'])
-    #if df.empty:
-    #    st.warning("⚠️ No hay datos válidos para mostrar en el mapa.")
-    #    return
-
-    # Convertir coordenadas: reemplazar comas por puntos y convertir a float
-    #try:
-    #    df['lat_corregida'] = df['lat_corregida'].astype(str).str.replace(",", ".").astype(float)
-    #    df['long_corregida'] = df['long_corregida'].astype(str).str.replace(",", ".").astype(float)
-    #except Exception as e:
-    #    st.error(f"❌ Error al convertir las coordenadas: {e}")
-    #    return
-
     # Inicializar la lista de clics en session_state si no existe
     if "clicks" not in st.session_state:
         st.session_state.clicks = []
 
-    # Crear el mapa base centrado en el primer punto del DataFrame
-    initial_lat = df['lat_corregida'].iloc[0]
-    initial_lon = df['long_corregida'].iloc[0]
-    m = folium.Map(location=[initial_lat, initial_lon], zoom_start=12)
-    marker_cluster = MarkerCluster().add_to(m)
+    # Spinner mientras se carga el mapa
+    with st.spinner("⏳ Cargando mapa..."):
+        # Crear el mapa base centrado en el primer punto del DataFrame
+        initial_lat = df['lat_corregida'].iloc[0]
+        initial_lon = df['long_corregida'].iloc[0]
+        m = folium.Map(location=[initial_lat, initial_lon], zoom_start=12)
+        marker_cluster = MarkerCluster().add_to(m)
 
-    # Agregar los marcadores al clúster, incluyendo address_id en el popup
-    for _, row in df.iterrows():
-        popup_text = f"🏠 {row['address_id']} - 📍 {row['lat_corregida']}, {row['long_corregida']}"
-        folium.Marker(
-            location=[row['lat_corregida'], row['long_corregida']],
-            popup=popup_text,
-            icon=folium.Icon(color='blue', icon='info-sign')
-        ).add_to(marker_cluster)
+        # Agregar los marcadores al clúster, incluyendo address_id en el popup
+        for _, row in df.iterrows():
+            popup_text = f"🏠 {row['address_id']} - 📍 {row['lat_corregida']}, {row['long_corregida']}"
+            folium.Marker(
+                location=[row['lat_corregida'], row['long_corregida']],
+                popup=popup_text,
+                icon=folium.Icon(color='blue', icon='info-sign')
+            ).add_to(marker_cluster)
 
-    # Renderizar el mapa en Streamlit
-    map_data = st_folium(m, height=500, width=700)
+        # Renderizar el mapa en Streamlit
+        map_data = st_folium(m, height=500, width=700)
 
     # Capturar clics en los marcadores
     if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
@@ -79,8 +68,8 @@ def comercial_dashboard():
         last_click = st.session_state.clicks[-1]
         st.write(f"✅ Las coordenadas del punto seleccionado son: **{last_click}**")
 
-        # Mostrar un spinner mientras carga la información del formulario
-        with st.spinner("⏳ Cargando información..."):
+        # Spinner mientras carga la información del formulario
+        with st.spinner("⏳ Cargando formulario..."):
             mostrar_formulario(last_click)
 
 
@@ -132,21 +121,23 @@ def mostrar_formulario(click_data):
             }
 
             excel_filename = "ofertas.xlsx"
-            try:
-                if os.path.exists(excel_filename):
-                    existing_df = pd.read_excel(excel_filename)
-                    if oferta_data["ID Dirección"] in existing_df["ID Dirección"].values:
-                        st.warning("⚠️ Ya existe una oferta para esta dirección.")
-                        return
-                    new_df = pd.DataFrame([oferta_data])
-                    df_total = pd.concat([existing_df, new_df], ignore_index=True)
-                else:
-                    df_total = pd.DataFrame([oferta_data])
+            # Spinner mientras se guarda la oferta en Excel
+            with st.spinner("⏳ Guardando la oferta en Excel..."):
+                try:
+                    if os.path.exists(excel_filename):
+                        existing_df = pd.read_excel(excel_filename)
+                        if oferta_data["ID Dirección"] in existing_df["ID Dirección"].values:
+                            st.warning("⚠️ Ya existe una oferta para esta dirección.")
+                            return
+                        new_df = pd.DataFrame([oferta_data])
+                        df_total = pd.concat([existing_df, new_df], ignore_index=True)
+                    else:
+                        df_total = pd.DataFrame([oferta_data])
 
-                df_total.to_excel(excel_filename, index=False)
-                st.success("✅ ¡Oferta enviada y guardada en Excel con éxito!")
-            except Exception as e:
-                st.error(f"❌ Error al guardar la oferta en Excel: {e}")
+                    df_total.to_excel(excel_filename, index=False)
+                    st.success("✅ ¡Oferta enviada y guardada en Excel con éxito!")
+                except Exception as e:
+                    st.error(f"❌ Error al guardar la oferta en Excel: {e}")
 
 
 if __name__ == "__main__":
