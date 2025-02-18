@@ -2,14 +2,21 @@ import streamlit as st
 import folium
 from folium.plugins import MarkerCluster
 import pandas as pd
+import sqlite3
 import os
 import re
-import sqlite3
 from streamlit_folium import st_folium
 
+def obtener_ubicacion_html5():
+    """Obtiene la ubicación del usuario usando geolocalización HTML5 (navegador)."""
+    if st.button("Obtener ubicación"):
+        # Usar geolocalización HTML5 del navegador
+        location = st.query_params  # Aquí puedes obtener la latitud y longitud
+        return location.get('lat', None), location.get('lon', None)
+    return None, None
+
 def comercial_dashboard():
-    """Muestra el mapa con los puntos asignados al comercial logueado usando folium
-    y, al capturar un clic, muestra un formulario para enviar una oferta."""
+    """Muestra el mapa con los puntos asignados al comercial logueado usando folium."""
     st.title("📍 Mapa de Ubicaciones")
 
     # Se usa "username" en lugar de "usuario", ya que en el login se guarda con "username"
@@ -29,7 +36,6 @@ def comercial_dashboard():
                 return
 
             # Ejecutar la consulta SQL para obtener los datos asignados al comercial
-            # Se asume que existe una columna 'COMERCIAL' en la tabla que identifica al comercial asignado
             query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
             df = pd.read_sql(query, conn, params=(comercial,))
             conn.close()
@@ -56,19 +62,25 @@ def comercial_dashboard():
     if "clicks" not in st.session_state:
         st.session_state.clicks = []
 
+    # Obtener la ubicación utilizando geolocalización HTML5
+    lat, lon = obtener_ubicacion_html5()
+
+    if lat is None or lon is None:
+        # Si no se pudo obtener la ubicación, usar las coordenadas por defecto
+        lat = df['latitud'].iloc[0]
+        lon = df['longitud'].iloc[0]
+
     # Spinner mientras se carga el mapa
     with st.spinner("⏳ Cargando mapa..."):
-        # Crear el mapa base centrado en el primer punto del DataFrame
-        initial_lat = df['latitud'].iloc[0]  # Usar 'LATITUD' en lugar de 'lat_corregida'
-        initial_lon = df['longitud'].iloc[0]  # Usar 'LONGITUD' en lugar de 'long_corregida'
-        m = folium.Map(location=[initial_lat, initial_lon], zoom_start=12)
+        # Crear el mapa con la latitud y longitud
+        m = folium.Map(location=[lat, lon], zoom_start=12)
         marker_cluster = MarkerCluster().add_to(m)
 
-        # Agregar los marcadores al clúster, incluyendo address_id en el popup
+        # Agregar los marcadores al clúster
         for _, row in df.iterrows():
-            popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"  # Ajustar las columnas
+            popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
             folium.Marker(
-                location=[row['latitud'], row['longitud']],  # Usar 'LATITUD' y 'LONGITUD'
+                location=[row['latitud'], row['longitud']],
                 popup=popup_text,
                 icon=folium.Icon(color='blue', icon='info-sign')
             ).add_to(marker_cluster)
@@ -83,7 +95,7 @@ def comercial_dashboard():
     # Mostrar las coordenadas registradas del último clic
     if st.session_state.clicks:
         last_click = st.session_state.clicks[-1]
-        st.write(f"✅ Las coordenadas del punto seleccionado son: **{last_click}**")
+        #st.write(f"✅ Las coordenadas del punto seleccionado son: **{last_click}**")
 
         # Spinner mientras carga la información del formulario
         with st.spinner("⏳ Cargando formulario..."):
@@ -93,16 +105,13 @@ def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
 
 def mostrar_formulario(click_data):
-    """Muestra un formulario para enviar una oferta basado en el clic del mapa.
-    Se asume que click_data contiene la clave 'popup' con el address_id y coordenadas."""
+    """Muestra un formulario para enviar una oferta basado en el clic del mapa."""
     st.subheader("📄 Enviar Oferta")
 
     popup_text = click_data.get("popup", "")
     address_id_value = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
     lat_value = click_data.get("lat", "N/D")
     lng_value = click_data.get("lng", "N/D")
-
-    st.write(f"📌 Coordenadas seleccionadas: **Latitud {lat_value}, Longitud {lng_value}**")
 
     with st.form(key="oferta_form"):
         st.text_input("🏠 ID Dirección", value=address_id_value, disabled=True)
@@ -157,5 +166,3 @@ def mostrar_formulario(click_data):
                 except Exception as e:
                     st.error(f"❌ Error al guardar la oferta en Excel: {e}")
 
-if __name__ == "__main__":
-    comercial_dashboard()
