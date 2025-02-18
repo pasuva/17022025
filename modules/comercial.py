@@ -6,14 +6,7 @@ import sqlite3
 import os
 import re
 from streamlit_folium import st_folium
-
-def obtener_ubicacion_html5():
-    """Obtiene la ubicación del usuario usando geolocalización HTML5 (navegador)."""
-    if st.button("Obtener ubicación"):
-        # Usar geolocalización HTML5 del navegador
-        location = st.query_params  # Aquí puedes obtener la latitud y longitud
-        return location.get('lat', None), location.get('lon', None)
-    return None, None
+import streamlit.components.v1 as components
 
 def comercial_dashboard():
     """Muestra el mapa con los puntos asignados al comercial logueado usando folium."""
@@ -62,13 +55,14 @@ def comercial_dashboard():
     if "clicks" not in st.session_state:
         st.session_state.clicks = []
 
-    # Obtener la ubicación utilizando geolocalización HTML5
-    lat, lon = obtener_ubicacion_html5()
+    # Obtener la ubicación utilizando un componente HTML5 en JavaScript
+    location = get_user_location()
 
-    if lat is None or lon is None:
-        # Si no se pudo obtener la ubicación, usar las coordenadas por defecto
-        lat = df['latitud'].iloc[0]
-        lon = df['longitud'].iloc[0]
+    if location is None:
+        st.error("❌ No se pudo obtener la ubicación.")
+        return
+
+    lat, lon = location
 
     # Spinner mientras se carga el mapa
     with st.spinner("⏳ Cargando mapa..."):
@@ -100,6 +94,26 @@ def comercial_dashboard():
         # Spinner mientras carga la información del formulario
         with st.spinner("⏳ Cargando formulario..."):
             mostrar_formulario(last_click)
+
+def get_user_location():
+    """Obtiene la ubicación del usuario a través de un componente de JavaScript."""
+    location = components.html("""
+        <script>
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    window.location.href = "?lat=" + position.coords.latitude + "&lon=" + position.coords.longitude;
+                });
+            }
+        </script>
+    """, height=0)
+
+    # Verificamos si la URL tiene los parámetros de latitud y longitud
+    if "lat" in st.query_params and "lon" in st.query_params:
+        lat = float(st.query_params["lat"][0])
+        lon = float(st.query_params["lon"][0])
+        return lat, lon
+
+    return None
 
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
@@ -165,4 +179,7 @@ def mostrar_formulario(click_data):
                     st.success("✅ ¡Oferta enviada y guardada en Excel con éxito!")
                 except Exception as e:
                     st.error(f"❌ Error al guardar la oferta en Excel: {e}")
+
+if __name__ == "__main__":
+    comercial_dashboard()
 
