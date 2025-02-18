@@ -3,7 +3,6 @@ import pandas as pd
 import io  # Necesario para trabajar con flujos de bytes
 import sqlite3
 import bcrypt
-import os
 
 DB_PATH = "../data/usuarios.db"
 

@@ -7,13 +7,26 @@ import os
 import re
 from streamlit_folium import st_folium
 import streamlit.components.v1 as components
+import time
+from modules import login
 
 def comercial_dashboard():
     """Muestra el mapa con los puntos asignados al comercial logueado usando folium."""
     st.title("📍 Mapa de Ubicaciones")
 
+    # Verificar si el usuario está logueado
+    if "username" not in st.session_state:
+        st.warning("⚠️ No has iniciado sesión. Por favor, inicia sesión para continuar.")
+        time.sleep(2)
+        login.login()
+        return
+
     # Se usa "username" en lugar de "usuario", ya que en el login se guarda con "username"
     comercial = st.session_state.get("username")
+
+    # Botón de Cerrar Sesión en la barra lateral
+    if st.sidebar.button("Cerrar Sesión"):
+        cerrar_sesion()
 
     # Spinner mientras se cargan los datos del comercial desde la base de datos
     with st.spinner("⏳ Cargando los datos del comercial..."):
@@ -55,14 +68,15 @@ def comercial_dashboard():
     if "clicks" not in st.session_state:
         st.session_state.clicks = []
 
-    # Obtener la ubicación utilizando un componente HTML5 en JavaScript
+    # Intentamos obtener la ubicación del usuario
     location = get_user_location()
 
     if location is None:
-        st.error("❌ No se pudo obtener la ubicación.")
-        return
-
-    lat, lon = location
+        st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
+        # Si no se obtiene la ubicación, se carga el mapa en el Polígono de Raos en Santander
+        lat, lon = 43.463444, -3.790476  # Polígono de Raos, Santander
+    else:
+        lat, lon = location
 
     # Spinner mientras se carga el mapa
     with st.spinner("⏳ Cargando mapa..."):
@@ -96,24 +110,46 @@ def comercial_dashboard():
             mostrar_formulario(last_click)
 
 def get_user_location():
-    """Obtiene la ubicación del usuario a través de un componente de JavaScript."""
-    location = components.html("""
+    """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
+    # Crear un formulario de HTML y JavaScript para obtener las coordenadas de geolocalización
+    html_code = """
         <script>
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(position) {
-                    window.location.href = "?lat=" + position.coords.latitude + "&lon=" + position.coords.longitude;
+                    var lat = position.coords.latitude;
+                    var lon = position.coords.longitude;
+                    // Enviar las coordenadas a Streamlit
+                    window.parent.postMessage({lat: lat, lon: lon}, "*");
+                }, function() {
+                    alert("No se pudo obtener la ubicación.");
                 });
+            } else {
+                alert("Geolocalización no soportada por este navegador.");
             }
         </script>
-    """, height=0)
+    """
 
-    # Verificamos si la URL tiene los parámetros de latitud y longitud
-    if "lat" in st.query_params and "lon" in st.query_params:
-        lat = float(st.query_params["lat"][0])
-        lon = float(st.query_params["lon"][0])
+    components.html(html_code, height=0, width=0)
+
+    # Asegúrate de capturar las coordenadas de la ubicación
+    if "lat" in st.session_state and "lon" in st.session_state:
+        lat = st.session_state["lat"]
+        lon = st.session_state["lon"]
         return lat, lon
 
     return None
+
+def cerrar_sesion():
+    """Función para cerrar la sesión y limpiar el estado."""
+    # Eliminar la información de la sesión
+    del st.session_state["username"]
+    del st.session_state["clicks"]
+    st.success("✅ Has cerrado sesión correctamente.")
+    # Mostrar un mensaje y redirigir a la página de inicio (no es necesario recargar)
+    st.warning("👉 Por favor, inicia sesión nuevamente.")
+    #st.stop()  # Detener la ejecución del código aquí
+    time.sleep(2)
+    login.login()
 
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
@@ -182,4 +218,3 @@ def mostrar_formulario(click_data):
 
 if __name__ == "__main__":
     comercial_dashboard()
-
