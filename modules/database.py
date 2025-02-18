@@ -17,33 +17,40 @@ def create_db():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT UNIQUE,
-            rol TEXT CHECK(rol IN ('admin', 'supervisor', 'comercial')),
+            username TEXT UNIQUE,
+            role TEXT CHECK(role IN ('admin', 'supervisor', 'comercial')),
             password TEXT
         )
         """)
 
-        # Crear tabla de datos del mapa
+        # Crear tabla datos_uis
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS datos_mapa (
+        CREATE TABLE IF NOT EXISTS datos_uis (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_ams TEXT,
+            apartment_id TEXT,
+            address_id TEXT,
             provincia TEXT,
             municipio TEXT,
+            poblacion TEXT,
+            vial TEXT,
+            parcela_catastral TEXT,
+            letra TEXT,
+            cp TEXT,
+            site_operational_state TEXT,
+            apartment_operational_state TEXT,
+            cto_id TEXT,
+            olt TEXT,
+            cto TEXT,
             latitud REAL,
             longitud REAL,
-            comercial_asignado TEXT
-        )
-        """)
-
-        # Crear tabla de formularios
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS formularios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cto_con_proyecto TEXT,
             comercial TEXT,
-            punto_id INTEGER,
-            respuesta TEXT,
-            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (punto_id) REFERENCES datos_mapa (id)
+            zona TEXT,
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+            serviciable TEXT,
+            motivo TEXT,
+            contrato_uis TEXT
         )
         """)
 
@@ -64,7 +71,7 @@ def add_user(nombre, rol, password):
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()  # Convertimos bytes a string
 
     try:
-        cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)", (nombre, rol, hashed_pw))
+        cursor.execute("INSERT INTO usuarios (username, role, password) VALUES (?, ?, ?)", (nombre, rol, hashed_pw))
         conn.commit()
         print(f"✅ Usuario '{nombre}' creado con éxito.")
     except sqlite3.IntegrityError:
@@ -81,7 +88,7 @@ def verify_user(nombre, password):
     conn.close()
 
     if result:
-        return bcrypt.checkpw(password.encode(), result[0])
+        return bcrypt.checkpw(password.encode(), result[0].encode())
     return False
 
 # Ejecutar creación de DB y añadir usuario admin

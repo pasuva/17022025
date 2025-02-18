@@ -7,13 +7,12 @@ import re
 from modules.data_loader import cargar_datos
 from streamlit_folium import st_folium
 
-
 def comercial_dashboard():
     """Muestra el mapa con los puntos asignados al comercial logueado usando folium
     y, al capturar un clic, muestra un formulario para enviar una oferta."""
     st.title("📍 Mapa de Ubicaciones")
 
-    comercial = st.session_state.get("usuario")
+    comercial = st.session_state.get("usuario")  # Se cambió 'usuario' por 'username'
 
     # Spinner mientras se cargan los datos
     with st.spinner("⏳ Cargando los datos del comercial..."):
@@ -72,10 +71,8 @@ def comercial_dashboard():
         with st.spinner("⏳ Cargando formulario..."):
             mostrar_formulario(last_click)
 
-
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
-
 
 def mostrar_formulario(click_data):
     """Muestra un formulario para enviar una oferta basado en el clic del mapa.
@@ -90,6 +87,9 @@ def mostrar_formulario(click_data):
     st.write(f"📌 Coordenadas seleccionadas: **Latitud {lat_value}, Longitud {lng_value}**")
 
     with st.form(key="oferta_form"):
+        st.text_input("🏠 ID Dirección", value=address_id_value, disabled=True)
+        st.text_input("📌 Latitud", value=lat_value, disabled=True)
+        st.text_input("📌 Longitud", value=lng_value, disabled=True)
         client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
         phone = st.text_input("📞 Teléfono", max_chars=15)
         email = st.text_input("📧 Correo Electrónico")
@@ -138,7 +138,6 @@ def mostrar_formulario(click_data):
                     st.success("✅ ¡Oferta enviada y guardada en Excel con éxito!")
                 except Exception as e:
                     st.error(f"❌ Error al guardar la oferta en Excel: {e}")
-
 
 if __name__ == "__main__":
     comercial_dashboard()
