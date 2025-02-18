@@ -4,7 +4,7 @@ from folium.plugins import MarkerCluster
 import pandas as pd
 import os
 import re
-from modules.data_loader import cargar_datos
+import sqlite3
 from streamlit_folium import st_folium
 
 def comercial_dashboard():
@@ -12,24 +12,42 @@ def comercial_dashboard():
     y, al capturar un clic, muestra un formulario para enviar una oferta."""
     st.title("📍 Mapa de Ubicaciones")
 
-    comercial = st.session_state.get("usuario")  # Se cambió 'usuario' por 'username'
+    # Se usa "username" en lugar de "usuario", ya que en el login se guarda con "username"
+    comercial = st.session_state.get("username")
 
-    # Spinner mientras se cargan los datos
+    # Spinner mientras se cargan los datos del comercial desde la base de datos
     with st.spinner("⏳ Cargando los datos del comercial..."):
-        df = cargar_datos(comercial)
+        try:
+            conn = sqlite3.connect("data/usuarios.db")  # Asegúrate de que la ruta sea correcta
+
+            # Verificar que la tabla 'datos_uis' exista
+            query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
+            tables = pd.read_sql(query_tables, conn)
+            if 'datos_uis' not in tables['name'].values:
+                st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
+                conn.close()
+                return
+
+            # Ejecutar la consulta SQL para obtener los datos asignados al comercial
+            # Se asume que existe una columna 'COMERCIAL' en la tabla que identifica al comercial asignado
+            query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
+            df = pd.read_sql(query, conn, params=(comercial,))
+            conn.close()
+
+            if df.empty:
+                st.warning("⚠️ No hay datos asignados a este comercial.")
+                return
+        except Exception as e:
+            st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
+            return
 
     # Asegurarse de que df es un DataFrame válido
     if not isinstance(df, pd.DataFrame):
         st.error("❌ Los datos no se cargaron correctamente.")
         return
 
-    # Verificar si el DataFrame está vacío
-    if df.empty:
-        st.warning("⚠️ No hay datos asignados a este comercial.")
-        return
-
-    # Asegurarse de que las columnas necesarias existen
-    for col in ['lat_corregida', 'long_corregida', 'address_id']:
+    # Verificar que las columnas necesarias existen
+    for col in ['latitud', 'longitud', 'address_id']:  # Usar las columnas correctas
         if col not in df.columns:
             st.error(f"❌ No se encuentra la columna '{col}'.")
             return
@@ -41,16 +59,16 @@ def comercial_dashboard():
     # Spinner mientras se carga el mapa
     with st.spinner("⏳ Cargando mapa..."):
         # Crear el mapa base centrado en el primer punto del DataFrame
-        initial_lat = df['lat_corregida'].iloc[0]
-        initial_lon = df['long_corregida'].iloc[0]
+        initial_lat = df['latitud'].iloc[0]  # Usar 'LATITUD' en lugar de 'lat_corregida'
+        initial_lon = df['longitud'].iloc[0]  # Usar 'LONGITUD' en lugar de 'long_corregida'
         m = folium.Map(location=[initial_lat, initial_lon], zoom_start=12)
         marker_cluster = MarkerCluster().add_to(m)
 
         # Agregar los marcadores al clúster, incluyendo address_id en el popup
         for _, row in df.iterrows():
-            popup_text = f"🏠 {row['address_id']} - 📍 {row['lat_corregida']}, {row['long_corregida']}"
+            popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"  # Ajustar las columnas
             folium.Marker(
-                location=[row['lat_corregida'], row['long_corregida']],
+                location=[row['latitud'], row['longitud']],  # Usar 'LATITUD' y 'LONGITUD'
                 popup=popup_text,
                 icon=folium.Icon(color='blue', icon='info-sign')
             ).add_to(marker_cluster)

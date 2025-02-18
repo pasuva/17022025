@@ -34,6 +34,7 @@ def create_db():
             municipio TEXT,
             poblacion TEXT,
             vial TEXT,
+            numero TEXT,
             parcela_catastral TEXT,
             letra TEXT,
             cp TEXT,

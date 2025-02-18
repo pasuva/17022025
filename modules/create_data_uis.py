@@ -8,7 +8,7 @@ EXCEL_PATH = r"C:\Users\psuarez\Downloads\GREENFIELD (2025.01.10)_prueba servido
 # Mapeo de columnas del Excel a la base de datos
 db_columns = [
     "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
-    "vial", "parcela_catastral", "letra", "cp", "site_operational_state",
+    "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
     "apartment_operational_state", "cto_id", "olt", "cto", "LATITUD", "LONGITUD",
     "cto_con_proyecto", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
 ]
@@ -21,6 +21,7 @@ excel_columns = {
     "municipio": "municipio",
     "poblacion": "poblacion",
     "vial": "vial",
+    "numero":"numero",
     "Parcela_catastral": "parcela_catastral",
     "letra": "letra",
     "cp": "cp",
