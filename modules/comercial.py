@@ -180,6 +180,7 @@ def mostrar_formulario(click_data):
             st.warning("⚠️ No se encontraron datos para estas coordenadas.")
             provincia = municipio = poblacion = vial = numero = letra = cp = "No disponible"
         else:
+            apartment_id = df.iloc[0]["apartment_id"]
             provincia = df.iloc[0]["provincia"]
             municipio = df.iloc[0]["municipio"]
             poblacion = df.iloc[0]["poblacion"]
