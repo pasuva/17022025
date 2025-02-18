@@ -154,67 +154,156 @@ def cerrar_sesion():
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
 
+
 def mostrar_formulario(click_data):
-    """Muestra un formulario para enviar una oferta basado en el clic del mapa."""
+    """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
+
     st.subheader("📄 Enviar Oferta")
 
+    # Extraer datos del clic en el mapa
     popup_text = click_data.get("popup", "")
-    address_id_value = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
+    apartment_id = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
     lat_value = click_data.get("lat", "N/D")
     lng_value = click_data.get("lng", "N/D")
 
-    with st.form(key="oferta_form"):
-        st.text_input("🏠 ID Dirección", value=address_id_value, disabled=True)
+    # Conectamos a la base de datos para obtener los datos según coordenadas
+    try:
+        conn = sqlite3.connect("data/usuarios.db")
+        query = """
+            SELECT * FROM datos_uis 
+            WHERE latitud = ? AND longitud = ?
+        """
+        df = pd.read_sql(query, conn, params=(lat_value, lng_value))
+        conn.close()
+
+        if df.empty:
+            st.warning("⚠️ No se encontraron datos para estas coordenadas.")
+            provincia = municipio = poblacion = vial = numero = letra = cp = "No disponible"
+        else:
+            provincia = df.iloc[0]["provincia"]
+            municipio = df.iloc[0]["municipio"]
+            poblacion = df.iloc[0]["poblacion"]
+            vial = df.iloc[0]["vial"]
+            numero = df.iloc[0]["numero"]
+            letra = df.iloc[0]["letra"]
+            cp = df.iloc[0]["cp"]
+
+    except Exception as e:
+        st.error(f"❌ Error al obtener datos de la base de datos: {e}")
+        return
+
+    # ID de apartamento (bloqueado)
+    st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
+
+    # 👉 Provincia, Municipio y Población en la misma línea
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.text_input("📍 Provincia", value=provincia, disabled=True)
+    with col2:
+        st.text_input("🏙️ Municipio", value=municipio, disabled=True)
+    with col3:
+        st.text_input("👥 Población", value=poblacion, disabled=True)
+
+    # 👉 Vial, Número, Letra y Código Postal en otra línea
+    col4, col5, col6, col7 = st.columns([2, 1, 1, 1])
+    with col4:
+        st.text_input("🚦 Vial", value=vial, disabled=True)
+    with col5:
+        st.text_input("🔢 Número", value=numero, disabled=True)
+    with col6:
+        st.text_input("🔠 Letra", value=letra, disabled=True)
+    with col7:
+        st.text_input("📮 Código Postal", value=cp, disabled=True)
+
+    # 👉 Latitud y Longitud en la misma línea
+    col8, col9 = st.columns(2)
+    with col8:
         st.text_input("📌 Latitud", value=lat_value, disabled=True)
+    with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
-        client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
-        phone = st.text_input("📞 Teléfono", max_chars=15)
-        email = st.text_input("📧 Correo Electrónico")
-        address = st.text_input("📌 Dirección del Cliente")
-        observations = st.text_area("📝 Observaciones")
-        submit_button = st.form_submit_button(label="🚀 Enviar Oferta")
 
-        if submit_button:
-            if not client_name or not phone or not email or not address:
-                st.error("❌ Todos los campos obligatorios deben estar llenos.")
-                return
-            if not validar_email(email):
-                st.error("❌ Formato de correo electrónico inválido.")
-                return
-            if not phone.isdigit():
-                st.error("❌ El teléfono debe contener solo números.")
-                return
+    # 👉 Campos editables
+    client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
+    phone = st.text_input("📞 Teléfono", max_chars=15)
+    alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
+    observations = st.text_area("📝 Observaciones")
 
-            oferta_data = {
-                "ID Dirección": address_id_value,
-                "Nombre Cliente": client_name,
-                "Teléfono": phone,
-                "Correo": email,
-                "Dirección": address,
-                "Observaciones": observations,
-                "Latitud": lat_value,
-                "Longitud": lng_value,
-                "Fecha Envío": pd.Timestamp.now()
-            }
+    # 👉 Campo de contestación "¿Es serviciable?"
+    es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
 
-            excel_filename = "ofertas.xlsx"
-            # Spinner mientras se guarda la oferta en Excel
-            with st.spinner("⏳ Guardando la oferta en Excel..."):
-                try:
-                    if os.path.exists(excel_filename):
-                        existing_df = pd.read_excel(excel_filename)
-                        if oferta_data["ID Dirección"] in existing_df["ID Dirección"].values:
-                            st.warning("⚠️ Ya existe una oferta para esta dirección.")
-                            return
-                        new_df = pd.DataFrame([oferta_data])
-                        df_total = pd.concat([existing_df, new_df], ignore_index=True)
-                    else:
-                        df_total = pd.DataFrame([oferta_data])
+    motivo_no_serviciable = ""
+    contiene_incidencias = ""
+    motivo_incidencia = ""
+    imagen_incidencia = None
 
-                    df_total.to_excel(excel_filename, index=False)
-                    st.success("✅ ¡Oferta enviada y guardada en Excel con éxito!")
-                except Exception as e:
-                    st.error(f"❌ Error al guardar la oferta en Excel: {e}")
+    # Si "Es serviciable" es "No", aparece el campo de motivo
+    if es_serviciable == "No":
+        motivo_no_serviciable = st.text_area("❌ Motivo de No Servicio")
+
+    # Si "Es serviciable" es "Sí", aparece la opción "¿Contiene incidencias?"
+    if es_serviciable == "Sí":
+        contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
+
+        # Si "Contiene incidencias" es "Sí", aparecen el campo de motivo y el de subir imagen
+        if contiene_incidencias == "Sí":
+            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia")
+            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
+
+    # Botón de enviar
+    if st.button("🚀 Enviar Oferta"):
+        if not client_name or not phone:
+            st.error("❌ Todos los campos obligatorios deben estar llenos.")
+            return
+        if not phone.isdigit():
+            st.error("❌ El teléfono debe contener solo números.")
+            return
+
+        oferta_data = {
+            "Apartment ID": apartment_id,
+            "Provincia": provincia,
+            "Municipio": municipio,
+            "Población": poblacion,
+            "Vial": vial,
+            "Número": numero,
+            "Letra": letra,
+            "Código Postal": cp,
+            "Latitud": lat_value,
+            "Longitud": lng_value,
+            "Nombre Cliente": client_name,
+            "Teléfono": phone,
+            "Dirección Alternativa": alt_address,
+            "Observaciones": observations,
+            "Es Serviciable": es_serviciable,
+            "Motivo No Serviciable": motivo_no_serviciable if es_serviciable == "No" else "",
+            "Contiene Incidencias": contiene_incidencias if es_serviciable == "Sí" else "",
+            "Motivo Incidencia": motivo_incidencia if contiene_incidencias == "Sí" else "",
+            "Fecha Envío": pd.Timestamp.now()
+        }
+
+        excel_filename = "ofertas.xlsx"
+        with st.spinner("⏳ Guardando la oferta en Excel..."):
+            try:
+                if os.path.exists(excel_filename):
+                    existing_df = pd.read_excel(excel_filename)
+                    new_df = pd.DataFrame([oferta_data])
+                    df_total = pd.concat([existing_df, new_df], ignore_index=True)
+                else:
+                    df_total = pd.DataFrame([oferta_data])
+
+                df_total.to_excel(excel_filename, index=False)
+
+                # Guardar la imagen si hay incidencia
+                if contiene_incidencias == "Sí" and imagen_incidencia:
+                    img_path = f"incidencias/{apartment_id}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                    with open(img_path, "wb") as f:
+                        f.write(imagen_incidencia.getbuffer())
+                    st.success("✅ Imagen de incidencia guardada correctamente.")
+
+                st.success("✅ ¡Oferta enviada y guardada en Excel con éxito!")
+
+            except Exception as e:
+                st.error(f"❌ Error al guardar la oferta en Excel: {e}")
+
 
 if __name__ == "__main__":
     comercial_dashboard()

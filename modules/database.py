@@ -55,6 +55,33 @@ def create_db():
         )
         """)
 
+        # Crear tabla ofertas_comercial
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ofertas_comercial (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            apartment_id TEXT,
+            provincia TEXT,
+            municipio TEXT,
+            poblacion TEXT,
+            vial TEXT,
+            numero TEXT,
+            letra TEXT,
+            cp TEXT,
+            latitud REAL,
+            longitud REAL,
+            nombre_cliente TEXT,
+            telefono TEXT,
+            direccion_alternativa TEXT,
+            observaciones TEXT,
+            serviciable TEXT,
+            motivo_serviciable TEXT,
+            incidencia TEXT,
+            motivo_incidencia TEXT,
+            fichero_imagen TEXT,
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
         conn.commit()  # Guardar cambios
         print("✅ Base de datos y tablas creadas correctamente.")
 
@@ -96,3 +123,4 @@ def verify_user(nombre, password):
 if __name__ == "__main__":
     create_db()
     add_user("admin", "admin", "admin123")
+
