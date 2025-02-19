@@ -4,7 +4,7 @@ import sqlite3
 import io
 
 def supervisor_dashboard():
-    """ Panel del supervisor """
+    """Panel del supervisor"""
     st.set_page_config(page_title="Panel del Supervisor", page_icon="📁", layout="wide")
 
     # Título del panel
@@ -12,7 +12,11 @@ def supervisor_dashboard():
 
     # Mostrar el nombre del supervisor en la barra lateral
     st.sidebar.write(f"Bienvenido, {st.session_state['username']} (Supervisor)")
-    st.write("Desde aquí puedes visualizar los datos del Excel y descargarlos.")
+
+    # Menú lateral para elegir qué visualizar
+    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["Datos UIS", "Ofertas Comerciales"])
+
+    st.write("Desde aquí puedes visualizar los datos y descargarlos.")
 
     # Botón de Cerrar Sesión en la barra lateral
     with st.sidebar:
@@ -27,20 +31,25 @@ def supervisor_dashboard():
     if "data" in st.session_state:
         del st.session_state["data"]
 
-    # Cargar los datos directamente desde la base de datos con una consulta SQL
+    # Cargar los datos directamente desde la base de datos según la opción seleccionada
     with st.spinner("Cargando datos... Esto puede tomar unos segundos."):
         try:
             conn = sqlite3.connect("data/usuarios.db")  # Asegúrate de que la ruta sea correcta
-            # Verificar que la tabla 'datos_uis' exista
+            # Verificar que la tabla exista
             query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = pd.read_sql(query_tables, conn)
-            if 'datos_uis' not in tables['name'].values:
-                st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
-                conn.close()
-                return
-
-            # Ejecutar la consulta SQL para obtener los datos
-            query = "SELECT * FROM datos_uis"
+            if menu_opcion == "Datos UIS":
+                if 'datos_uis' not in tables['name'].values:
+                    st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
+                    conn.close()
+                    return
+                query = "SELECT * FROM datos_uis"
+            else:
+                if 'ofertas_comercial' not in tables['name'].values:
+                    st.error("❌ La tabla 'ofertas_comercial' no se encuentra en la base de datos.")
+                    conn.close()
+                    return
+                query = "SELECT * FROM ofertas_comercial"
             data = pd.read_sql(query, conn)
             conn.close()
 
@@ -57,7 +66,7 @@ def supervisor_dashboard():
         st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
         data = data.loc[:, ~data.columns.duplicated()]
 
-    # Guardar la variable en session_state para futuras referencias (si lo deseas)
+    # Guardar la variable en session_state para futuras referencias (opcional)
     st.session_state["data"] = data
 
     # Filtro de columnas a mostrar
@@ -93,3 +102,6 @@ def supervisor_dashboard():
             )
 
     st.info("Recuerda que, dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
+
+if __name__ == "__main__":
+    supervisor_dashboard()
