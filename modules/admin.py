@@ -7,18 +7,21 @@ import bcrypt
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-DB_PATH = "../data/usuarios.db"
-
-
 def obtener_conexion():
     """Retorna una nueva conexión a la base de datos."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect("data/usuarios.db")
         return conn
     except sqlite3.Error as e:
         print(f"Error al conectar con la base de datos: {e}")
         return None
 
+# Función para convertir a numérico y manejar excepciones
+def safe_convert_to_numeric(col):
+    try:
+        return pd.to_numeric(col)
+    except ValueError:
+        return col  # Si ocurre un error, regresamos la columna original sin cambios
 
 def cargar_usuarios():
     """Carga los usuarios desde la base de datos."""
@@ -133,7 +136,7 @@ def admin_dashboard():
     # Opciones de navegación con iconos
     opcion = st.sidebar.radio(
         "Selecciona una opción:",
-        ("📈 Ver Datos", "📊 Ofertas Comerciales", "📤 Cargar Nuevos Datos", "👥 Gestionar Usuarios", "📑 Generador de informes", "📜 Trazabilidad y logs", "⚙️ Ajustes"),
+        ("📈 Ver Datos", "📊 Ofertas Comerciales", "📤 Cargar Nuevos Datos", "📑 Generador de informes", "📜 Trazabilidad y logs", "👥 Gestionar Usuarios", "⚙️ Ajustes"),
         index=0,
         key="menu",
     )
@@ -175,7 +178,7 @@ def admin_dashboard():
 
         for col in data.select_dtypes(include=["object"]).columns:
             data[col] = data[col].replace({'true': True, 'false': False})
-            data[col] = pd.to_numeric(data[col], errors='ignore')
+            data[col] = safe_convert_to_numeric(data[col])
 
         if data.columns.duplicated().any():
             st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
@@ -304,7 +307,7 @@ def admin_dashboard():
 
             # Filtro por fecha (si la columna existe y está en formato datetime)
             if "fecha" in df_filtrado.columns:
-                df_filtrado['fecha'] = pd.to_datetime(df_filtrado['fecha'], errors='coerce')
+                df_filtrado['fecha'] = pd.to_datetime(df_filtrado['fecha'], errors='coerce', format='%d.%m.%Y')
                 fecha_inicio = st.date_input("Fecha de inicio:", pd.to_datetime("2022-01-01"))
                 fecha_fin = st.date_input("Fecha de fin:", pd.to_datetime("2025-12-31"))
 
