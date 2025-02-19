@@ -10,6 +10,80 @@ import streamlit.components.v1 as components
 import time
 from modules import login
 
+
+def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
+    """Guarda la oferta en SQLite y almacena la imagen si es necesario."""
+    try:
+        conn = sqlite3.connect("data/usuarios.db")
+        cursor = conn.cursor()
+        # Crear tabla ofertas_comercial si no existe
+        cursor.execute('''CREATE TABLE IF NOT EXISTS ofertas_comercial (
+                            apartment_id TEXT,
+                            provincia TEXT,
+                            municipio TEXT,
+                            poblacion TEXT,
+                            vial TEXT,
+                            numero TEXT,
+                            letra TEXT,
+                            cp TEXT,
+                            latitud REAL,
+                            longitud REAL,
+                            nombre_cliente TEXT,
+                            telefono TEXT,
+                            direccion_alternativa TEXT,
+                            observaciones TEXT,
+                            serviciable TEXT,
+                            motivo_serviciable TEXT,
+                            incidencia TEXT,
+                            motivo_incidencia TEXT,
+                            fichero_imagen TEXT,
+                            fecha_envio TEXT
+                        )''')
+
+        # Guardar la imagen si hay incidencia
+        imagen_path = None
+        if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
+            imagen_path = f"data/incidencias/{oferta_data['Apartment ID']}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            os.makedirs(os.path.dirname(imagen_path), exist_ok=True)
+            with open(imagen_path, "wb") as f:
+                f.write(imagen_incidencia.getbuffer())
+
+        # Insertar datos en la base de datos
+        cursor.execute('''INSERT INTO ofertas_comercial (
+                            apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
+                            nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
+                            motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                       (
+                           oferta_data["Apartment ID"],
+                           oferta_data["Provincia"],
+                           oferta_data["Municipio"],
+                           oferta_data["Población"],
+                           oferta_data["Vial"],
+                           oferta_data["Número"],
+                           oferta_data["Letra"],
+                           oferta_data["Código Postal"],
+                           oferta_data["Latitud"],
+                           oferta_data["Longitud"],
+                           oferta_data["Nombre Cliente"],
+                           oferta_data["Teléfono"],
+                           oferta_data["Dirección Alternativa"],
+                           oferta_data["Observaciones"],
+                           oferta_data["serviciable"],
+                           oferta_data["motivo_serviciable"],
+                           oferta_data["incidencia"],
+                           oferta_data["motivo_incidencia"],
+                           imagen_path,
+                           oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S')
+                       ))
+
+        conn.commit()
+        conn.close()
+        st.success("✅ ¡Oferta enviada y guardada en la base de datos con éxito!")
+    except Exception as e:
+        st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
+
+
 def comercial_dashboard():
     """Muestra el mapa con los puntos asignados al comercial logueado usando folium."""
     st.title("📍 Mapa de Ubicaciones")
@@ -59,7 +133,7 @@ def comercial_dashboard():
         return
 
     # Verificar que las columnas necesarias existen
-    for col in ['latitud', 'longitud', 'address_id']:  # Usar las columnas correctas
+    for col in ['latitud', 'longitud', 'address_id']:
         if col not in df.columns:
             st.error(f"❌ No se encuentra la columna '{col}'.")
             return
@@ -70,21 +144,17 @@ def comercial_dashboard():
 
     # Intentamos obtener la ubicación del usuario
     location = get_user_location()
-
     if location is None:
         st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
-        # Si no se obtiene la ubicación, se carga el mapa en el Polígono de Raos en Santander
-        lat, lon = 43.463444, -3.790476  # Polígono de Raos, Santander
+        lat, lon = 43.463444, -3.790476  # Ubicación predeterminada
     else:
         lat, lon = location
 
     # Spinner mientras se carga el mapa
     with st.spinner("⏳ Cargando mapa..."):
-        # Crear el mapa con la latitud y longitud
         m = folium.Map(location=[lat, lon], zoom_start=12)
         marker_cluster = MarkerCluster().add_to(m)
 
-        # Agregar los marcadores al clúster
         for _, row in df.iterrows():
             popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
             folium.Marker(
@@ -93,32 +163,25 @@ def comercial_dashboard():
                 icon=folium.Icon(color='blue', icon='info-sign')
             ).add_to(marker_cluster)
 
-        # Renderizar el mapa en Streamlit
         map_data = st_folium(m, height=500, width=700)
 
-    # Capturar clics en los marcadores
     if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
         st.session_state.clicks.append(map_data["last_object_clicked"])
 
-    # Mostrar las coordenadas registradas del último clic
     if st.session_state.clicks:
         last_click = st.session_state.clicks[-1]
-        #st.write(f"✅ Las coordenadas del punto seleccionado son: **{last_click}**")
-
-        # Spinner mientras carga la información del formulario
         with st.spinner("⏳ Cargando formulario..."):
             mostrar_formulario(last_click)
 
+
 def get_user_location():
     """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
-    # Crear un formulario de HTML y JavaScript para obtener las coordenadas de geolocalización
     html_code = """
         <script>
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(position) {
                     var lat = position.coords.latitude;
                     var lon = position.coords.longitude;
-                    // Enviar las coordenadas a Streamlit
                     window.parent.postMessage({lat: lat, lon: lon}, "*");
                 }, function() {
                     alert("No se pudo obtener la ubicación.");
@@ -128,28 +191,23 @@ def get_user_location():
             }
         </script>
     """
-
     components.html(html_code, height=0, width=0)
-
-    # Asegúrate de capturar las coordenadas de la ubicación
     if "lat" in st.session_state and "lon" in st.session_state:
         lat = st.session_state["lat"]
         lon = st.session_state["lon"]
         return lat, lon
-
     return None
+
 
 def cerrar_sesion():
     """Función para cerrar la sesión y limpiar el estado."""
-    # Eliminar la información de la sesión
     del st.session_state["username"]
     del st.session_state["clicks"]
     st.success("✅ Has cerrado sesión correctamente.")
-    # Mostrar un mensaje y redirigir a la página de inicio (no es necesario recargar)
     st.warning("👉 Por favor, inicia sesión nuevamente.")
-    #st.stop()  # Detener la ejecución del código aquí
     time.sleep(2)
     login.login()
+
 
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
@@ -157,16 +215,12 @@ def validar_email(email):
 
 def mostrar_formulario(click_data):
     """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
-
     st.subheader("📄 Enviar Oferta")
-
-    # Extraer datos del clic en el mapa
     popup_text = click_data.get("popup", "")
     apartment_id = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
     lat_value = click_data.get("lat", "N/D")
     lng_value = click_data.get("lng", "N/D")
 
-    # Conectamos a la base de datos para obtener los datos según coordenadas
     try:
         conn = sqlite3.connect("data/usuarios.db")
         query = """
@@ -175,7 +229,6 @@ def mostrar_formulario(click_data):
         """
         df = pd.read_sql(query, conn, params=(lat_value, lng_value))
         conn.close()
-
         if df.empty:
             st.warning("⚠️ No se encontraron datos para estas coordenadas.")
             provincia = municipio = poblacion = vial = numero = letra = cp = "No disponible"
@@ -188,15 +241,12 @@ def mostrar_formulario(click_data):
             numero = df.iloc[0]["numero"]
             letra = df.iloc[0]["letra"]
             cp = df.iloc[0]["cp"]
-
     except Exception as e:
         st.error(f"❌ Error al obtener datos de la base de datos: {e}")
         return
 
-    # ID de apartamento (bloqueado)
+    # Mostrar campos bloqueados
     st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
-
-    # 👉 Provincia, Municipio y Población en la misma línea
     col1, col2, col3 = st.columns(3)
     with col1:
         st.text_input("📍 Provincia", value=provincia, disabled=True)
@@ -204,8 +254,6 @@ def mostrar_formulario(click_data):
         st.text_input("🏙️ Municipio", value=municipio, disabled=True)
     with col3:
         st.text_input("👥 Población", value=poblacion, disabled=True)
-
-    # 👉 Vial, Número, Letra y Código Postal en otra línea
     col4, col5, col6, col7 = st.columns([2, 1, 1, 1])
     with col4:
         st.text_input("🚦 Vial", value=vial, disabled=True)
@@ -215,47 +263,46 @@ def mostrar_formulario(click_data):
         st.text_input("🔠 Letra", value=letra, disabled=True)
     with col7:
         st.text_input("📮 Código Postal", value=cp, disabled=True)
-
-    # 👉 Latitud y Longitud en la misma línea
     col8, col9 = st.columns(2)
     with col8:
         st.text_input("📌 Latitud", value=lat_value, disabled=True)
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
 
-    # 👉 Campos editables
-    client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
-    phone = st.text_input("📞 Teléfono", max_chars=15)
-    alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
-    observations = st.text_area("📝 Observaciones")
-
-    # 👉 Campo de contestación "¿Es serviciable?"
+    # Preguntar primero si es serviciable (después de los campos bloqueados)
     es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
 
-    motivo_no_serviciable = ""
-    contiene_incidencias = ""
-    motivo_incidencia = ""
-    imagen_incidencia = None
-
-    # Si "Es serviciable" es "No", aparece el campo de motivo
+    # Si no es serviciable, se despliega el campo para explicar el motivo
     if es_serviciable == "No":
-        motivo_no_serviciable = st.text_area("❌ Motivo de No Servicio")
-
-    # Si "Es serviciable" es "Sí", aparece la opción "¿Contiene incidencias?"
-    if es_serviciable == "Sí":
+        motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
+        # No se muestran los campos de datos del cliente ni incidencia
+        client_name = ""
+        phone = ""
+        alt_address = ""
+        observations = ""
+        contiene_incidencias = ""
+        motivo_incidencia = ""
+        imagen_incidencia = None
+    else:
+        # Si es serviciable, se muestran los campos para rellenar los datos del cliente
+        client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
+        phone = st.text_input("📞 Teléfono", max_chars=15)
+        alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
+        observations = st.text_area("📝 Observaciones")
+        # Luego se pregunta si contiene incidencias
         contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
-
-        # Si "Contiene incidencias" es "Sí", aparecen el campo de motivo y el de subir imagen
         if contiene_incidencias == "Sí":
             motivo_incidencia = st.text_area("📄 Motivo de la Incidencia")
             imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
+        else:
+            motivo_incidencia = ""
+            imagen_incidencia = None
+        # En este caso, el campo de motivo_serviciable se deja vacío
+        motivo_serviciable = ""
 
-    # Botón de enviar
+    # Todos los campos son opcionales; se valida el teléfono solo si se ingresa algún valor.
     if st.button("🚀 Enviar Oferta"):
-        if not client_name or not phone:
-            st.error("❌ Todos los campos obligatorios deben estar llenos.")
-            return
-        if not phone.isdigit():
+        if phone and not phone.isdigit():
             st.error("❌ El teléfono debe contener solo números.")
             return
 
@@ -274,37 +321,17 @@ def mostrar_formulario(click_data):
             "Teléfono": phone,
             "Dirección Alternativa": alt_address,
             "Observaciones": observations,
-            "Es Serviciable": es_serviciable,
-            "Motivo No Serviciable": motivo_no_serviciable if es_serviciable == "No" else "",
-            "Contiene Incidencias": contiene_incidencias if es_serviciable == "Sí" else "",
-            "Motivo Incidencia": motivo_incidencia if contiene_incidencias == "Sí" else "",
-            "Fecha Envío": pd.Timestamp.now()
+            "serviciable": es_serviciable,
+            "motivo_serviciable": motivo_serviciable,
+            "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
+            "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
+            "fecha": pd.Timestamp.now()
         }
 
-        excel_filename = "ofertas.xlsx"
-        with st.spinner("⏳ Guardando la oferta en Excel..."):
-            try:
-                if os.path.exists(excel_filename):
-                    existing_df = pd.read_excel(excel_filename)
-                    new_df = pd.DataFrame([oferta_data])
-                    df_total = pd.concat([existing_df, new_df], ignore_index=True)
-                else:
-                    df_total = pd.DataFrame([oferta_data])
-
-                df_total.to_excel(excel_filename, index=False)
-
-                # Guardar la imagen si hay incidencia
-                if contiene_incidencias == "Sí" and imagen_incidencia:
-                    img_path = f"incidencias/{apartment_id}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-                    with open(img_path, "wb") as f:
-                        f.write(imagen_incidencia.getbuffer())
-                    st.success("✅ Imagen de incidencia guardada correctamente.")
-
-                st.success("✅ ¡Oferta enviada y guardada en Excel con éxito!")
-
-            except Exception as e:
-                st.error(f"❌ Error al guardar la oferta en Excel: {e}")
+        with st.spinner("⏳ Guardando la oferta en la base de datos..."):
+            guardar_en_base_de_datos(oferta_data, imagen_incidencia)
 
 
 if __name__ == "__main__":
     comercial_dashboard()
+
