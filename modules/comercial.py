@@ -8,8 +8,20 @@ import re
 from streamlit_folium import st_folium
 import streamlit.components.v1 as components
 import time
+from datetime import datetime
 from modules import login
 
+def log_trazabilidad(usuario, accion, detalles):
+    """Inserta un registro en la tabla de trazabilidad."""
+    conn = sqlite3.connect("data/usuarios.db")  # Usamos la misma base de datos de usuarios
+    cursor = conn.cursor()
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
+        VALUES (?, ?, ?, ?)
+    """, (usuario, accion, detalles, fecha))
+    conn.commit()
+    conn.close()
 
 def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
     """Guarda la oferta en SQLite y almacena la imagen si es necesario."""
@@ -80,9 +92,11 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
         conn.commit()
         conn.close()
         st.success("✅ ¡Oferta enviada y guardada en la base de datos con éxito!")
+        # Registrar trazabilidad del guardado de la oferta
+        log_trazabilidad(st.session_state["username"], "Guardar Oferta",
+                         f"Oferta guardada para Apartment ID: {oferta_data['Apartment ID']}")
     except Exception as e:
         st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
-
 
 def comercial_dashboard():
     """Muestra el mapa con los puntos asignados al comercial logueado usando folium."""
@@ -111,7 +125,6 @@ def comercial_dashboard():
             <div>Rol: Comercial</div>
             """, unsafe_allow_html=True)
 
-    # Mostrar el nombre del supervisor en la barra lateral
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
     # Verificar si el usuario está logueado
@@ -121,19 +134,19 @@ def comercial_dashboard():
         login.login()
         return
 
-    # Se usa "username" en lugar de "usuario", ya que en el login se guarda con "username"
     comercial = st.session_state.get("username")
+
+    # Registrar trazabilidad de la visualización del dashboard
+    log_trazabilidad(comercial, "Visualización de Dashboard",
+                     "El comercial visualizó el mapa de ubicaciones.")
 
     # Botón de Cerrar Sesión en la barra lateral
     if st.sidebar.button("Cerrar Sesión"):
         cerrar_sesion()
 
-    # Spinner mientras se cargan los datos del comercial desde la base de datos
     with st.spinner("⏳ Cargando los datos del comercial..."):
         try:
-            conn = sqlite3.connect("data/usuarios.db")  # Asegúrate de que la ruta sea correcta
-
-            # Verificar que la tabla 'datos_uis' exista
+            conn = sqlite3.connect("data/usuarios.db")
             query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = pd.read_sql(query_tables, conn)
             if 'datos_uis' not in tables['name'].values:
@@ -141,7 +154,6 @@ def comercial_dashboard():
                 conn.close()
                 return
 
-            # Ejecutar la consulta SQL para obtener los datos asignados al comercial
             query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
             df = pd.read_sql(query, conn, params=(comercial,))
             conn.close()
@@ -153,22 +165,18 @@ def comercial_dashboard():
             st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
             return
 
-    # Asegurarse de que df es un DataFrame válido
     if not isinstance(df, pd.DataFrame):
         st.error("❌ Los datos no se cargaron correctamente.")
         return
 
-    # Verificar que las columnas necesarias existen
     for col in ['latitud', 'longitud', 'address_id']:
         if col not in df.columns:
             st.error(f"❌ No se encuentra la columna '{col}'.")
             return
 
-    # Inicializar la lista de clics en session_state si no existe
     if "clicks" not in st.session_state:
         st.session_state.clicks = []
 
-    # Intentamos obtener la ubicación del usuario
     location = get_user_location()
     if location is None:
         st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
@@ -176,11 +184,9 @@ def comercial_dashboard():
     else:
         lat, lon = location
 
-    # Spinner mientras se carga el mapa
     with st.spinner("⏳ Cargando mapa..."):
         m = folium.Map(location=[lat, lon], zoom_start=12)
         marker_cluster = MarkerCluster().add_to(m)
-
         for _, row in df.iterrows():
             popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
             folium.Marker(
@@ -188,7 +194,6 @@ def comercial_dashboard():
                 popup=popup_text,
                 icon=folium.Icon(color='blue', icon='info-sign')
             ).add_to(marker_cluster)
-
         map_data = st_folium(m, height=500, width=700)
 
     if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
@@ -198,7 +203,6 @@ def comercial_dashboard():
         last_click = st.session_state.clicks[-1]
         with st.spinner("⏳ Cargando formulario..."):
             mostrar_formulario(last_click)
-
 
 def get_user_location():
     """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
@@ -224,20 +228,20 @@ def get_user_location():
         return lat, lon
     return None
 
-
 def cerrar_sesion():
     """Función para cerrar la sesión y limpiar el estado."""
+    log_trazabilidad(st.session_state["username"], "Cierre sesión",
+                     f"El comercial {st.session_state['username']} cerró sesión.")
     del st.session_state["username"]
-    del st.session_state["clicks"]
+    if "clicks" in st.session_state:
+        del st.session_state["clicks"]
     st.success("✅ Has cerrado sesión correctamente.")
     st.warning("👉 Por favor, inicia sesión nuevamente.")
     time.sleep(2)
     login.login()
 
-
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
-
 
 def mostrar_formulario(click_data):
     """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
@@ -271,7 +275,6 @@ def mostrar_formulario(click_data):
         st.error(f"❌ Error al obtener datos de la base de datos: {e}")
         return
 
-    # Mostrar campos bloqueados
     st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -295,13 +298,10 @@ def mostrar_formulario(click_data):
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
 
-    # Preguntar primero si es serviciable (después de los campos bloqueados)
     es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
 
-    # Si no es serviciable, se despliega el campo para explicar el motivo
     if es_serviciable == "No":
         motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
-        # No se muestran los campos de datos del cliente ni incidencia
         client_name = ""
         phone = ""
         alt_address = ""
@@ -310,12 +310,10 @@ def mostrar_formulario(click_data):
         motivo_incidencia = ""
         imagen_incidencia = None
     else:
-        # Si es serviciable, se muestran los campos para rellenar los datos del cliente
         client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
         phone = st.text_input("📞 Teléfono", max_chars=15)
         alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
         observations = st.text_area("📝 Observaciones")
-        # Luego se pregunta si contiene incidencias
         contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
         if contiene_incidencias == "Sí":
             motivo_incidencia = st.text_area("📄 Motivo de la Incidencia")
@@ -323,10 +321,8 @@ def mostrar_formulario(click_data):
         else:
             motivo_incidencia = ""
             imagen_incidencia = None
-        # En este caso, el campo de motivo_serviciable se deja vacío
         motivo_serviciable = ""
 
-    # Todos los campos son opcionales; se valida el teléfono solo si se ingresa algún valor.
     if st.button("🚀 Enviar Oferta"):
         if phone and not phone.isdigit():
             st.error("❌ El teléfono debe contener solo números.")
@@ -357,7 +353,7 @@ def mostrar_formulario(click_data):
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia)
 
-
 if __name__ == "__main__":
     comercial_dashboard()
+
 
