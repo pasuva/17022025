@@ -130,6 +130,27 @@ def admin_dashboard():
 
     # Personalizar la barra lateral
     st.sidebar.title("📊 Panel de Administración")
+    # Mostrar el ícono de usuario centrado y más grande en la barra lateral
+    st.sidebar.markdown("""
+            <style>
+                .user-circle {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50%;
+                    background-color: #0073e6;
+                    color: white;
+                    font-size: 50px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 30px;
+                    text-align: center;
+                    margin-left: auto;
+                    margin-right: auto;
+                }
+            </style>
+            <div class="user-circle">👤</div>
+            """, unsafe_allow_html=True)
     st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**! (Admin)")
     st.sidebar.markdown("---")
 
