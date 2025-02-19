@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import io  # Necesario para trabajar con flujos de bytes
 import sqlite3
+import datetime
 import bcrypt
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 DB_PATH = "../data/usuarios.db"
 
@@ -78,6 +81,45 @@ def eliminar_usuario(id):
     st.success(f"Usuario con ID {id} eliminado correctamente.")
 
 
+# Función para generar PDF con los datos del informe
+def generar_pdf(df, encabezado_titulo, mensaje_intro, fecha_generacion, pie_de_pagina):
+    # Crear un archivo PDF en memoria
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+
+    # Título del informe
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(30, 750, encabezado_titulo)
+
+    # Mensaje introductorio
+    c.setFont("Helvetica", 12)
+    c.drawString(30, 730, mensaje_intro)
+
+    # Fecha de generación
+    c.setFont("Helvetica", 10)
+    c.drawString(30, 710, f"Fecha de generación: {fecha_generacion}")
+
+    # Añadir datos del informe (limitado a la primera página)
+    y_position = 690
+    c.setFont("Helvetica", 8)
+    for index, row in df.iterrows():
+        y_position -= 10
+        if y_position < 40:
+            c.showPage()  # Crear nueva página si es necesario
+            c.setFont("Helvetica", 8)
+            y_position = 750
+
+        c.drawString(30, y_position, str(row.tolist()))
+
+    # Pie de página
+    c.setFont("Helvetica", 10)
+    c.drawString(30, 30, pie_de_pagina)
+
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+
 # Función principal de la app (Dashboard de administración)
 def admin_dashboard():
     """Panel del administrador."""
@@ -91,7 +133,7 @@ def admin_dashboard():
     # Opciones de navegación con iconos
     opcion = st.sidebar.radio(
         "Selecciona una opción:",
-        ("📈 Ver Datos", "📊 Ofertas Comerciales", "👥 Gestionar Usuarios", "⚙️ Ajustes", "📤 Cargar Nuevos Datos"),
+        ("📈 Ver Datos", "📊 Ofertas Comerciales", "📤 Cargar Nuevos Datos", "👥 Gestionar Usuarios", "📑 Generador de informes", "📜 Trazabilidad y logs", "⚙️ Ajustes"),
         index=0,
         key="menu",
     )
@@ -229,6 +271,198 @@ def admin_dashboard():
                     file_name="ofertas_comerciales.csv",
                     mime="text/csv"
                 )
+
+    # Opción: Generar Informes
+    elif opcion == "📑 Generador de informes":
+        st.header("📑 Generador de Informes")
+        st.write("Aquí puedes generar informes basados en los datos disponibles.")
+
+        # Selección de tipo de informe
+        informe_tipo = st.selectbox("Selecciona el tipo de informe:",
+                                    ["Informe de Datos UIS", "Informe de Ofertas Comerciales"])
+
+        # Filtros comunes para ambos informes
+        st.sidebar.subheader("Filtros de Información")
+
+        # Inicializamos df_filtrado con el dataframe original
+        df_filtrado = st.session_state.get("df", pd.DataFrame())
+
+        # Verificar columnas disponibles
+        columnas_disponibles = df_filtrado.columns.tolist()
+
+        # Mostrar un desplegable con las columnas disponibles
+        filtro_columna = st.selectbox("Selecciona la columna para filtrar en Datos UIS:", columnas_disponibles)
+
+        # Filtros específicos según el tipo de informe seleccionado
+        if informe_tipo == "Informe de Datos UIS":
+            st.write("Generando informe para los datos UIS...")
+
+            # Filtro por provincia (si la columna existe)
+            if "provincia" in df_filtrado.columns:
+                provincias = st.selectbox("Selecciona la provincia:",
+                                          ["Todas"] + df_filtrado.provincia.unique().tolist())
+
+            # Filtro por fecha (si la columna existe y está en formato datetime)
+            if "fecha" in df_filtrado.columns:
+                df_filtrado['fecha'] = pd.to_datetime(df_filtrado['fecha'], errors='coerce')
+                fecha_inicio = st.date_input("Fecha de inicio:", pd.to_datetime("2022-01-01"))
+                fecha_fin = st.date_input("Fecha de fin:", pd.to_datetime("2025-12-31"))
+
+                # Convertir las fechas de los filtros a datetime
+                fecha_inicio = pd.to_datetime(fecha_inicio)
+                fecha_fin = pd.to_datetime(fecha_fin)
+
+            # Filtros según la columna seleccionada
+            if filtro_columna:
+                valor_filtro = st.text_input(f"Filtra por {filtro_columna}:")
+                if valor_filtro:
+                    df_filtrado = df_filtrado[
+                        df_filtrado[filtro_columna].astype(str).str.contains(valor_filtro, case=False)]
+
+            # Filtrar por provincia y fecha si se aplican
+            if provincias != "Todas":
+                df_filtrado = df_filtrado[df_filtrado["provincia"] == provincias]
+
+            if "fecha" in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado["fecha"].between(fecha_inicio, fecha_fin)]
+
+        elif informe_tipo == "Informe de Ofertas Comerciales":
+            st.write("Generando informe para las ofertas comerciales...")
+
+            # Inicializamos ofertas_filtradas con el dataframe original
+            ofertas_filtradas = st.session_state.get("df", pd.DataFrame())
+
+            # Verificar columnas disponibles en ofertas
+            columnas_ofertas = ofertas_filtradas.columns.tolist()
+
+            # Mostrar los desplegables para cada columna disponible en las ofertas comerciales
+            filtro_columna_ofertas = st.selectbox("Selecciona la columna para filtrar en Ofertas Comerciales:",
+                                                  columnas_ofertas)
+
+            # Filtro por provincia (si la columna existe)
+            if "provincia" in ofertas_filtradas.columns:
+                provincias_ofertas = st.selectbox("Selecciona la provincia para ofertas:",
+                                                  ["Todas"] + ofertas_filtradas.provincia.unique().tolist())
+
+            # Filtro por fecha (si la columna existe y está en formato datetime)
+            if "fecha" in ofertas_filtradas.columns:
+                ofertas_filtradas['fecha'] = pd.to_datetime(ofertas_filtradas['fecha'], errors='coerce')
+                fecha_inicio_oferta = st.date_input("Fecha de inicio para ofertas:", pd.to_datetime("2022-01-01"))
+                fecha_fin_oferta = st.date_input("Fecha de fin para ofertas:", pd.to_datetime("2025-12-31"))
+
+                # Convertir las fechas de los filtros a datetime
+                fecha_inicio_oferta = pd.to_datetime(fecha_inicio_oferta)
+                fecha_fin_oferta = pd.to_datetime(fecha_fin_oferta)
+
+            # Filtros según la columna seleccionada para las ofertas
+            if filtro_columna_ofertas:
+                valor_filtro_oferta = st.text_input(f"Filtra por {filtro_columna_ofertas}:")
+                if valor_filtro_oferta:
+                    ofertas_filtradas = ofertas_filtradas[
+                        ofertas_filtradas[filtro_columna_ofertas].astype(str).str.contains(valor_filtro_oferta,
+                                                                                           case=False)]
+
+            # Filtrar por provincia y fecha si se aplican
+            if provincias_ofertas != "Todas":
+                ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["provincia"] == provincias_ofertas]
+
+            if "fecha" in ofertas_filtradas.columns:
+                ofertas_filtradas = ofertas_filtradas[
+                    ofertas_filtradas["fecha"].between(fecha_inicio_oferta, fecha_fin_oferta)]
+
+        # Personalización del encabezado
+        st.sidebar.subheader("Personalización del Informe")
+        encabezado_titulo = st.sidebar.text_input("Título del Informe:", "Informe de Datos")
+        mensaje_intro = st.sidebar.text_area("Mensaje Introductorio:",
+                                             "Este informe contiene datos filtrados según tus criterios.")
+
+        # Personalización del pie de página
+        pie_de_pagina = st.sidebar.text_input("Pie de Página:", "Firma: Tu Empresa S.A.")
+
+        # Fecha de generación
+        fecha_generacion = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Botón para generar el informe
+        if st.button("Generar Informe", key="generar_informe"):
+            if informe_tipo == "Informe de Datos UIS":
+                # Generar el informe con los datos filtrados
+                if not df_filtrado.empty:
+                    # Generar archivo Excel
+                    towrite = io.BytesIO()
+                    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+                        df_filtrado.to_excel(writer, index=False, sheet_name='Informe Datos UIS')
+                        worksheet = writer.sheets['Informe Datos UIS']
+
+                        # Personalización del encabezado
+                        worksheet.write('A1', encabezado_titulo)
+                        worksheet.write('A2', mensaje_intro)
+                        worksheet.write('A3', f"Fecha de generación: {fecha_generacion}")
+
+                        # Personalización del pie de página
+                        worksheet.write(len(df_filtrado) + 3, 0, pie_de_pagina)
+                    towrite.seek(0)
+
+                    # Descargar archivo Excel
+                    st.download_button(
+                        label="📥 Descargar Informe de Datos UIS en Excel",
+                        data=towrite,
+                        file_name="informe_datos_uis.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                    # Descargar archivo PDF
+                    pdf_buffer = generar_pdf(df_filtrado, encabezado_titulo, mensaje_intro, fecha_generacion,
+                                             pie_de_pagina)
+                    st.download_button(
+                        label="📥 Descargar Informe de Datos UIS en PDF",
+                        data=pdf_buffer,
+                        file_name="informe_datos_uis.pdf",
+                        mime="application/pdf"
+                    )
+
+                else:
+                    st.error("❌ No se han encontrado datos que coincidan con los filtros para generar el informe.")
+
+            elif informe_tipo == "Informe de Ofertas Comerciales":
+                # Generar el informe con los datos filtrados
+                if not ofertas_filtradas.empty:
+                    # Generar archivo Excel
+                    towrite = io.BytesIO()
+                    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+                        ofertas_filtradas.to_excel(writer, index=False, sheet_name='Informe Ofertas Comerciales')
+                        worksheet = writer.sheets['Informe Ofertas Comerciales']
+
+                        # Personalización del encabezado
+                        worksheet.write('A1', encabezado_titulo)
+                        worksheet.write('A2', mensaje_intro)
+                        worksheet.write('A3', f"Fecha de generación: {fecha_generacion}")
+
+                        # Personalización del pie de página
+                        worksheet.write(len(ofertas_filtradas) + 3, 0, pie_de_pagina)
+                    towrite.seek(0)
+
+                    # Descargar archivo Excel
+                    st.download_button(
+                        label="📥 Descargar Informe de Ofertas Comerciales en Excel",
+                        data=towrite,
+                        file_name="informe_ofertas_comerciales.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                    # Descargar archivo PDF
+                    pdf_buffer = generar_pdf(ofertas_filtradas, encabezado_titulo, mensaje_intro, fecha_generacion,
+                                             pie_de_pagina)
+                    st.download_button(
+                        label="📥 Descargar Informe de Ofertas Comerciales en PDF",
+                        data=pdf_buffer,
+                        file_name="informe_ofertas_comerciales.pdf",
+                        mime="application/pdf"
+                    )
+
+                else:
+                    st.error(
+                        "❌ No se han encontrado ofertas comerciales que coincidan con los filtros para generar el informe.")
+
 
     # Opción: Gestionar Usuarios
     elif opcion == "👥 Gestionar Usuarios":
