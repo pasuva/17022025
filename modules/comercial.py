@@ -88,6 +88,31 @@ def comercial_dashboard():
     """Muestra el mapa con los puntos asignados al comercial logueado usando folium."""
     st.title("📍 Mapa de Ubicaciones")
 
+    # Mostrar el ícono de usuario centrado y más grande en la barra lateral
+    st.sidebar.markdown("""
+            <style>
+                .user-circle {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50%;
+                    background-color: #0073e6;
+                    color: white;
+                    font-size: 50px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 30px;
+                    text-align: center;
+                    margin-left: auto;
+                    margin-right: auto;
+                }
+            </style>
+            <div class="user-circle">👤</div>
+            """, unsafe_allow_html=True)
+
+    # Mostrar el nombre del supervisor en la barra lateral
+    st.sidebar.write(f"Bienvenido, {st.session_state['username']} (Comercial)")
+
     # Verificar si el usuario está logueado
     if "username" not in st.session_state:
         st.warning("⚠️ No has iniciado sesión. Por favor, inicia sesión para continuar.")
