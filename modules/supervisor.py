@@ -17,7 +17,7 @@ def supervisor_dashboard():
                 width: 100px;
                 height: 100px;
                 border-radius: 50%;
-                background-color: #0073e6;
+                background-color: #28a745;
                 color: white;
                 font-size: 50px;
                 display: flex;
@@ -30,10 +30,11 @@ def supervisor_dashboard():
             }
         </style>
         <div class="user-circle">👤</div>
+        <div>Rol: Supevisor</div>
         """, unsafe_allow_html=True)
 
     # Mostrar el nombre del supervisor en la barra lateral
-    st.sidebar.write(f"Bienvenido, {st.session_state['username']} (Supervisor)")
+    st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
     # Menú lateral para elegir qué visualizar
     menu_opcion = st.sidebar.radio("Selecciona la vista:", ["Datos UIS", "Ofertas Comerciales"])

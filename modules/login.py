@@ -31,7 +31,7 @@ def login():
                     width: 100px;
                     height: 100px;
                     border-radius: 50%;
-                    background-color: #0073e6;
+                    background-color: #6c757d;
                     color: white;
                     font-size: 50px;
                     display: flex;

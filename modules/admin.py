@@ -150,8 +150,9 @@ def admin_dashboard():
                 }
             </style>
             <div class="user-circle">👤</div>
+            <div>Rol: Administrador</div>
             """, unsafe_allow_html=True)
-    st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**! (Admin)")
+    st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**!")
     st.sidebar.markdown("---")
 
     # Opciones de navegación con iconos

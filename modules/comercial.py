@@ -95,7 +95,7 @@ def comercial_dashboard():
                     width: 100px;
                     height: 100px;
                     border-radius: 50%;
-                    background-color: #0073e6;
+                    background-color: #ff7f00;
                     color: white;
                     font-size: 50px;
                     display: flex;
@@ -108,10 +108,11 @@ def comercial_dashboard():
                 }
             </style>
             <div class="user-circle">👤</div>
+            <div>Rol: Comercial</div>
             """, unsafe_allow_html=True)
 
     # Mostrar el nombre del supervisor en la barra lateral
-    st.sidebar.write(f"Bienvenido, {st.session_state['username']} (Comercial)")
+    st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
     # Verificar si el usuario está logueado
     if "username" not in st.session_state:
