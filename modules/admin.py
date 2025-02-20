@@ -6,6 +6,8 @@ import datetime
 import bcrypt
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+import os  # Para trabajar con archivos en el sistema
+import base64  # Para codificar la imagen en base64
 
 # Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime
@@ -149,6 +151,23 @@ def generar_pdf(df, encabezado_titulo, mensaje_intro, fecha_generacion, pie_de_p
     c.save()
     buffer.seek(0)
     return buffer
+
+
+# Función que genera un enlace de descarga en HTML (no se integra en la tabla)
+def get_download_link_icon(img_path):
+    # Determinar el MIME type según la extensión
+    mime = "image/jpeg"
+    if img_path.lower().endswith(".png"):
+        mime = "image/png"
+    elif img_path.lower().endswith((".jpg", ".jpeg")):
+        mime = "image/jpeg"
+    with open(img_path, "rb") as f:
+        data = f.read()
+    b64 = base64.b64encode(data).decode()
+    file_name = os.path.basename(img_path)
+    # Usamos un emoji de flecha abajo (⬇️) como icono
+    html = f'<a href="data:{mime};base64,{b64}" download="{file_name}" style="text-decoration: none; font-size:20px;">⬇️</a>'
+    return html
 
 
 # Función principal de la app (Dashboard de administración)
@@ -330,12 +349,43 @@ def admin_dashboard():
                     mime="text/csv"
                 )
 
+        # Desplegable para ofertas con imagen
+        offers_with_image = []
+        for idx, row in data.iterrows():
+            fichero_imagen = row.get("fichero_imagen", None)
+            if fichero_imagen and isinstance(fichero_imagen, str) and os.path.exists(fichero_imagen):
+                offers_with_image.append((row["apartment_id"], fichero_imagen))
+
+        if offers_with_image:
+            st.markdown("### Descarga de imágenes de ofertas")
+            option = st.selectbox("Selecciona el Apartment ID de la oferta para descargar su imagen:",
+                                  ["-- Seleccione --"] + [offer[0] for offer in offers_with_image])
+            if option != "-- Seleccione --":
+                # Buscar la oferta seleccionada
+                selected_offer = next((offer for offer in offers_with_image if offer[0] == option), None)
+                if selected_offer:
+                    fichero_imagen = selected_offer[1]
+                    st.image(fichero_imagen, width=200)
+                    # Generar enlace de descarga
+                    mime = "image/jpeg"
+                    if fichero_imagen.lower().endswith(".png"):
+                        mime = "image/png"
+                    elif fichero_imagen.lower().endswith((".jpg", ".jpeg")):
+                        mime = "image/jpeg"
+                    with open(fichero_imagen, "rb") as file:
+                        file_data = file.read()
+                    st.download_button(
+                        label="Descargar imagen",
+                        data=file_data,
+                        file_name=os.path.basename(fichero_imagen),
+                        mime=mime
+                    )
+
     # Opción: Generar Informes
     elif opcion == "📑 Generador de informes":
         st.header("📑 Generador de Informes")
         st.write("Aquí puedes generar informes basados en los datos disponibles.")
-        log_trazabilidad(st.session_state["username"], "Generador de informes",
-                         "El admin accedió al generador de informes.")
+        log_trazabilidad(st.session_state["username"], "Generar Informe", "El admin accedió al generador de informes.")
 
         # Selección de tipo de informe
         informe_tipo = st.selectbox("Selecciona el tipo de informe:",

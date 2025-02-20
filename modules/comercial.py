@@ -49,7 +49,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                             incidencia TEXT,
                             motivo_incidencia TEXT,
                             fichero_imagen TEXT,
-                            fecha_envio TEXT
+                            fecha TEXT
                         )''')
 
         # Verificar si ya existe un registro con el mismo apartment_id
@@ -62,7 +62,9 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
         # Guardar la imagen si hay incidencia
         imagen_path = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
-            imagen_path = f"data/incidencias/{oferta_data['Apartment ID']}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            # Extraemos la extensión del archivo subido
+            extension = os.path.splitext(imagen_incidencia.name)[1]
+            imagen_path = f"data/incidencias/{oferta_data['Apartment ID']}{extension}"
             os.makedirs(os.path.dirname(imagen_path), exist_ok=True)
             with open(imagen_path, "wb") as f:
                 f.write(imagen_incidencia.getbuffer())
