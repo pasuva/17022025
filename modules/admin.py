@@ -206,7 +206,7 @@ def admin_dashboard():
     # Opciones de navegación con iconos
     opcion = st.sidebar.radio(
         "Selecciona una opción:",
-        ("📈 Ver Datos", "📊 Ofertas Comerciales", "📤 Cargar Nuevos Datos", "📑 Generador de informes",
+        ("📈 Ver Datos", "📊 Ofertas Comerciales", "✔️ Viabilidades", "📤 Cargar Nuevos Datos", "📑 Generador de informes",
          "📜 Trazabilidad y logs", "👥 Gestionar Usuarios", "⚙️ Ajustes"),
         index=0,
         key="menu",

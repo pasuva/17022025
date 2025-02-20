@@ -56,7 +56,7 @@ def supervisor_dashboard():
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
     # Menú lateral para elegir qué visualizar
-    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["Datos UIS", "Ofertas Comerciales"])
+    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["Datos UIS", "Ofertas Comerciales", "Viabilidades"])
 
     # Registrar trazabilidad de la selección del menú
     detalles = f"El supervisor seleccionó la vista '{menu_opcion}'."
