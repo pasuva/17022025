@@ -194,7 +194,8 @@ def comercial_dashboard():
         lat, lon = location
 
     with st.spinner("⏳ Cargando mapa..."):
-        m = folium.Map(location=[lat, lon], zoom_start=12)
+        m = folium.Map(location=[lat, lon], zoom_start=12, tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                       attr="Google")
         marker_cluster = MarkerCluster().add_to(m)
         for _, row in df.iterrows():
             popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
@@ -210,9 +211,33 @@ def comercial_dashboard():
 
     if st.session_state.clicks:
         last_click = st.session_state.clicks[-1]
+        lat = last_click.get("lat", "")
+        lon = last_click.get("lng", "")
+
+        if lat and lon:
+            google_maps_link = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+
+            st.markdown(f"""
+                <div style="text-align: center; margin: 5px 0;">
+                    <a href="{google_maps_link}" target="_blank" style="
+                        background-color: #0078ff;
+                        color: white;
+                        padding: 6px 12px;
+                        font-size: 14px;
+                        font-weight: bold;
+                        border-radius: 6px;
+                        text-decoration: none;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    ">
+                        🗺️ Ver en Google Maps
+                    </a>
+                </div>
+            """, unsafe_allow_html=True)
+
         with st.spinner("⏳ Cargando formulario..."):
             mostrar_formulario(last_click)
-
 def get_user_location():
     """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
     html_code = """
@@ -223,7 +248,7 @@ def get_user_location():
                     var lon = position.coords.longitude;
                     window.parent.postMessage({lat: lat, lon: lon}, "*");
                 }, function() {
-                    alert("No se pudo obtener la ubicación.");
+                    alert("No se pudo obtener la ubicación del dispositivo.");
                 });
             } else {
                 alert("Geolocalización no soportada por este navegador.");
