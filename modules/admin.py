@@ -1,3 +1,5 @@
+import zipfile
+
 import streamlit as st
 import pandas as pd
 import io  # Necesario para trabajar con flujos de bytes
@@ -358,20 +360,28 @@ def admin_dashboard():
 
         if offers_with_image:
             st.markdown("### Descarga de imágenes de ofertas")
-            option = st.selectbox("Selecciona el Apartment ID de la oferta para descargar su imagen:",
-                                  ["-- Seleccione --"] + [offer[0] for offer in offers_with_image])
+
+            # Desplegable para seleccionar una oferta
+            option = st.selectbox(
+                "Selecciona el Apartment ID de la oferta para descargar su imagen:",
+                ["-- Seleccione --"] + [offer[0] for offer in offers_with_image]
+            )
+
             if option != "-- Seleccione --":
                 # Buscar la oferta seleccionada
                 selected_offer = next((offer for offer in offers_with_image if offer[0] == option), None)
                 if selected_offer:
                     fichero_imagen = selected_offer[1]
                     st.image(fichero_imagen, width=200)
-                    # Generar enlace de descarga
+
+                    # Determinar el tipo de imagen
                     mime = "image/jpeg"
                     if fichero_imagen.lower().endswith(".png"):
                         mime = "image/png"
                     elif fichero_imagen.lower().endswith((".jpg", ".jpeg")):
                         mime = "image/jpeg"
+
+                    # Enlace de descarga individual
                     with open(fichero_imagen, "rb") as file:
                         file_data = file.read()
                     st.download_button(
@@ -380,6 +390,20 @@ def admin_dashboard():
                         file_name=os.path.basename(fichero_imagen),
                         mime=mime
                     )
+
+            # Botón para descargar todas las imágenes en un archivo ZIP
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                for apt_id, img_path in offers_with_image:
+                    zip_file.write(img_path, arcname=os.path.basename(img_path))
+            zip_buffer.seek(0)
+
+            st.download_button(
+                label="Descargar todas las imágenes",
+                data=zip_buffer,
+                file_name="imagenes_ofertas.zip",
+                mime="application/zip"
+            )
 
     # Opción: Generar Informes
     elif opcion == "📑 Generador de informes":
