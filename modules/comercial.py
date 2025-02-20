@@ -10,6 +10,7 @@ import streamlit.components.v1 as components
 import time
 from datetime import datetime
 from modules import login
+from folium.plugins import Geocoder
 
 def log_trazabilidad(usuario, accion, detalles):
     """Inserta un registro en la tabla de trazabilidad."""
@@ -196,6 +197,7 @@ def comercial_dashboard():
     with st.spinner("⏳ Cargando mapa..."):
         m = folium.Map(location=[lat, lon], zoom_start=12, tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
                        attr="Google")
+        Geocoder().add_to(m)
         marker_cluster = MarkerCluster().add_to(m)
         for _, row in df.iterrows():
             popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
