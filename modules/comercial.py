@@ -28,9 +28,9 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
     try:
         conn = sqlite3.connect("data/usuarios.db")
         cursor = conn.cursor()
-        # Crear tabla ofertas_comercial si no existe
+        # Crear tabla ofertas_comercial si no existe, definiendo apartment_id como PRIMARY KEY
         cursor.execute('''CREATE TABLE IF NOT EXISTS ofertas_comercial (
-                            apartment_id TEXT,
+                            apartment_id TEXT PRIMARY KEY,
                             provincia TEXT,
                             municipio TEXT,
                             poblacion TEXT,
@@ -51,6 +51,13 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                             fichero_imagen TEXT,
                             fecha_envio TEXT
                         )''')
+
+        # Verificar si ya existe un registro con el mismo apartment_id
+        cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
+        if cursor.fetchone()[0] > 0:
+            st.error("❌ Ya existe una oferta registrada con este Apartment ID.")
+            conn.close()
+            return
 
         # Guardar la imagen si hay incidencia
         imagen_path = None
@@ -355,5 +362,3 @@ def mostrar_formulario(click_data):
 
 if __name__ == "__main__":
     comercial_dashboard()
-
-
