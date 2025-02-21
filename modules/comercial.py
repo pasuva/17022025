@@ -350,7 +350,13 @@ def comercial_dashboard():
 
     # Botón de Cerrar Sesión en la barra lateral
     if st.sidebar.button("Cerrar Sesión"):
-        cerrar_sesion()
+        #cerrar_sesion()
+        log_trazabilidad(st.session_state["username"], "Cierre sesión",
+                         f"El comercial {st.session_state['username']} cerró sesión.")
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+        st.rerun()
 
 
 def generar_ticket():
@@ -358,21 +364,32 @@ def generar_ticket():
     conn = sqlite3.connect("data/usuarios.db")
     cursor = conn.cursor()
     fecha_actual = datetime.now().strftime("%Y%m%d")
-    cursor.execute("SELECT COUNT(*) FROM viabilidades WHERE ticket LIKE ?", (f"{fecha_actual}%",))
-    count = cursor.fetchone()[0] + 1
+
+    # Buscar el mayor número consecutivo para la fecha actual
+    cursor.execute("SELECT MAX(CAST(SUBSTR(ticket, 9, 3) AS INTEGER)) FROM viabilidades WHERE ticket LIKE ?",
+                   (f"{fecha_actual}%",))
+    max_consecutivo = cursor.fetchone()[0]
+
+    # Si no hay tickets previos, empezar desde 1
+    if max_consecutivo is None:
+        max_consecutivo = 0
+
+    # Generar el nuevo ticket con el siguiente consecutivo
+    ticket = f"{fecha_actual}{max_consecutivo + 1:03d}"
     conn.close()
-    return f"{fecha_actual}{count:03d}"
+    return ticket
 
 def guardar_viabilidad(datos):
     """Inserta los datos en la tabla Viabilidades."""
     conn = sqlite3.connect("data/usuarios.db")
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO viabilidades (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, fecha_viabilidad, ticket)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+        INSERT INTO viabilidades (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, fecha_viabilidad, ticket, nombre_cliente, telefono)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
     """, datos)
     conn.commit()
     conn.close()
+    st.success(f"✅ Los cambios para la viabilidad han sido guardados correctamente.")
 
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
@@ -457,6 +474,8 @@ def viabilidades_section():
             numero = st.text_input("Número")
             letra = st.text_input("Letra")
             cp = st.text_input("Código Postal")
+            nombre_cliente = st.text_input("Nombre Cliente")
+            telefono = st.text_input("Telefono")
             comentario = st.text_area("Comentario")
             submit = st.form_submit_button("Enviar Formulario")
 
@@ -466,7 +485,7 @@ def viabilidades_section():
 
                 # Insertar en la base de datos
                 guardar_viabilidad(
-                    (lat, lon, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket))
+                    (lat, lon, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono))
 
                 st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
 
@@ -500,18 +519,6 @@ def get_user_location():
         lon = st.session_state["lon"]
         return lat, lon
     return None
-
-def cerrar_sesion():
-    """Función para cerrar la sesión y limpiar el estado."""
-    log_trazabilidad(st.session_state["username"], "Cierre sesión",
-                     f"El comercial {st.session_state['username']} cerró sesión.")
-    del st.session_state["username"]
-    if "clicks" in st.session_state:
-        del st.session_state["clicks"]
-    st.success("✅ Has cerrado sesión correctamente.")
-    st.warning("👉 Por favor, inicia sesión nuevamente.")
-    time.sleep(2)
-    login.login()
 
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)

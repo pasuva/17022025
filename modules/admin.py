@@ -343,6 +343,7 @@ def mostrar_formulario(click_data):
     # Campos para completar
     col15, col16, col17 = st.columns([1, 1, 1])
     with col15:
+        apartment_id = st.text_input("🏠 Apartment_id", value="", key="apartment_id_input")
         olt = st.text_input("⚡ OLT", value="", key="olt_input")
     with col16:
         cto_admin = st.text_input("⚙️ Cto Admin", value="", key="cto_admin_input")
@@ -376,13 +377,13 @@ def mostrar_formulario(click_data):
             # Sentencia UPDATE para guardar los cambios basados en el ticket
             query = """
                 UPDATE viabilidades
-                SET olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
+                SET apartment_id = ?, olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
                     coste = ?, comentarios_internos = ?
                 WHERE ticket = ?
             """
             # Ejecutar la sentencia con los valores proporcionados en el formulario
             cursor.execute(query, (
-                olt, cto_admin, id_cto, municipio_admin, serviciable,
+                apartment_id, olt, cto_admin, id_cto, municipio_admin, serviciable,
                 coste, comentarios_internos, ticket
             ))
 
