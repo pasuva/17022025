@@ -51,6 +51,8 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                             motivo_incidencia TEXT,
                             fichero_imagen TEXT,
                             fecha TEXT
+                            Tipo_Vivienda TEXT,
+                            Contrato TEXT
                         )''')
 
         # Verificar si ya existe un registro con el mismo apartment_id
@@ -74,8 +76,8 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
         cursor.execute('''INSERT INTO ofertas_comercial (
                             apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
                             nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
-                            motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                            motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                        (
                            oferta_data["Apartment ID"],
                            oferta_data["Provincia"],
@@ -96,7 +98,9 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                            oferta_data["incidencia"],
                            oferta_data["motivo_incidencia"],
                            imagen_path,
-                           oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S')
+                           oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
+                           oferta_data["Tipo_Vivienda"],
+                           oferta_data["Contrato"]
                        ))
 
         conn.commit()
@@ -165,6 +169,7 @@ def comercial_dashboard():
                 conn = sqlite3.connect("data/usuarios.db")
                 query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
                 tables = pd.read_sql(query_tables, conn)
+
                 if 'datos_uis' not in tables['name'].values:
                     st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
                     conn.close()
@@ -172,6 +177,15 @@ def comercial_dashboard():
 
                 query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
                 df = pd.read_sql(query, conn, params=(comercial,))
+
+                # Obtener los apartment_id con ofertas y su estado de contrato
+                query_ofertas = "SELECT apartment_id, Contrato FROM ofertas_comercial"
+                ofertas_df = pd.read_sql(query_ofertas, conn)
+
+                # Obtener los apartment_id que están en ams con site_operational_state = "serviciable"
+                query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(site_operational_state) = 'serviciable'"
+                ams_df = pd.read_sql(query_ams, conn)
+
                 conn.close()
 
                 if df.empty:
@@ -186,7 +200,7 @@ def comercial_dashboard():
             return
 
         # Verificar que existan las columnas necesarias
-        for col in ['latitud', 'longitud', 'address_id']:
+        for col in ['latitud', 'longitud', 'address_id', 'apartment_id']:
             if col not in df.columns:
                 st.error(f"❌ No se encuentra la columna '{col}'.")
                 return
@@ -202,6 +216,12 @@ def comercial_dashboard():
         else:
             lat, lon = location
 
+        # Crear conjuntos para búsqueda rápida
+        serviciable_set = set(ams_df["apartment_id"])  # 🟢 Tiene site_operational_state = "serviciable"
+
+        # Crear diccionario de ofertas con su contrato
+        contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
+
         # Crear y mostrar el mapa con folium
         with st.spinner("⏳ Cargando mapa..."):
             m = folium.Map(location=[lat, lon], zoom_start=12,
@@ -209,13 +229,30 @@ def comercial_dashboard():
                            attr="Google")
             Geocoder().add_to(m)
             marker_cluster = MarkerCluster().add_to(m)
+
             for _, row in df.iterrows():
                 popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
+                apartment_id = row['apartment_id']
+
+                # Determinar color del marcador
+                if apartment_id in serviciable_set:
+                    marker_color = 'green'  # 🟢 Tiene site_operational_state = "serviciable"
+                elif apartment_id in contrato_dict:
+                    if contrato_dict[apartment_id] == "Sí":
+                        marker_color = 'orange'  # 🔶 Tiene oferta con Contrato = "Sí"
+                    elif contrato_dict[apartment_id] == "No Interesado":
+                        marker_color = 'gray'  # ⚪️ Tiene oferta pero "No Interesado"
+                    else:
+                        marker_color = 'blue'  # 🔵 No cumple ninguna de las condiciones anteriores
+                else:
+                    marker_color = 'blue'  # 🔵 No tiene oferta ni contrato
+
                 folium.Marker(
                     location=[row['latitud'], row['longitud']],
                     popup=popup_text,
-                    icon=folium.Icon(color='blue', icon='info-sign')
+                    icon=folium.Icon(color=marker_color, icon='info-sign')
                 ).add_to(marker_cluster)
+
             map_data = st_folium(m, height=500, width=700)
 
         # Registrar clics en el mapa
@@ -425,6 +462,7 @@ def cerrar_sesion():
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
 
+
 def mostrar_formulario(click_data):
     """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
     st.subheader("📄 Enviar Oferta")
@@ -482,6 +520,20 @@ def mostrar_formulario(click_data):
 
     es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
 
+    # Mostrar los nuevos campos solo si es "Sí" en "Es Serviciable"
+    if es_serviciable == "Sí":
+        tipo_vivienda = st.selectbox("🏠 Tipo de Ui", ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"], index=0)
+
+        # Si elige "Otro", mostrar campo para que puedan ingresar el tipo de vivienda
+        if tipo_vivienda == "Otro":
+            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui")
+        else:
+            tipo_vivienda_otro = ""  # Si no elige "Otro", el valor es vacío
+
+        contrato = st.radio("📑 Tipo de Contrato", ["Sí", "No Interesado"], index=0, horizontal=True)
+    else:
+        tipo_vivienda = contrato = tipo_vivienda_otro = None  # Si no es serviciable, los campos no se muestran
+
     if es_serviciable == "No":
         motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
         client_name = ""
@@ -529,11 +581,15 @@ def mostrar_formulario(click_data):
             "motivo_serviciable": motivo_serviciable,
             "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
             "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
+            "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
+            # Guardar el tipo de vivienda o el valor "Otro"
+            "Contrato": contrato,  # Solo se incluye si es "Sí" en serviciable
             "fecha": pd.Timestamp.now()
         }
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia)
+
 
 if __name__ == "__main__":
     comercial_dashboard()
