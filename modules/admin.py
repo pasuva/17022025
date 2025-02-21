@@ -1,18 +1,24 @@
 import zipfile
 
+from folium.plugins import Geocoder
+import folium
 import streamlit as st
 import pandas as pd
 import io  # Necesario para trabajar con flujos de bytes
 import sqlite3
 import datetime
 import bcrypt
+from folium.plugins import MarkerCluster
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
+import streamlit as st
 
 # Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime
+
+from streamlit_folium import st_folium
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -170,6 +176,226 @@ def get_download_link_icon(img_path):
     # Usamos un emoji de flecha abajo (⬇️) como icono
     html = f'<a href="data:{mime};base64,{b64}" download="{file_name}" style="text-decoration: none; font-size:20px;">⬇️</a>'
     return html
+
+
+def viabilidades_seccion():
+    log_trazabilidad("Administrador", "Visualización de Viabilidades",
+                     "El administrador visualizó la sección de viabilidades.")
+
+    # Cargar los datos de la base de datos
+    with st.spinner("⏳ Cargando los datos de viabilidades..."):
+        try:
+            conn = sqlite3.connect("data/usuarios.db")
+            query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
+            tables = pd.read_sql(query_tables, conn)
+
+            if 'viabilidades' not in tables['name'].values:
+                st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
+                conn.close()
+                return
+
+            query = "SELECT * FROM viabilidades"
+            viabilidades_df = pd.read_sql(query, conn)
+            conn.close()
+
+            if viabilidades_df.empty:
+                st.warning("⚠️ No hay viabilidades disponibles.")
+                return
+
+        except Exception as e:
+            st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
+            return
+
+    # Verificar que existan las columnas necesarias
+    required_columns = ['latitud', 'longitud', 'ticket']
+    for col in required_columns:
+        if col not in viabilidades_df.columns:
+            st.error(f"❌ No se encuentra la columna '{col}'.")
+            return
+
+    # Organizar la disposición de la interfaz con columnas
+    col1, col2 = st.columns([3, 3])  # Hacemos la columna 1 más ancha para el mapa
+
+    with col1:
+        # Crear y mostrar el mapa con Folium
+        with st.spinner("⏳ Cargando mapa..."):
+            m = folium.Map(location=[43.463444, -3.790476], zoom_start=12,
+                           tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                           attr="Google")
+            marker_cluster = MarkerCluster().add_to(m)
+
+            # Iterar sobre los datos de las viabilidades para agregar marcadores
+            for _, row in viabilidades_df.iterrows():
+                popup_text = f"🏠 {row['ticket']} - 📍 {row['latitud']}, {row['longitud']}"
+                folium.Marker(
+                    location=[row['latitud'], row['longitud']],
+                    popup=popup_text,  # Aquí se está pasando el popup
+                    icon=folium.Icon(color='blue', icon='info-sign')
+                ).add_to(marker_cluster)
+
+            # Mostrar el mapa
+            map_data = st_folium(m, height=500, width=700)
+
+    with col2:
+        # Mostrar la tabla de viabilidades
+        st.subheader("Tabla de Viabilidades")
+        st.dataframe(viabilidades_df, use_container_width=True)
+
+        # Añadir un botón de refresco para actualizar la tabla
+        if st.button("🔄 Refrescar Tabla"):
+            st.rerun()  # Utiliza st.rerun() en lugar de st.experimental_rerun()
+
+    # Verificación del objeto del clic
+    if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
+        clicked_object = map_data["last_object_clicked"]
+
+        # Extraer latitud y longitud del objeto clicado
+        lat_click = clicked_object.get("lat", "")
+        lon_click = clicked_object.get("lng", "")
+
+        if lat_click and lon_click:
+            # Consultar en la base de datos para encontrar el ticket correspondiente a las coordenadas
+            viabilidad_data = viabilidades_df[
+                (viabilidades_df['latitud'] == lat_click) & (viabilidades_df['longitud'] == lon_click)
+            ]
+
+            if viabilidad_data.empty:
+                st.error(f"❌ No se encontró viabilidad para las coordenadas: Lat: {lat_click}, Lon: {lon_click}")
+                st.write(f"🚨 Viabilidades disponibles en la base de datos:")
+                st.write(viabilidades_df[['ticket', 'latitud', 'longitud']])
+            else:
+                # Aquí se encontró una viabilidad para esas coordenadas
+                ticket = viabilidad_data['ticket'].iloc[0]
+                st.write(f"✔️ Viabilidad encontrada para el Ticket: {ticket}")
+
+                # Llamar a la función para mostrar el formulario con los datos de la viabilidad
+                mostrar_formulario(viabilidad_data.iloc[0])
+        else:
+            st.error("❌ No se encontraron coordenadas en el clic.")
+
+
+def mostrar_formulario(click_data):
+    """Muestra el formulario para editar los datos de la viabilidad y guarda los cambios en la base de datos."""
+
+    # Extraer los datos
+    ticket = click_data["ticket"]
+    latitud = click_data["latitud"]
+    longitud = click_data["longitud"]
+    provincia = click_data.get("provincia", "N/D")
+    municipio = click_data.get("municipio", "N/D")
+    poblacion = click_data.get("poblacion", "N/D")
+    vial = click_data.get("vial", "N/D")
+    numero = click_data.get("numero", "N/D")
+    letra = click_data.get("letra", "N/D")
+    cp = click_data.get("cp", "N/D")
+    comentario = click_data.get("comentario", "N/D")
+    fecha_viabilidad = click_data.get("fecha_viabilidad", "N/D")
+    cto_cercana = click_data.get("cto_cercana", "N/D")
+    comentarios_comercial = click_data.get("comentarios_comercial", "N/D")
+
+    # Crear un diseño en columnas
+    col1, col2, col3 = st.columns([1, 1, 1])  # Aseguramos que las columnas tengan un tamaño similar
+    with col1:
+        # Ticket y Latitud/Longitud
+        st.text_input("🎟️ Ticket", value=ticket, disabled=True, key="ticket_input")
+    with col2:
+        st.text_input("📍 Latitud", value=latitud, disabled=True, key="latitud_input")
+    with col3:
+        st.text_input("📍 Longitud", value=longitud, disabled=True, key="longitud_input")
+
+    # Segunda fila con Provincia, Municipio y Población
+    col4, col5, col6 = st.columns([1, 1, 1])
+    with col4:
+        st.text_input("📍 Provincia", value=provincia, disabled=True, key="provincia_input")
+    with col5:
+        st.text_input("🏙️ Municipio", value=municipio, disabled=True, key="municipio_input")
+    with col6:
+        st.text_input("👥 Población", value=poblacion, disabled=True, key="poblacion_input")
+
+    # Tercera fila con Vial, Número, Letra y CP
+    col7, col8, col9, col10 = st.columns([2, 1, 1, 1])
+    with col7:
+        st.text_input("🚦 Vial", value=vial, disabled=True, key="vial_input")
+    with col8:
+        st.text_input("🔢 Número", value=numero, disabled=True, key="numero_input")
+    with col9:
+        st.text_input("🔠 Letra", value=letra, disabled=True, key="letra_input")
+    with col10:
+        st.text_input("📮 Código Postal", value=cp, disabled=True, key="cp_input")
+
+    # Cuarta fila con Comentarios
+    col11 = st.columns(1)[0]  # Columna única para comentarios
+    with col11:
+        st.text_area("💬 Comentarios", value=comentario, disabled=True, key="comentario_input")
+
+    # Quinta fila con Fecha y Cto Cercana
+    col12, col13 = st.columns([1, 1])
+    with col12:
+        st.text_input("📅 Fecha Viabilidad", value=fecha_viabilidad, disabled=True, key="fecha_viabilidad_input")
+    with col13:
+        st.text_input("🔌 Cto Cercana", value=cto_cercana, disabled=True, key="cto_cercana_input")
+
+    # Sexta fila con Comentarios Comerciales
+    col14 = st.columns(1)[0]  # Columna única para comentarios
+    with col14:
+        st.text_area("📝 Comentarios Comerciales", value=comentarios_comercial, disabled=True, key="comentarios_comercial_input")
+
+    # Campos para completar
+    col15, col16, col17 = st.columns([1, 1, 1])
+    with col15:
+        olt = st.text_input("⚡ OLT", value="", key="olt_input")
+    with col16:
+        cto_admin = st.text_input("⚙️ Cto Admin", value="", key="cto_admin_input")
+    with col17:
+        id_cto = st.text_input("🔧 ID Cto", value="", key="id_cto_input")
+
+    # Nueva fila para Municipio Admin
+    col18 = st.columns(1)[0]  # Columna única para el municipio admin
+    with col18:
+        municipio_admin = st.text_input("🌍 Municipio Admin", value="", key="municipio_admin_input")
+
+    # Fila para "Es Serviciable?"
+    col19, col20 = st.columns([1, 1])
+    with col19:
+        serviciable = st.selectbox("🔍 ¿Es Serviciable?", ["Sí", "No"], index=0, key="serviciable_input")
+    with col20:
+        coste = st.number_input("💰 Coste", value=0.0, step=0.01, key="coste_input")
+
+    # Fila final para Comentarios Internos
+    col21 = st.columns(1)[0]  # Columna única para comentarios internos
+    with col21:
+        comentarios_internos = st.text_area("📄 Comentarios Internos", value="", key="comentarios_internos_input")
+
+    # Si el administrador guarda los cambios
+    if st.button(f"💾 Guardar cambios para el Ticket {ticket}"):
+        try:
+            # Conectar a la base de datos
+            conn = sqlite3.connect("data/usuarios.db")
+            cursor = conn.cursor()
+
+            # Sentencia UPDATE para guardar los cambios basados en el ticket
+            query = """
+                UPDATE viabilidades
+                SET olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
+                    coste = ?, comentarios_internos = ?
+                WHERE ticket = ?
+            """
+            # Ejecutar la sentencia con los valores proporcionados en el formulario
+            cursor.execute(query, (
+                olt, cto_admin, id_cto, municipio_admin, serviciable,
+                coste, comentarios_internos, ticket
+            ))
+
+            # Confirmar los cambios y cerrar la conexión
+            conn.commit()
+            conn.close()
+
+            # Mostrar mensaje de éxito
+            st.success(f"✅ Los cambios para el Ticket {ticket} han sido guardados correctamente.")
+
+        except Exception as e:
+            st.error(f"❌ Hubo un error al guardar los cambios: {e}")
+
 
 
 # Función principal de la app (Dashboard de administración)
@@ -404,6 +630,12 @@ def admin_dashboard():
                 file_name="imagenes_ofertas.zip",
                 mime="application/zip"
             )
+
+    # Opción: Viabilidades (En construcción)
+    elif opcion == "✔️ Viabilidades":
+        st.header("✔️ Viabilidades")
+        st.write("Esta sección está en construcción. Pronto podrás consultar las viabilidades aquí.")
+        viabilidades_seccion()
 
     # Opción: Generar Informes
     elif opcion == "📑 Generador de informes":
