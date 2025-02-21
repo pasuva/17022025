@@ -11,9 +11,10 @@ def delete_tables():
         cursor = conn.cursor()
 
         # Borrar las tablas si existen
-        cursor.execute("DROP TABLE IF EXISTS datos_uis;")
-        cursor.execute("DROP TABLE IF EXISTS datos_mapa;")
-        cursor.execute("DROP TABLE IF EXISTS formularios;")
+        #cursor.execute("DROP TABLE IF EXISTS datos_uis;")
+        #cursor.execute("DROP TABLE IF EXISTS datos_mapa;")
+        #cursor.execute("DROP TABLE IF EXISTS formularios;")
+        cursor.execute("DROP TABLE IF EXISTS nueva_tabla;")
 
         conn.commit()
         print("✅ Tablas eliminadas correctamente.")

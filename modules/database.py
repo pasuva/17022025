@@ -1,6 +1,7 @@
 import sqlite3
 import bcrypt
 import os
+from datetime import datetime
 
 # Asegurar que la carpeta 'data' existe
 os.makedirs("../data", exist_ok=True)
@@ -82,6 +83,34 @@ def create_db():
         )
         """)
 
+        # Crear tabla viavilidades
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS viabilidades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            latitud REAL,
+            longitud REAL,
+            provincia TEXT,
+            municipio TEXT,
+            poblacion TEXT,
+            vial TEXT,
+            numero TEXT,
+            letra TEXT,
+            cp TEXT,
+            comentario TEXT,
+            cto_cercana TEXT,
+            olt TEXT,
+            cto_admin TEXT,
+            id_cto TEXT,
+            municipio_admin TEXT,
+            serviciable TEXT,
+            coste REAL,
+            comentarios_comercial TEXT,
+            comentarios_internos TEXT,
+            fecha_viabilidad DATETIME DEFAULT CURRENT_TIMESTAMP,
+            ticket TEXT UNIQUE
+        )
+        """)
+
         conn.commit()  # Guardar cambios
         print("✅ Base de datos y tablas creadas correctamente.")
 
@@ -90,6 +119,16 @@ def create_db():
 
     finally:
         conn.close()
+
+def generar_ticket():
+    """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    fecha_actual = datetime.now().strftime("%Y%m%d")
+    cursor.execute("SELECT COUNT(*) FROM viabilidades WHERE ticket LIKE ?", (f"{fecha_actual}%",))
+    count = cursor.fetchone()[0] + 1
+    conn.close()
+    return f"{fecha_actual}{count:03d}"
 
 def add_user(nombre, rol, password):
     """ Agregar un usuario a la base de datos con contraseña encriptada """
@@ -123,4 +162,5 @@ def verify_user(nombre, password):
 if __name__ == "__main__":
     create_db()
     add_user("admin", "admin", "admin123")
+
 

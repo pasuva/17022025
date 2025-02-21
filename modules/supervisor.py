@@ -56,7 +56,7 @@ def supervisor_dashboard():
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
     # Menú lateral para elegir qué visualizar
-    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["Datos UIS", "Ofertas Comerciales", "Viabilidades"])
+    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📈 Datos UIS", "📊 Ofertas Comerciales", "✔️ Viabilidades"])
 
     # Registrar trazabilidad de la selección del menú
     detalles = f"El supervisor seleccionó la vista '{menu_opcion}'."
@@ -83,23 +83,32 @@ def supervisor_dashboard():
 
     # Cargar los datos directamente desde la base de datos según la opción seleccionada
     with st.spinner("Cargando datos... Esto puede tomar unos segundos."):
+
         try:
             conn = sqlite3.connect("data/usuarios.db")  # Asegúrate de que la ruta sea correcta
             # Verificar que la tabla exista
             query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = pd.read_sql(query_tables, conn)
-            if menu_opcion == "Datos UIS":
+
+            if menu_opcion == "📈 Datos UIS":
                 if 'datos_uis' not in tables['name'].values:
                     st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
                     conn.close()
                     return
                 query = "SELECT * FROM datos_uis"
-            else:
+            elif menu_opcion == "📊 Ofertas Comerciales":
                 if 'ofertas_comercial' not in tables['name'].values:
                     st.error("❌ La tabla 'ofertas_comercial' no se encuentra en la base de datos.")
                     conn.close()
                     return
                 query = "SELECT * FROM ofertas_comercial"
+            elif menu_opcion == "✔️ Viabilidades":
+                if 'viabilidades' not in tables['name'].values:
+                    st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
+                    conn.close()
+                    return
+                query = "SELECT * FROM viabilidades"
+
             data = pd.read_sql(query, conn)
             conn.close()
 
@@ -139,7 +148,7 @@ def supervisor_dashboard():
         st.download_button(
             label="Descargar como CSV",
             data=data[columnas].to_csv(index=False).encode(),
-            file_name="datos.csv",
+            file_name="viabilidades.csv",
             mime="text/csv"
         )
     elif descarga_opcion == "Excel":
@@ -148,14 +157,15 @@ def supervisor_dashboard():
         log_trazabilidad(st.session_state["username"], "Descarga de datos", detalles)
 
         with st.spinner("Generando archivo Excel... Esto puede tardar unos segundos."):
+
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data[columnas].to_excel(writer, index=False, sheet_name="Datos")
+                data[columnas].to_excel(writer, index=False, sheet_name="Viabilidades")
             towrite.seek(0)
             st.download_button(
                 label="Descargar como Excel",
                 data=towrite,
-                file_name="datos.xlsx",
+                file_name="viabilidades.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 

@@ -109,35 +109,40 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
         st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
 
 def comercial_dashboard():
-    """Muestra el mapa con los puntos asignados al comercial logueado usando folium."""
-    st.title("📍 Mapa de Ubicaciones")
+    """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
 
-    # Mostrar el ícono de usuario centrado y más grande en la barra lateral
+    # Mostrar el ícono de usuario y datos en la barra lateral
     st.sidebar.markdown("""
-            <style>
-                .user-circle {
-                    width: 100px;
-                    height: 100px;
-                    border-radius: 50%;
-                    background-color: #ff7f00;
-                    color: white;
-                    font-size: 50px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 30px;
-                    text-align: center;
-                    margin-left: auto;
-                    margin-right: auto;
-                }
-            </style>
-            <div class="user-circle">👤</div>
-            <div>Rol: Comercial</div>
-            """, unsafe_allow_html=True)
-
+        <style>
+            .user-circle {
+                width: 100px;
+                height: 100px;
+                border-radius: 50%;
+                background-color: #ff7f00;
+                color: white;
+                font-size: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 30px;
+                text-align: center;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        </style>
+        <div class="user-circle">👤</div>
+        <div>Rol: Comercial</div>
+    """, unsafe_allow_html=True)
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
-    # Verificar si el usuario está logueado
+    # Menú lateral para elegir la vista
+    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📊 Ofertas Comerciales", "✔️ Viabilidades"])
+
+    # Registrar trazabilidad de la selección del menú
+    detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
+    log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
+
+    # Verificar que el usuario esté logueado
     if "username" not in st.session_state:
         st.warning("⚠️ No has iniciado sesión. Por favor, inicia sesión para continuar.")
         time.sleep(2)
@@ -146,100 +151,241 @@ def comercial_dashboard():
 
     comercial = st.session_state.get("username")
 
-    # Registrar trazabilidad de la visualización del dashboard
-    log_trazabilidad(comercial, "Visualización de Dashboard",
-                     "El comercial visualizó el mapa de ubicaciones.")
+    # Sección de Ofertas Comerciales
+    if menu_opcion == "📊 Ofertas Comerciales":
+
+        st.title("📍 Mapa de Ubicaciones")
+
+        log_trazabilidad(comercial, "Visualización de Dashboard",
+                         "El comercial visualizó la sección de Ofertas Comerciales.")
+
+        # Cargar datos del comercial desde la base de datos
+        with st.spinner("⏳ Cargando los datos del comercial..."):
+            try:
+                conn = sqlite3.connect("data/usuarios.db")
+                query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
+                tables = pd.read_sql(query_tables, conn)
+                if 'datos_uis' not in tables['name'].values:
+                    st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
+                    conn.close()
+                    return
+
+                query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
+                df = pd.read_sql(query, conn, params=(comercial,))
+                conn.close()
+
+                if df.empty:
+                    st.warning("⚠️ No hay datos asignados a este comercial.")
+                    return
+            except Exception as e:
+                st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
+                return
+
+        if not isinstance(df, pd.DataFrame):
+            st.error("❌ Los datos no se cargaron correctamente.")
+            return
+
+        # Verificar que existan las columnas necesarias
+        for col in ['latitud', 'longitud', 'address_id']:
+            if col not in df.columns:
+                st.error(f"❌ No se encuentra la columna '{col}'.")
+                return
+
+        if "clicks" not in st.session_state:
+            st.session_state.clicks = []
+
+        # Obtener la ubicación del usuario
+        location = get_user_location()
+        if location is None:
+            st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
+            lat, lon = 43.463444, -3.790476  # Ubicación predeterminada
+        else:
+            lat, lon = location
+
+        # Crear y mostrar el mapa con folium
+        with st.spinner("⏳ Cargando mapa..."):
+            m = folium.Map(location=[lat, lon], zoom_start=12,
+                           tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                           attr="Google")
+            Geocoder().add_to(m)
+            marker_cluster = MarkerCluster().add_to(m)
+            for _, row in df.iterrows():
+                popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
+                folium.Marker(
+                    location=[row['latitud'], row['longitud']],
+                    popup=popup_text,
+                    icon=folium.Icon(color='blue', icon='info-sign')
+                ).add_to(marker_cluster)
+            map_data = st_folium(m, height=500, width=700)
+
+        # Registrar clics en el mapa
+        if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
+            st.session_state.clicks.append(map_data["last_object_clicked"])
+
+        # Mostrar enlace a Google Maps y formulario si hubo clic
+        if st.session_state.clicks:
+            last_click = st.session_state.clicks[-1]
+            lat_click = last_click.get("lat", "")
+            lon_click = last_click.get("lng", "")
+
+            if lat_click and lon_click:
+                google_maps_link = f"https://www.google.com/maps/search/?api=1&query={lat_click},{lon_click}"
+                st.markdown(f"""
+                    <div style="text-align: center; margin: 5px 0;">
+                        <a href="{google_maps_link}" target="_blank" style="
+                            background-color: #0078ff;
+                            color: white;
+                            padding: 6px 12px;
+                            font-size: 14px;
+                            font-weight: bold;
+                            border-radius: 6px;
+                            text-decoration: none;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                        ">
+                            🗺️ Ver en Google Maps
+                        </a>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            with st.spinner("⏳ Cargando formulario..."):
+                mostrar_formulario(last_click)
+
+    # Sección de Viabilidades (en construcción o con otra funcionalidad)
+    elif menu_opcion == "✔️ Viabilidades":
+        #st.info("Sección de Viabilidades en construcción.")
+        viabilidades_section()
 
     # Botón de Cerrar Sesión en la barra lateral
     if st.sidebar.button("Cerrar Sesión"):
         cerrar_sesion()
 
-    with st.spinner("⏳ Cargando los datos del comercial..."):
-        try:
-            conn = sqlite3.connect("data/usuarios.db")
-            query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
-            tables = pd.read_sql(query_tables, conn)
-            if 'datos_uis' not in tables['name'].values:
-                st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
-                conn.close()
-                return
 
-            query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
-            df = pd.read_sql(query, conn, params=(comercial,))
-            conn.close()
+def generar_ticket():
+    """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
+    conn = sqlite3.connect("data/usuarios.db")
+    cursor = conn.cursor()
+    fecha_actual = datetime.now().strftime("%Y%m%d")
+    cursor.execute("SELECT COUNT(*) FROM viabilidades WHERE ticket LIKE ?", (f"{fecha_actual}%",))
+    count = cursor.fetchone()[0] + 1
+    conn.close()
+    return f"{fecha_actual}{count:03d}"
 
-            if df.empty:
-                st.warning("⚠️ No hay datos asignados a este comercial.")
-                return
-        except Exception as e:
-            st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
-            return
+def guardar_viabilidad(datos):
+    """Inserta los datos en la tabla Viabilidades."""
+    conn = sqlite3.connect("data/usuarios.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO viabilidades (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, fecha_viabilidad, ticket)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+    """, datos)
+    conn.commit()
+    conn.close()
 
-    if not isinstance(df, pd.DataFrame):
-        st.error("❌ Los datos no se cargaron correctamente.")
-        return
+# Función para obtener viabilidades guardadas en la base de datos
+def obtener_viabilidades():
+    conn = sqlite3.connect("data/usuarios.db")  # Asegúrate de que el nombre coincide con tu base de datos
+    cursor = conn.cursor()
+    cursor.execute("SELECT latitud, longitud, ticket FROM viabilidades")
+    viabilidades = cursor.fetchall()
+    conn.close()
+    return viabilidades
 
-    for col in ['latitud', 'longitud', 'address_id']:
-        if col not in df.columns:
-            st.error(f"❌ No se encuentra la columna '{col}'.")
-            return
+def viabilidades_section():
+    st.title("✔️ Viabilidades")
+    st.write("Haz click en el mapa para agregar un marcador rojo que represente el punto de viabilidad.")
 
-    if "clicks" not in st.session_state:
-        st.session_state.clicks = []
+    # Inicializar estados de sesión si no existen
+    if "viabilidad_marker" not in st.session_state:
+        st.session_state.viabilidad_marker = None
+    if "map_center" not in st.session_state:
+        st.session_state.map_center = (43.463444, -3.790476)  # Ubicación inicial predeterminada
+    if "map_zoom" not in st.session_state:
+        st.session_state.map_zoom = 12  # Zoom inicial
 
-    location = get_user_location()
-    if location is None:
-        st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
-        lat, lon = 43.463444, -3.790476  # Ubicación predeterminada
-    else:
-        lat, lon = location
+    # Crear el mapa centrado en la última ubicación guardada
+    m = folium.Map(
+        location=st.session_state.map_center,
+        zoom_start=st.session_state.map_zoom,
+        tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        attr="Google"
+    )
 
-    with st.spinner("⏳ Cargando mapa..."):
-        m = folium.Map(location=[lat, lon], zoom_start=12, tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-                       attr="Google")
-        Geocoder().add_to(m)
-        marker_cluster = MarkerCluster().add_to(m)
-        for _, row in df.iterrows():
-            popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
-            folium.Marker(
-                location=[row['latitud'], row['longitud']],
-                popup=popup_text,
-                icon=folium.Icon(color='blue', icon='info-sign')
-            ).add_to(marker_cluster)
-        map_data = st_folium(m, height=500, width=700)
+    # Agregar marcadores de viabilidades guardadas en negro
+    viabilidades = obtener_viabilidades()
+    for v in viabilidades:
+        lat, lon, ticket = v
+        folium.Marker(
+            [lat, lon],
+            icon=folium.Icon(color="black"),
+            popup=f"Ticket: {ticket}"
+        ).add_to(m)
 
-    if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
-        st.session_state.clicks.append(map_data["last_object_clicked"])
+    # Si hay un marcador, agregarlo al mapa en rojo
+    if st.session_state.viabilidad_marker:
+        lat = st.session_state.viabilidad_marker["lat"]
+        lon = st.session_state.viabilidad_marker["lon"]
+        folium.Marker(
+            [lat, lon],
+            icon=folium.Icon(color="red")
+        ).add_to(m)
 
-    if st.session_state.clicks:
-        last_click = st.session_state.clicks[-1]
-        lat = last_click.get("lat", "")
-        lon = last_click.get("lng", "")
+    # Mostrar el mapa y capturar clics
+    map_data = st_folium(m, height=500, width=700)
+    Geocoder().add_to(m)
 
-        if lat and lon:
-            google_maps_link = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+    # Detectar el clic para agregar el marcador
+    if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+        click = map_data["last_clicked"]
+        st.session_state.viabilidad_marker = {"lat": click["lat"], "lon": click["lng"]}
+        st.session_state.map_center = (click["lat"], click["lng"])  # Guardar la nueva vista
+        st.session_state.map_zoom = map_data["zoom"]  # Actualizar el zoom también
+        st.rerun()  # Usamos rerun para actualizar solo cuando un marcador se haya colocado
 
-            st.markdown(f"""
-                <div style="text-align: center; margin: 5px 0;">
-                    <a href="{google_maps_link}" target="_blank" style="
-                        background-color: #0078ff;
-                        color: white;
-                        padding: 6px 12px;
-                        font-size: 14px;
-                        font-weight: bold;
-                        border-radius: 6px;
-                        text-decoration: none;
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 6px;
-                    ">
-                        🗺️ Ver en Google Maps
-                    </a>
-                </div>
-            """, unsafe_allow_html=True)
+    # Botón para eliminar el marcador y crear uno nuevo
+    if st.session_state.viabilidad_marker:
+        if st.button("Eliminar marcador y crear uno nuevo"):
+            st.session_state.viabilidad_marker = None
+            st.session_state.map_center = (43.463444, -3.790476)  # Vuelves a la ubicación inicial
+            st.rerun()
 
-        with st.spinner("⏳ Cargando formulario..."):
-            mostrar_formulario(last_click)
+    # Mostrar el formulario si hay un marcador
+    if st.session_state.viabilidad_marker:
+        lat = st.session_state.viabilidad_marker["lat"]
+        lon = st.session_state.viabilidad_marker["lon"]
+
+        st.subheader("Completa los datos del punto de viabilidad")
+        with st.form("viabilidad_form"):
+            st.text_input("Latitud", value=str(lat), disabled=True)
+            st.text_input("Longitud", value=str(lon), disabled=True)
+            provincia = st.text_input("Provincia")
+            municipio = st.text_input("Municipio")
+            poblacion = st.text_input("Población")
+            vial = st.text_input("Vial")
+            numero = st.text_input("Número")
+            letra = st.text_input("Letra")
+            cp = st.text_input("Código Postal")
+            comentario = st.text_area("Comentario")
+            submit = st.form_submit_button("Enviar Formulario")
+
+            if submit:
+                # Generar ticket único
+                ticket = generar_ticket()
+
+                # Insertar en la base de datos
+                guardar_viabilidad(
+                    (lat, lon, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket))
+
+                st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+
+                # Resetear marcador para permitir nuevas viabilidades
+                st.session_state.viabilidad_marker = None
+                st.session_state.map_center = (43.463444, -3.790476)  # Vuelves a la ubicación inicial
+                st.rerun()
+
+
+
 def get_user_location():
     """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
     html_code = """
