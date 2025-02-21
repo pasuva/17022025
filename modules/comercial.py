@@ -140,7 +140,7 @@ def comercial_dashboard():
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
     # Menú lateral para elegir la vista
-    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📊 Ofertas Comerciales", "✔️ Viabilidades"])
+    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📊 Ofertas Comerciales", "✔️ Viabilidades", "📈 Visualización de Datos"])
 
     # Registrar trazabilidad de la selección del menú
     detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
@@ -289,10 +289,64 @@ def comercial_dashboard():
             with st.spinner("⏳ Cargando formulario..."):
                 mostrar_formulario(last_click)
 
-    # Sección de Viabilidades (en construcción o con otra funcionalidad)
+    # Sección de Viabilidades
     elif menu_opcion == "✔️ Viabilidades":
         #st.info("Sección de Viabilidades en construcción.")
         viabilidades_section()
+
+    # Sección de Visualización de datos (en construcción o con otra funcionalidad)
+    elif menu_opcion == "📈 Visualización de Datos":
+        st.subheader("📊 Datos de Ofertas con Contrato")
+
+        # Verificar si el usuario ha iniciado sesión
+        if "username" not in st.session_state:
+            st.error("❌ No has iniciado sesión. Por favor, vuelve a la pantalla de inicio de sesión.")
+            st.stop()
+
+        comercial_usuario = st.session_state["username"]  # Obtener el comercial logueado
+
+        try:
+            conn = sqlite3.connect("data/usuarios.db")
+
+            # Consulta SQL con filtro por comercial logueado (primera tabla: ofertas_comercial)
+            query_ofertas = """
+            SELECT oc.apartment_id, oc.provincia, oc.municipio, oc.poblacion, 
+                   oc.vial, oc.numero, oc.letra, oc.cp, oc.nombre_cliente, 
+                   oc.telefono, oc.direccion_alternativa, du.site_operational_state
+            FROM ofertas_comercial oc
+            LEFT JOIN datos_uis du ON oc.apartment_id = du.apartment_id
+            WHERE LOWER(oc.Contrato) = 'sí' 
+            AND LOWER(du.comercial) = LOWER(?)
+            """
+
+            df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
+
+            # Consulta SQL para la segunda tabla: viabilidades
+            query_viabilidades = """
+            SELECT provincia, municipio, poblacion, vial, numero, letra, cp, 
+                   serviciable, coste, comentarios_comercial
+            FROM viabilidades
+            """
+
+            df_viabilidades = pd.read_sql(query_viabilidades, conn)
+            conn.close()
+
+            # Verificar si hay datos para mostrar en la primera tabla (ofertas_comercial)
+            if df_ofertas.empty:
+                st.warning(f"⚠️ No hay ofertas con contrato activo para el comercial '{comercial_usuario}'.")
+            else:
+                st.subheader("📋 Tabla de Ofertas con Contrato Activo")
+                st.dataframe(df_ofertas, use_container_width=True)
+
+            # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
+            if df_viabilidades.empty:
+                st.warning("⚠️ No hay datos disponibles en la tabla de viabilidades.")
+            else:
+                st.subheader("📋 Tabla de Viabilidades")
+                st.dataframe(df_viabilidades, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"❌ Error al cargar los datos: {e}")
 
     # Botón de Cerrar Sesión en la barra lateral
     if st.sidebar.button("Cerrar Sesión"):
