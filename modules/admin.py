@@ -1,8 +1,6 @@
 import zipfile
 
-from folium.plugins import Geocoder
 import folium
-import streamlit as st
 import pandas as pd
 import io  # Necesario para trabajar con flujos de bytes
 import sqlite3
@@ -14,7 +12,6 @@ from reportlab.pdfgen import canvas
 import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
 import streamlit as st
-import time
 
 # Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime

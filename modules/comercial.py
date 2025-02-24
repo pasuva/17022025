@@ -114,8 +114,6 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
-
-    # Mostrar el ícono de usuario y datos en la barra lateral
     st.sidebar.markdown("""
         <style>
             .user-circle {
@@ -139,14 +137,10 @@ def comercial_dashboard():
     """, unsafe_allow_html=True)
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
-    # Menú lateral para elegir la vista
     menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📊 Ofertas Comerciales", "✔️ Viabilidades", "📈 Visualización de Datos"])
-
-    # Registrar trazabilidad de la selección del menú
     detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
 
-    # Verificar que el usuario esté logueado
     if "username" not in st.session_state:
         st.warning("⚠️ No has iniciado sesión. Por favor, inicia sesión para continuar.")
         time.sleep(2)
@@ -155,22 +149,41 @@ def comercial_dashboard():
 
     comercial = st.session_state.get("username")
 
-    # Sección de Ofertas Comerciales
+    # --- Comprobación de cto_con_proyecto ---
+    try:
+        conn = sqlite3.connect("data/usuarios.db")
+        # Se consulta en la tabla datos_uis utilizando la columna "comercial" (que coincide con el usuario logueado)
+        query_proyecto = "SELECT cto_con_proyecto FROM datos_uis WHERE LOWER(comercial) = LOWER(?)"
+        usuario_df = pd.read_sql(query_proyecto, conn, params=(comercial,))
+        conn.close()
+        if not usuario_df.empty:
+            cto_con_proyecto = usuario_df.iloc[0]['cto_con_proyecto']
+        else:
+            cto_con_proyecto = None
+    except Exception as e:
+        st.error(f"Error al obtener la configuración cto_con_proyecto: {e}")
+        cto_con_proyecto = None
+
+    # Se define el ícono del marcador según el valor de cto_con_proyecto:
+    # Si es "SI" se usa el ícono normal; si es vacío, nulo o "NO", se usa otro.
+    if cto_con_proyecto and str(cto_con_proyecto).upper() == "SI":
+        marker_icon_type = 'info-sign'
+    else:
+        marker_icon_type = 'exclamation-sign'
+    # -------------------------------------------------
+
     if menu_opcion == "📊 Ofertas Comerciales":
-
         st.title("📍 Mapa de Ubicaciones")
-
-        st.markdown("""**Leyenda:**
+        st.markdown("""
          🟢 Serviciable
          🟠 Oferta (Contrato: Sí)
          ⚫ Oferta (No Interesado)
-         🔵 Sin Oferta/Contrato
+         🔵 Sin Oferta
+         🔴 No Serviciable
         """)
 
-        log_trazabilidad(comercial, "Visualización de Dashboard",
-                         "El comercial visualizó la sección de Ofertas Comerciales.")
+        log_trazabilidad(comercial, "Visualización de Dashboard", "El comercial visualizó la sección de Ofertas Comerciales.")
 
-        # Cargar datos del comercial desde la base de datos
         with st.spinner("⏳ Cargando los datos del comercial..."):
             try:
                 conn = sqlite3.connect("data/usuarios.db")
@@ -185,14 +198,11 @@ def comercial_dashboard():
                 query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
                 df = pd.read_sql(query, conn, params=(comercial,))
 
-                # Obtener los apartment_id con ofertas y su estado de contrato
                 query_ofertas = "SELECT apartment_id, Contrato FROM ofertas_comercial"
                 ofertas_df = pd.read_sql(query_ofertas, conn)
 
-                # Obtener los apartment_id que están en ams con site_operational_state = "serviciable"
                 query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(site_operational_state) = 'serviciable'"
                 ams_df = pd.read_sql(query_ams, conn)
-
                 conn.close()
 
                 if df.empty:
@@ -206,7 +216,6 @@ def comercial_dashboard():
             st.error("❌ Los datos no se cargaron correctamente.")
             return
 
-        # Verificar que existan las columnas necesarias
         for col in ['latitud', 'longitud', 'address_id', 'apartment_id']:
             if col not in df.columns:
                 st.error(f"❌ No se encuentra la columna '{col}'.")
@@ -215,21 +224,16 @@ def comercial_dashboard():
         if "clicks" not in st.session_state:
             st.session_state.clicks = []
 
-        # Obtener la ubicación del usuario
         location = get_user_location()
         if location is None:
             st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
-            lat, lon = 43.463444, -3.790476  # Ubicación predeterminada
+            lat, lon = 43.463444, -3.790476
         else:
             lat, lon = location
 
-        # Crear conjuntos para búsqueda rápida
-        serviciable_set = set(ams_df["apartment_id"])  # 🟢 Tiene site_operational_state = "serviciable"
-
-        # Crear diccionario de ofertas con su contrato
+        serviciable_set = set(ams_df["apartment_id"])
         contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
 
-        # Crear y mostrar el mapa con folium
         with st.spinner("⏳ Cargando mapa..."):
             m = folium.Map(location=[lat, lon], zoom_start=12,
                            tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
@@ -241,32 +245,29 @@ def comercial_dashboard():
                 popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
                 apartment_id = row['apartment_id']
 
-                # Determinar color del marcador
                 if apartment_id in serviciable_set:
-                    marker_color = 'green'  # 🟢 Tiene site_operational_state = "serviciable"
+                    marker_color = 'green'  # 🟢 Serviciable
                 elif apartment_id in contrato_dict:
                     if contrato_dict[apartment_id] == "Sí":
-                        marker_color = 'orange'  # 🔶 Tiene oferta con Contrato = "Sí"
+                        marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
                     elif contrato_dict[apartment_id] == "No Interesado":
-                        marker_color = 'gray'  # ⚪️ Tiene oferta pero "No Interesado"
+                        marker_color = 'gray'  # ⚫ Oferta (No Interesado)
                     else:
-                        marker_color = 'blue'  # 🔵 No cumple ninguna de las condiciones anteriores
+                        marker_color = 'blue'  # 🔵 Sin oferta ni contrato
                 else:
-                    marker_color = 'blue'  # 🔵 No tiene oferta ni contrato
+                    marker_color = 'blue'  # 🔵 Sin oferta ni contrato
 
                 folium.Marker(
                     location=[row['latitud'], row['longitud']],
                     popup=popup_text,
-                    icon=folium.Icon(color=marker_color, icon='info-sign')
+                    icon=folium.Icon(color=marker_color, icon=marker_icon_type)
                 ).add_to(marker_cluster)
 
             map_data = st_folium(m, height=500, width=700)
 
-        # Registrar clics en el mapa
         if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
             st.session_state.clicks.append(map_data["last_object_clicked"])
 
-        # Mostrar enlace a Google Maps y formulario si hubo clic
         if st.session_state.clicks:
             last_click = st.session_state.clicks[-1]
             lat_click = last_click.get("lat", "")
@@ -295,6 +296,7 @@ def comercial_dashboard():
 
             with st.spinner("⏳ Cargando formulario..."):
                 mostrar_formulario(last_click)
+
 
     # Sección de Viabilidades
     elif menu_opcion == "✔️ Viabilidades":
