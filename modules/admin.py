@@ -14,6 +14,7 @@ from reportlab.pdfgen import canvas
 import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
 import streamlit as st
+import time
 
 # Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime
@@ -239,11 +240,24 @@ def viabilidades_seccion():
     with col2:
         # Mostrar la tabla de viabilidades
         st.subheader("Tabla de Viabilidades")
-        st.dataframe(viabilidades_df, use_container_width=True)
+        # Identificar los apartment_id repetidos
+        viabilidades_df['is_duplicate'] = viabilidades_df['apartment_id'].duplicated(keep=False)
+
+        # Función para resaltar las celdas con apartment_id duplicados
+        def highlight_duplicates(val):
+            if isinstance(val, str) and val in viabilidades_df[viabilidades_df['is_duplicate']]['apartment_id'].values:
+                return 'background-color: yellow'  # Cambia el color que desees
+            return ''
+
+        # Aplicar el estilo a la columna apartment_id
+        styled_df = viabilidades_df.style.applymap(highlight_duplicates, subset=['apartment_id'])
+
+        # Mostrar la tabla con el estilo aplicado
+        st.dataframe(styled_df, use_container_width=True)
 
         # Añadir un botón de refresco para actualizar la tabla
         if st.button("🔄 Refrescar Tabla"):
-            st.rerun()  # Utiliza st.rerun() en lugar de st.experimental_rerun()
+            st.rerun()
 
     # Verificación del objeto del clic
     if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
@@ -397,7 +411,9 @@ def mostrar_formulario(click_data):
         except Exception as e:
             st.error(f"❌ Hubo un error al guardar los cambios: {e}")
 
-
+def obtener_apartment_ids_existentes(cursor):
+    cursor.execute("SELECT apartment_id FROM datos_uis")
+    return {row[0] for row in cursor.fetchall()}
 
 # Función principal de la app (Dashboard de administración)
 def admin_dashboard():
@@ -827,12 +843,19 @@ def admin_dashboard():
 
         uploaded_file = st.file_uploader("Selecciona un archivo Excel o CSV", type=["xlsx", "csv"])
 
+        # Función para manejar valores nulos o vacíos
+        def manejar_valores_nulos(valor):
+            if pd.isna(valor) or (isinstance(valor, str) and valor.strip() == ""):
+                return None  # Se traduce en NULL en la base de datos
+            return valor
+
         if uploaded_file is not None:
             try:
-                if uploaded_file.name.endswith(".xlsx"):
-                    data = pd.read_excel(uploaded_file)
-                elif uploaded_file.name.endswith(".csv"):
-                    data = pd.read_csv(uploaded_file)
+                with st.spinner("Cargando archivo..."):
+                    if uploaded_file.name.endswith(".xlsx"):
+                        data = pd.read_excel(uploaded_file)
+                    elif uploaded_file.name.endswith(".csv"):
+                        data = pd.read_csv(uploaded_file)
 
                 columnas_requeridas = [
                     "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
@@ -841,41 +864,135 @@ def admin_dashboard():
                     "cto_con_proyecto", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
                 ]
 
-                data_filtrada = data[columnas_requeridas] if all(
-                    col in data.columns for col in columnas_requeridas) else None
+                columnas_faltantes = [col for col in columnas_requeridas if col not in data.columns]
 
-                if data_filtrada is not None:
+                if columnas_faltantes:
+                    st.error(
+                        f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
+                else:
+                    data_filtrada = data[columnas_requeridas].copy()
+                    # Convertir LATITUD y LONGITUD a float, reemplazando comas por puntos
+                    data_filtrada.loc[:, "LATITUD"] = data_filtrada["LATITUD"].astype(str).str.replace(",", ".").astype(
+                        float)
+                    data_filtrada.loc[:, "LONGITUD"] = data_filtrada["LONGITUD"].astype(str).str.replace(",",
+                                                                                                         ".").astype(
+                        float)
+
                     st.write("Datos filtrados correctamente. Procediendo a cargar en la base de datos...")
                     conn = obtener_conexion()
                     cursor = conn.cursor()
 
+                    existing_apartment_ids = obtener_apartment_ids_existentes(cursor)
+
+                    nuevos_registros = 0
+                    registros_actualizados = 0
+                    errores = []
+                    total_filas = len(data_filtrada)
+                    progress_bar = st.progress(0)
+                    batch_size = 1000
+                    insert_values = []
+                    update_values = []
+                    update_queries = []
+
                     for index, row in data_filtrada.iterrows():
-                        cursor.execute("""SELECT * FROM datos_uis WHERE apartment_id = ?""", (row['apartment_id'],))
-                        if not cursor.fetchone():
-                            latitud = float(row["LATITUD"].replace(",", "."))
-                            longitud = float(row["LONGITUD"].replace(",", "."))
-                            cursor.execute("""INSERT INTO datos_uis (id_ams, apartment_id, address_id, provincia, 
-                                              municipio, poblacion, vial, numero, parcela_catastral, letra, cp, 
-                                              site_operational_state, apartment_operational_state, cto_id, olt, 
-                                              cto, LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, 
-                                              SERVICIABLE, MOTIVO, contrato_uis) 
-                                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                                           (row["id_ams"], row["apartment_id"], row["address_id"], row["provincia"],
-                                            row["municipio"], row["poblacion"], row["vial"], row["numero"],
-                                            row["parcela_catastral"], row["letra"], row["cp"],
-                                            row["site_operational_state"],
-                                            row["apartment_operational_state"], row["cto_id"], row["olt"], row["cto"],
-                                            latitud, longitud, row["cto_con_proyecto"], row["COMERCIAL"], row["ZONA"],
-                                            row["FECHA"], row["SERVICIABLE"], row["MOTIVO"], row["contrato_uis"]))
+                        try:
+                            if row['apartment_id'] in existing_apartment_ids:
+                                cursor.execute("SELECT * FROM datos_uis WHERE apartment_id = ?", (row['apartment_id'],))
+                                existing_row = cursor.fetchone()
+                                columnas_bd = [desc[0] for desc in cursor.description]
+                                diferencias = {}
+
+                                for i, col in enumerate(columnas_bd):
+                                    if col in columnas_requeridas:
+                                        # Comparamos convirtiendo el valor del Excel con la función para tener en cuenta nulos/vacíos
+                                        if str(existing_row[i]) != str(manejar_valores_nulos(row[col])):
+                                            diferencias[col] = manejar_valores_nulos(row[col])
+
+                                if diferencias:
+                                    update_query = "UPDATE datos_uis SET " + ", ".join(
+                                        f"{col} = ?" for col in diferencias.keys()) + " WHERE apartment_id = ?"
+                                    update_values.append(list(diferencias.values()) + [row['apartment_id']])
+                                    update_queries.append(update_query)
+                                    registros_actualizados += 1
+                            else:
+                                insert_values.append((
+                                    manejar_valores_nulos(row["id_ams"]),
+                                    manejar_valores_nulos(row["apartment_id"]),
+                                    manejar_valores_nulos(row["address_id"]),
+                                    manejar_valores_nulos(row["provincia"]),
+                                    manejar_valores_nulos(row["municipio"]),
+                                    manejar_valores_nulos(row["poblacion"]),
+                                    manejar_valores_nulos(row["vial"]),
+                                    manejar_valores_nulos(row["numero"]),
+                                    manejar_valores_nulos(row["parcela_catastral"]),
+                                    manejar_valores_nulos(row["letra"]),
+                                    manejar_valores_nulos(row["cp"]),
+                                    manejar_valores_nulos(row["site_operational_state"]),
+                                    manejar_valores_nulos(row["apartment_operational_state"]),
+                                    manejar_valores_nulos(row["cto_id"]),
+                                    manejar_valores_nulos(row["olt"]),
+                                    manejar_valores_nulos(row["cto"]),
+                                    manejar_valores_nulos(row["LATITUD"]),
+                                    manejar_valores_nulos(row["LONGITUD"]),
+                                    manejar_valores_nulos(row["cto_con_proyecto"]),
+                                    manejar_valores_nulos(row["COMERCIAL"]),
+                                    manejar_valores_nulos(row["ZONA"]),
+                                    manejar_valores_nulos(row["FECHA"]),
+                                    manejar_valores_nulos(row["SERVICIABLE"]),
+                                    manejar_valores_nulos(row["MOTIVO"]),
+                                    manejar_valores_nulos(row["contrato_uis"])
+                                ))
+                                nuevos_registros += 1
+
+                        except Exception as e:
+                            errores.append(f"Fila {index + 1}: {e}")
+
+                        if (index + 1) % batch_size == 0:
+                            if insert_values:
+                                cursor.executemany("""
+                                        INSERT INTO datos_uis (id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
+                                        parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, cto_id, olt, cto, 
+                                        LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, SERVICIABLE, MOTIVO, contrato_uis) 
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, insert_values)
+                                insert_values = []
+
+                            for query, values in zip(update_queries, update_values):
+                                cursor.execute(query, values)
+                            update_queries = []
+                            update_values = []
+
+                            conn.commit()
+
+                        progress_bar.progress((index + 1) / total_filas)
+
+                    if insert_values:
+                        cursor.executemany("""
+                                INSERT INTO datos_uis (id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
+                                parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, cto_id, olt, cto, 
+                                LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, SERVICIABLE, MOTIVO, contrato_uis) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, insert_values)
+
+                    for query, values in zip(update_queries, update_values):
+                        cursor.execute(query, values)
+
                     conn.commit()
                     conn.close()
-                    st.success("Datos cargados exitosamente.")
+
+                    st.success(
+                        f"Datos cargados exitosamente.\n\n - Nuevos registros: {nuevos_registros}\n - Registros actualizados: {registros_actualizados}")
                     log_trazabilidad(st.session_state["username"], "Cargar Nuevos Datos",
-                                     "El admin cargó nuevos datos al sistema.")
-                else:
-                    st.error("❌ El archivo no contiene las columnas requeridas o está mal formateado.")
+                                     f"El admin cargó {nuevos_registros} nuevos registros y actualizó {registros_actualizados} registros en el sistema.")
+
+                    if errores:
+                        st.warning(
+                            f"❌ Algunos registros no se pudieron procesar correctamente:\n\n" + "\n".join(errores))
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
+
+
+
 
     # Opción: Trazabilidad y logs
     elif opcion == "📜 Trazabilidad y logs":

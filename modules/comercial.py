@@ -160,6 +160,13 @@ def comercial_dashboard():
 
         st.title("📍 Mapa de Ubicaciones")
 
+        st.markdown("""**Leyenda:**
+         🟢 Serviciable
+         🟠 Oferta (Contrato: Sí)
+         ⚫ Oferta (No Interesado)
+         🔵 Sin Oferta/Contrato
+        """)
+
         log_trazabilidad(comercial, "Visualización de Dashboard",
                          "El comercial visualizó la sección de Ofertas Comerciales.")
 
@@ -321,14 +328,16 @@ def comercial_dashboard():
 
             df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
 
-            # Consulta SQL para la segunda tabla: viabilidades
+            # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """
-            SELECT provincia, municipio, poblacion, vial, numero, letra, cp, 
-                   serviciable, coste, comentarios_comercial
-            FROM viabilidades
+            SELECT v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
+                   v.serviciable, v.coste, v.comentarios_comercial
+            FROM viabilidades v
+            WHERE LOWER(v.usuario) = LOWER(?)
             """
 
-            df_viabilidades = pd.read_sql(query_viabilidades, conn)
+            df_viabilidades = pd.read_sql(query_viabilidades, conn, params=(comercial_usuario,))
+
             conn.close()
 
             # Verificar si hay datos para mostrar en la primera tabla (ofertas_comercial)
@@ -340,7 +349,7 @@ def comercial_dashboard():
 
             # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
             if df_viabilidades.empty:
-                st.warning("⚠️ No hay datos disponibles en la tabla de viabilidades.")
+                st.warning(f"⚠️ No hay viabilidades disponibles para el comercial '{comercial_usuario}'.")
             else:
                 st.subheader("📋 Tabla de Viabilidades")
                 st.dataframe(df_viabilidades, use_container_width=True)
@@ -380,28 +389,55 @@ def generar_ticket():
     return ticket
 
 def guardar_viabilidad(datos):
-    """Inserta los datos en la tabla Viabilidades."""
+    """
+    Inserta los datos en la tabla Viabilidades.
+    Se espera que 'datos' sea una tupla con el siguiente orden:
+    (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
+    """
     conn = sqlite3.connect("data/usuarios.db")
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO viabilidades (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, fecha_viabilidad, ticket, nombre_cliente, telefono)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+        INSERT INTO viabilidades (
+            latitud, 
+            longitud, 
+            provincia, 
+            municipio, 
+            poblacion, 
+            vial, 
+            numero, 
+            letra, 
+            cp, 
+            comentario, 
+            fecha_viabilidad, 
+            ticket, 
+            nombre_cliente, 
+            telefono, 
+            usuario
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
     """, datos)
     conn.commit()
     conn.close()
-    st.success(f"✅ Los cambios para la viabilidad han sido guardados correctamente.")
+    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente.")
+
 
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
-    conn = sqlite3.connect("data/usuarios.db")  # Asegúrate de que el nombre coincide con tu base de datos
+    """Recupera las viabilidades asociadas al usuario logueado."""
+    conn = sqlite3.connect("data/usuarios.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT latitud, longitud, ticket FROM viabilidades")
+    # Se asume que el usuario logueado está guardado en st.session_state["username"]
+    cursor.execute("SELECT latitud, longitud, ticket FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
     viabilidades = cursor.fetchall()
     conn.close()
     return viabilidades
 
+
 def viabilidades_section():
     st.title("✔️ Viabilidades")
+    st.markdown("""**Leyenda:**
+             ⚫ Viabilidad ya existente
+             🔴 Viabilidad nueva
+            """)
     st.write("Haz click en el mapa para agregar un marcador rojo que represente el punto de viabilidad.")
 
     # Inicializar estados de sesión si no existen
@@ -420,7 +456,7 @@ def viabilidades_section():
         attr="Google"
     )
 
-    # Agregar marcadores de viabilidades guardadas en negro
+    # Agregar marcadores de viabilidades guardadas (solo las del usuario logueado) en negro
     viabilidades = obtener_viabilidades()
     for v in viabilidades:
         lat, lon, ticket = v
@@ -449,13 +485,13 @@ def viabilidades_section():
         st.session_state.viabilidad_marker = {"lat": click["lat"], "lon": click["lng"]}
         st.session_state.map_center = (click["lat"], click["lng"])  # Guardar la nueva vista
         st.session_state.map_zoom = map_data["zoom"]  # Actualizar el zoom también
-        st.rerun()  # Usamos rerun para actualizar solo cuando un marcador se haya colocado
+        st.rerun()  # Actualizamos cuando se coloca un marcador
 
     # Botón para eliminar el marcador y crear uno nuevo
     if st.session_state.viabilidad_marker:
         if st.button("Eliminar marcador y crear uno nuevo"):
             st.session_state.viabilidad_marker = None
-            st.session_state.map_center = (43.463444, -3.790476)  # Vuelves a la ubicación inicial
+            st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
             st.rerun()
 
     # Mostrar el formulario si hay un marcador
@@ -483,15 +519,30 @@ def viabilidades_section():
                 # Generar ticket único
                 ticket = generar_ticket()
 
-                # Insertar en la base de datos
-                guardar_viabilidad(
-                    (lat, lon, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono))
+                # Insertar en la base de datos.
+                # Se añade el usuario logueado (st.session_state["username"]) al final de la tupla.
+                guardar_viabilidad((
+                    lat,
+                    lon,
+                    provincia,
+                    municipio,
+                    poblacion,
+                    vial,
+                    numero,
+                    letra,
+                    cp,
+                    comentario,
+                    ticket,
+                    nombre_cliente,
+                    telefono,
+                    st.session_state["username"]
+                ))
 
                 st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
 
                 # Resetear marcador para permitir nuevas viabilidades
                 st.session_state.viabilidad_marker = None
-                st.session_state.map_center = (43.463444, -3.790476)  # Vuelves a la ubicación inicial
+                st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
                 st.rerun()
 
 
