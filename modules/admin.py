@@ -799,7 +799,7 @@ def admin_dashboard():
 
         st.subheader("Agregar Nuevo Usuario")
         nombre = st.text_input("Nombre del Usuario")
-        rol = st.selectbox("Selecciona el Rol", ["admin", "supervisor", "comercial"])
+        rol = st.selectbox("Selecciona el Rol", ["admin", "supervisor", "comercial", "comercial_jefe"])
         password = st.text_input("Contraseña", type="password")
         if st.button("Agregar Usuario"):
             if nombre and password:
@@ -834,17 +834,15 @@ def admin_dashboard():
     # Opción: Cargar Nuevos Datos
     elif opcion == "📤 Cargar Nuevos Datos":
         st.header("📤 Cargar Nuevos Datos")
-        st.write("Aquí puedes cargar un archivo Excel o CSV para agregar nuevos datos a la base de datos.")
-        log_trazabilidad(st.session_state["username"], "Cargar Nuevos Datos",
-                         "El admin accedió a la sección de carga de nuevos datos.")
+        st.write(
+            "Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos. ¡ATENCIÓN! Se eliminarán todos los datos actuales.")
+        log_trazabilidad(
+            st.session_state["username"],
+            "Cargar Nuevos Datos",
+            "El admin accedió a la sección de carga de nuevos datos y se procederá a reemplazar el contenido de la tabla."
+        )
 
         uploaded_file = st.file_uploader("Selecciona un archivo Excel o CSV", type=["xlsx", "csv"])
-
-        # Función para manejar valores nulos o vacíos
-        def manejar_valores_nulos(valor):
-            if pd.isna(valor) or (isinstance(valor, str) and valor.strip() == ""):
-                return None  # Se traduce en NULL en la base de datos
-            return valor
 
         if uploaded_file is not None:
             try:
@@ -865,126 +863,73 @@ def admin_dashboard():
 
                 if columnas_faltantes:
                     st.error(
-                        f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
+                        f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}"
+                    )
                 else:
                     data_filtrada = data[columnas_requeridas].copy()
                     # Convertir LATITUD y LONGITUD a float, reemplazando comas por puntos
-                    data_filtrada.loc[:, "LATITUD"] = data_filtrada["LATITUD"].astype(str).str.replace(",", ".").astype(
-                        float)
-                    data_filtrada.loc[:, "LONGITUD"] = data_filtrada["LONGITUD"].astype(str).str.replace(",",
-                                                                                                         ".").astype(
+                    data_filtrada["LATITUD"] = data_filtrada["LATITUD"].astype(str).str.replace(",", ".").astype(float)
+                    data_filtrada["LONGITUD"] = data_filtrada["LONGITUD"].astype(str).str.replace(",", ".").astype(
                         float)
 
-                    st.write("Datos filtrados correctamente. Procediendo a cargar en la base de datos...")
+                    st.write("Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
                     conn = obtener_conexion()
                     cursor = conn.cursor()
 
-                    existing_apartment_ids = obtener_apartment_ids_existentes(cursor)
+                    # Borramos todos los registros de la tabla
+                    cursor.execute("DELETE FROM datos_uis")
+                    conn.commit()
 
-                    nuevos_registros = 0
-                    registros_actualizados = 0
-                    errores = []
-                    total_filas = len(data_filtrada)
-                    progress_bar = st.progress(0)
-                    batch_size = 1000
+                    # Preparamos los datos para la inserción
                     insert_values = []
-                    update_values = []
-                    update_queries = []
-
                     for index, row in data_filtrada.iterrows():
-                        try:
-                            if row['apartment_id'] in existing_apartment_ids:
-                                cursor.execute("SELECT * FROM datos_uis WHERE apartment_id = ?", (row['apartment_id'],))
-                                existing_row = cursor.fetchone()
-                                columnas_bd = [desc[0] for desc in cursor.description]
-                                diferencias = {}
+                        insert_values.append((
+                            row["id_ams"],
+                            row["apartment_id"],
+                            row["address_id"],
+                            row["provincia"],
+                            row["municipio"],
+                            row["poblacion"],
+                            row["vial"],
+                            row["numero"],
+                            row["parcela_catastral"],
+                            row["letra"],
+                            row["cp"],
+                            row["site_operational_state"],
+                            row["apartment_operational_state"],
+                            row["cto_id"],
+                            row["olt"],
+                            row["cto"],
+                            row["LATITUD"],
+                            row["LONGITUD"],
+                            row["cto_con_proyecto"],
+                            row["COMERCIAL"],
+                            row["ZONA"],
+                            row["FECHA"],
+                            row["SERVICIABLE"],
+                            row["MOTIVO"],
+                            row["contrato_uis"]
+                        ))
 
-                                for i, col in enumerate(columnas_bd):
-                                    if col in columnas_requeridas:
-                                        # Comparamos convirtiendo el valor del Excel con la función para tener en cuenta nulos/vacíos
-                                        if str(existing_row[i]) != str(manejar_valores_nulos(row[col])):
-                                            diferencias[col] = manejar_valores_nulos(row[col])
-
-                                if diferencias:
-                                    update_query = "UPDATE datos_uis SET " + ", ".join(
-                                        f"{col} = ?" for col in diferencias.keys()) + " WHERE apartment_id = ?"
-                                    update_values.append(list(diferencias.values()) + [row['apartment_id']])
-                                    update_queries.append(update_query)
-                                    registros_actualizados += 1
-                            else:
-                                insert_values.append((
-                                    manejar_valores_nulos(row["id_ams"]),
-                                    manejar_valores_nulos(row["apartment_id"]),
-                                    manejar_valores_nulos(row["address_id"]),
-                                    manejar_valores_nulos(row["provincia"]),
-                                    manejar_valores_nulos(row["municipio"]),
-                                    manejar_valores_nulos(row["poblacion"]),
-                                    manejar_valores_nulos(row["vial"]),
-                                    manejar_valores_nulos(row["numero"]),
-                                    manejar_valores_nulos(row["parcela_catastral"]),
-                                    manejar_valores_nulos(row["letra"]),
-                                    manejar_valores_nulos(row["cp"]),
-                                    manejar_valores_nulos(row["site_operational_state"]),
-                                    manejar_valores_nulos(row["apartment_operational_state"]),
-                                    manejar_valores_nulos(row["cto_id"]),
-                                    manejar_valores_nulos(row["olt"]),
-                                    manejar_valores_nulos(row["cto"]),
-                                    manejar_valores_nulos(row["LATITUD"]),
-                                    manejar_valores_nulos(row["LONGITUD"]),
-                                    manejar_valores_nulos(row["cto_con_proyecto"]),
-                                    manejar_valores_nulos(row["COMERCIAL"]),
-                                    manejar_valores_nulos(row["ZONA"]),
-                                    manejar_valores_nulos(row["FECHA"]),
-                                    manejar_valores_nulos(row["SERVICIABLE"]),
-                                    manejar_valores_nulos(row["MOTIVO"]),
-                                    manejar_valores_nulos(row["contrato_uis"])
-                                ))
-                                nuevos_registros += 1
-
-                        except Exception as e:
-                            errores.append(f"Fila {index + 1}: {e}")
-
-                        if (index + 1) % batch_size == 0:
-                            if insert_values:
-                                cursor.executemany("""
-                                        INSERT INTO datos_uis (id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
-                                        parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, cto_id, olt, cto, 
-                                        LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, SERVICIABLE, MOTIVO, contrato_uis) 
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """, insert_values)
-                                insert_values = []
-
-                            for query, values in zip(update_queries, update_values):
-                                cursor.execute(query, values)
-                            update_queries = []
-                            update_values = []
-
-                            conn.commit()
-
-                        progress_bar.progress((index + 1) / total_filas)
-
-                    if insert_values:
-                        cursor.executemany("""
-                                INSERT INTO datos_uis (id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
-                                parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, cto_id, olt, cto, 
-                                LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, SERVICIABLE, MOTIVO, contrato_uis) 
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, insert_values)
-
-                    for query, values in zip(update_queries, update_values):
-                        cursor.execute(query, values)
+                    # Insertamos todos los registros en un solo lote
+                    cursor.executemany("""
+                        INSERT INTO datos_uis (
+                            id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
+                            parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, 
+                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, 
+                            SERVICIABLE, MOTIVO, contrato_uis
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, insert_values)
 
                     conn.commit()
                     conn.close()
 
-                    st.success(
-                        f"Datos cargados exitosamente.\n\n - Nuevos registros: {nuevos_registros}\n - Registros actualizados: {registros_actualizados}")
-                    log_trazabilidad(st.session_state["username"], "Cargar Nuevos Datos",
-                                     f"El admin cargó {nuevos_registros} nuevos registros y actualizó {registros_actualizados} registros en el sistema.")
-
-                    if errores:
-                        st.warning(
-                            f"❌ Algunos registros no se pudieron procesar correctamente:\n\n" + "\n".join(errores))
+                    st.success(f"Datos reemplazados exitosamente. Total registros cargados: {len(insert_values)}")
+                    log_trazabilidad(
+                        st.session_state["username"],
+                        "Cargar Nuevos Datos",
+                        f"El admin reemplazó los datos existentes con {len(insert_values)} nuevos registros."
+                    )
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
 
