@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
-from modules.notificaciones import correo_oferta_comercial, limpiar_texto
+from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -382,6 +382,7 @@ def guardar_viabilidad(datos):
     Se espera que 'datos' sea una tupla con el siguiente orden:
     (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
     """
+    # Guardar los datos en la base de datos
     conn = sqlite3.connect("data/usuarios.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -405,8 +406,30 @@ def guardar_viabilidad(datos):
     """, datos)
     conn.commit()
     conn.close()
-    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente.")
 
+    # Información de la viabilidad
+    ticket_id = datos[10]  # Asumiendo que 'ticket' está en la posición 10
+    descripcion_viabilidad = f"Viabilidad para el ticket {ticket_id}:\n\n" \
+                             f"Latitud: {datos[0]}\n" \
+                             f"Longitud: {datos[1]}\n" \
+                             f"Provincia: {datos[2]}\n" \
+                             f"Municipio: {datos[3]}\n" \
+                             f"Población: {datos[4]}\n" \
+                             f"Vial: {datos[5]}\n" \
+                             f"Numero: {datos[6]}\n" \
+                             f"Letra: {datos[7]}\n" \
+                             f"CP: {datos[8]}\n" \
+                             f"Comentario: {datos[9]}\n" \
+                             f"Nombre Cliente: {datos[11]}\n" \
+                             f"Teléfono: {datos[12]}"
+
+    # Enviar la notificación por correo al administrador
+    destinatario_admin = "rebeca.sanchru@gmail.com"  # Dirección del administrador
+    correo_viabilidad_comercial(destinatario_admin, ticket_id, descripcion_viabilidad)
+
+    # Mostrar el mensaje de éxito en Streamlit
+    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
+    st.info(f"📧 Se ha enviado una notificación al administrador sobre la viabilidad completada.")
 
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
@@ -691,13 +714,14 @@ def mostrar_formulario(click_data):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia)
 
             # Llamar a la notificación (notificación tipo 1)
-            destinatario_admin = "psvpasuva@gmail.com"  # Dirección del administrador
+            destinatario_admin = "rebeca.sanchru@gmail.com"  # Dirección del administrador
             descripcion_oferta = f"Se ha añadido una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
 
             # Enviar el correo de oferta
             correo_oferta_comercial(destinatario_admin, apartment_id, descripcion_oferta)
 
-            st.success("✅ Oferta enviada con éxito y notificación al administrador realizada.")
+            st.success("✅ Oferta enviada con éxito")
+            st.info(f"📧 Se ha enviado una notificación al administrador sobre la oferta completada.")
 
 
 if __name__ == "__main__":

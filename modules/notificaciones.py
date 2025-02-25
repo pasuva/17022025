@@ -17,7 +17,7 @@ def enviar_notificacion(destinatario, asunto, cuerpo):
         smtp_server = 'smtp.gmail.com'
         smtp_port = 587
         sender_email = 'psvpasuva@gmail.com'
-        password = 'Atenea2024'
+        password = 'quhl gvsn nujb sqgm'
 
         # Crear el mensaje
         msg = MIMEMultipart()

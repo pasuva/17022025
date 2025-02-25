@@ -12,6 +12,7 @@ from reportlab.pdfgen import canvas
 import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
 import streamlit as st
+from modules.notificaciones import correo_viabilidad_administracion
 
 # Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime
@@ -379,6 +380,7 @@ def mostrar_formulario(click_data):
         comentarios_internos = st.text_area("📄 Comentarios Internos", value="", key="comentarios_internos_input")
 
     # Si el administrador guarda los cambios
+    # Si el administrador guarda los cambios
     if st.button(f"💾 Guardar cambios para el Ticket {ticket}"):
         try:
             # Conectar a la base de datos
@@ -398,15 +400,30 @@ def mostrar_formulario(click_data):
                 coste, comentarios_internos, ticket
             ))
 
-            # Confirmar los cambios y cerrar la conexión
+            # 📢 Enviar notificación al comercial ANTES de cerrar la conexión
+
+            descripcion_viabilidad = f"La viabilidad del ticket {ticket} ha sido completada.\n\n" \
+                                     f"📌 Comentarios internos: {comentarios_internos}\n" \
+                                     f"📍 Municipio: {municipio_admin}\n" \
+                                     f"💰 Coste: {coste}€\n" \
+                                     f"🔍 Es Serviciable: {serviciable}\n" \
+                                     f"⚙️ CTO Admin: {cto_admin}\n" \
+                                     f"🏠 Apartment ID: {apartment_id}"
+
+            destinatario_comercial = "psvpasuva@gmail.com"  # Ajusta el correo del comercial
+            correo_viabilidad_administracion(destinatario_comercial, ticket, descripcion_viabilidad)
+
+            # 🔹 Confirmar los cambios en la base de datos
             conn.commit()
             conn.close()
 
             # Mostrar mensaje de éxito
             st.success(f"✅ Los cambios para el Ticket {ticket} han sido guardados correctamente.")
+            st.info(f"📧 Se ha enviado una notificación al comercial sobre la viabilidad completada.")
 
         except Exception as e:
             st.error(f"❌ Hubo un error al guardar los cambios: {e}")
+
 
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")
