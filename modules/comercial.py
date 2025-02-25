@@ -1,177 +1,693 @@
 import streamlit as st
+import folium
+from folium.plugins import MarkerCluster
 import pandas as pd
 import sqlite3
-import folium
+import os
+import re
 from streamlit_folium import st_folium
-from folium.plugins import FastMarkerCluster
-from sklearn.cluster import KMeans
+import streamlit.components.v1 as components
+import time
 from datetime import datetime
-import io
+from modules import login
+from folium.plugins import Geocoder
 
 def log_trazabilidad(usuario, accion, detalles):
-    """ Inserta un registro en la tabla de trazabilidad """
-    conn = sqlite3.connect("data/usuarios.db")
-    cursor = conn.cursor()
-
+    """Registra en la base de datos la trazabilidad de acciones del usuario."""
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute("""
-        INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
-        VALUES (?, ?, ?, ?)
-    """, (usuario, accion, detalles, fecha))
+    try:
+        # Aumentamos el timeout y usamos un context manager para asegurar el cierre
+        with sqlite3.connect("data/usuarios.db", timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
+                VALUES (?, ?, ?, ?)
+            """, (usuario, accion, detalles, fecha))
+            conn.commit()
+    except sqlite3.OperationalError as e:
+        st.error(f"Error al escribir en la base de datos de trazabilidad: {e}")
 
-    conn.commit()
-    conn.close()
+def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
+    """Guarda la oferta en SQLite y almacena la imagen si es necesario."""
+    try:
+        conn = sqlite3.connect("data/usuarios.db")
+        cursor = conn.cursor()
+        # Crear tabla ofertas_comercial si no existe, definiendo apartment_id como PRIMARY KEY
+        cursor.execute('''CREATE TABLE IF NOT EXISTS ofertas_comercial (
+                            apartment_id TEXT PRIMARY KEY,
+                            provincia TEXT,
+                            municipio TEXT,
+                            poblacion TEXT,
+                            vial TEXT,
+                            numero TEXT,
+                            letra TEXT,
+                            cp TEXT,
+                            latitud REAL,
+                            longitud REAL,
+                            nombre_cliente TEXT,
+                            telefono TEXT,
+                            direccion_alternativa TEXT,
+                            observaciones TEXT,
+                            serviciable TEXT,
+                            motivo_serviciable TEXT,
+                            incidencia TEXT,
+                            motivo_incidencia TEXT,
+                            fichero_imagen TEXT,
+                            fecha TEXT
+                            Tipo_Vivienda TEXT,
+                            Contrato TEXT
+                        )''')
 
-@st.cache_data
-def cargar_datos():
-    """Carga los datos de la base de datos con caché"""
-    conn = sqlite3.connect("data/usuarios.db")
-    query = "SELECT apartment_id, latitud, longitud, fecha, provincia, cto_con_proyecto, serviciable FROM datos_uis WHERE comercial = 'RAFA SANZ'"
-    data = pd.read_sql(query, conn)
-    conn.close()
-    return data
+        # Verificar si ya existe un registro con el mismo apartment_id
+        cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
+        if cursor.fetchone()[0] > 0:
+            st.error("❌ Ya existe una oferta registrada con este Apartment ID.")
+            conn.close()
+            return
 
-def mapa_dashboard():
-    """Panel de mapas optimizado para Rafa Sanz"""
-    st.set_page_config(page_title="Mapa de Ubicaciones", page_icon="🗺️", layout="wide")
-    st.title("🗺️ Mapa de Ubicaciones")
+        # Guardar la imagen si hay incidencia
+        imagen_path = None
+        if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
+            # Extraemos la extensión del archivo subido
+            extension = os.path.splitext(imagen_incidencia.name)[1]
+            imagen_path = f"data/incidencias/{oferta_data['Apartment ID']}{extension}"
+            os.makedirs(os.path.dirname(imagen_path), exist_ok=True)
+            with open(imagen_path, "wb") as f:
+                f.write(imagen_incidencia.getbuffer())
 
-    # Barra lateral con bienvenida
-    st.sidebar.markdown("""<style> .user-circle { width: 100px; height: 100px; border-radius: 50%; background-color: #ff0000; color: white; font-size: 50px; display: flex; align-items: center; justify-content: center; margin-bottom: 30px; text-align: center; margin-left: auto; margin-right: auto; } </style> <div class="user-circle">👤</div> <div>Rol: Visualización Comercial Avanzada</div>""", unsafe_allow_html=True)
+        # Insertar datos en la base de datos
+        cursor.execute('''INSERT INTO ofertas_comercial (
+                            apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
+                            nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
+                            motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                       (
+                           oferta_data["Apartment ID"],
+                           oferta_data["Provincia"],
+                           oferta_data["Municipio"],
+                           oferta_data["Población"],
+                           oferta_data["Vial"],
+                           oferta_data["Número"],
+                           oferta_data["Letra"],
+                           oferta_data["Código Postal"],
+                           oferta_data["Latitud"],
+                           oferta_data["Longitud"],
+                           oferta_data["Nombre Cliente"],
+                           oferta_data["Teléfono"],
+                           oferta_data["Dirección Alternativa"],
+                           oferta_data["Observaciones"],
+                           oferta_data["serviciable"],
+                           oferta_data["motivo_serviciable"],
+                           oferta_data["incidencia"],
+                           oferta_data["motivo_incidencia"],
+                           imagen_path,
+                           oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
+                           oferta_data["Tipo_Vivienda"],
+                           oferta_data["Contrato"]
+                       ))
 
+        conn.commit()
+        conn.close()
+        st.success("✅ ¡Oferta enviada y guardada en la base de datos con éxito!")
+        # Registrar trazabilidad del guardado de la oferta
+        log_trazabilidad(st.session_state["username"], "Guardar Oferta",
+                         f"Oferta guardada para Apartment ID: {oferta_data['Apartment ID']}")
+    except Exception as e:
+        st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
+
+def comercial_dashboard():
+    """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
+    st.sidebar.markdown("""
+        <style>
+            .user-circle {
+                width: 100px;
+                height: 100px;
+                border-radius: 50%;
+                background-color: #ff7f00;
+                color: white;
+                font-size: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 30px;
+                text-align: center;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        </style>
+        <div class="user-circle">👤</div>
+        <div>Rol: Comercial</div>
+    """, unsafe_allow_html=True)
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
-    # Filtros para reducir datos antes de cargarlos
-    fecha_min = st.sidebar.date_input("Fecha mínima", value=pd.to_datetime("2024-01-01"))
-    fecha_max = st.sidebar.date_input("Fecha máxima", value=pd.to_datetime("2030-12-31"))
+    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📊 Ofertas Comerciales", "✔️ Viabilidades", "📈 Visualización de Datos"])
+    detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
+    log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
 
-    # Cargar los datos
-    with st.spinner("Cargando datos..."):
-        data = cargar_datos()
-        if data.empty:
-            st.error("❌ No se encontraron datos para Rafa Sanz.")
+    if "username" not in st.session_state:
+        st.warning("⚠️ No has iniciado sesión. Por favor, inicia sesión para continuar.")
+        time.sleep(2)
+        login.login()
+        return
+
+    comercial = st.session_state.get("username")
+
+    # Se utiliza un ícono de marcador por defecto (sin comprobación de cto_con_proyecto)
+    marker_icon_type = 'info-sign'
+
+    if menu_opcion == "📊 Ofertas Comerciales":
+        st.title("📍 Mapa de Ubicaciones")
+        st.markdown("""
+         🟢 Serviciable
+         🟠 Oferta (Contrato: Sí)
+         ⚫ Oferta (No Interesado)
+         🔵 Sin Oferta
+         🔴 No Serviciable
+        """)
+
+        log_trazabilidad(comercial, "Visualización de Dashboard", "El comercial visualizó la sección de Ofertas Comerciales.")
+
+        with st.spinner("⏳ Cargando los datos del comercial..."):
+            try:
+                conn = sqlite3.connect("data/usuarios.db")
+                query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
+                tables = pd.read_sql(query_tables, conn)
+
+                if 'datos_uis' not in tables['name'].values:
+                    st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
+                    conn.close()
+                    return
+
+                query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
+                df = pd.read_sql(query, conn, params=(comercial,))
+
+                query_ofertas = "SELECT apartment_id, Contrato FROM ofertas_comercial"
+                ofertas_df = pd.read_sql(query_ofertas, conn)
+
+                query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(site_operational_state) = 'serviciable'"
+                ams_df = pd.read_sql(query_ams, conn)
+                conn.close()
+
+                if df.empty:
+                    st.warning("⚠️ No hay datos asignados a este comercial.")
+                    return
+            except Exception as e:
+                st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
+                return
+
+        if not isinstance(df, pd.DataFrame):
+            st.error("❌ Los datos no se cargaron correctamente.")
             return
 
-    # Asegúrate de que la columna 'fecha' sea de tipo datetime64[ns]
-    data['fecha'] = pd.to_datetime(data['fecha'], errors='coerce')
+        for col in ['latitud', 'longitud', 'address_id', 'apartment_id']:
+            if col not in df.columns:
+                st.error(f"❌ No se encuentra la columna '{col}'.")
+                return
 
-    # Asegúrate de que fecha_min y fecha_max sean de tipo datetime64[ns]
-    fecha_min = pd.to_datetime(fecha_min)
-    fecha_max = pd.to_datetime(fecha_max)
+        if "clicks" not in st.session_state:
+            st.session_state.clicks = []
 
-    # Filtrar los datos por fecha
-    data = data[(data["fecha"] >= fecha_min) & (data["fecha"] <= fecha_max)]
+        location = get_user_location()
+        if location is None:
+            st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
+            lat, lon = 43.463444, -3.790476
+        else:
+            lat, lon = location
 
-    # Filtro de provincia
-    provincias = data['provincia'].unique()  # Cargar provincias únicas
-    provincia_seleccionada = st.sidebar.selectbox("Selecciona una provincia", provincias)
+        serviciable_set = set(ams_df["apartment_id"])
+        contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
 
-    # Filtrar los datos por provincia
-    data = data[data["provincia"] == provincia_seleccionada]
+        with st.spinner("⏳ Cargando mapa..."):
+            m = folium.Map(location=[lat, lon], zoom_start=12,
+                           tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                           attr="Google")
+            Geocoder().add_to(m)
+            marker_cluster = MarkerCluster().add_to(m)
 
-    # Limpiar datos
-    data = data.dropna(subset=['latitud', 'longitud'])
-    data['latitud'] = data['latitud'].astype(float)
-    data['longitud'] = data['longitud'].astype(float)
+            for _, row in df.iterrows():
+                popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
+                apartment_id = row['apartment_id']
 
-    # Reducir datos si hay demasiados puntos
-    if len(data) > 5000:
-        st.warning("🔹 Se ha reducido la cantidad de puntos para mejorar la visualización.")
-        data = data.sample(n=5000, random_state=42)
-
-    # Agrupar puntos si hay demasiados
-    if len(data) > 3000:
-        st.warning("🔹 Se han agrupado los puntos cercanos.")
-        kmeans = KMeans(n_clusters=100, random_state=42)
-        data["cluster"] = kmeans.fit_predict(data[["latitud", "longitud"]])
-
-        # Usar centroides de los clusters en lugar de puntos individuales
-        data = data.groupby("cluster").agg({"latitud": "mean", "longitud": "mean"}).reset_index()
-
-        # Verifica que después de la agrupación haya datos
-        if data.empty:
-            st.error("❌ No se encontraron puntos después de agrupar los datos.")
-            return
-
-    # Descripción de los íconos en el mapa
-    st.markdown("""
-        **🔵 Iconos de los Marcadores:**
-        - 🟢 **Serviciable:** Representado por un icono de casa verde.
-        - 🟠 **Oferta (Contrato: Sí):** Representado por un icono de casa naranja.
-        - ⚫ **Oferta (No Interesado):** Representado por un icono de casa gris.
-        - 🔵 **Sin Oferta:** Representado por un icono de casa azul.
-        - 🔴 **No Serviciable:** Representado por un icono de casa roja.
-    """)
-
-    # Crear mapa centrado en el primer punto
-    with st.spinner("Generando mapa..."):
-        if not data.empty:
-            centro_mapa = [data.iloc[0]['latitud'], data.iloc[0]['longitud']]
-            m = folium.Map(
-                location=centro_mapa,
-                zoom_start=12,
-                tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-                attr="Google"
-            )
-
-            # Añadir marcadores con condiciones de color
-            for _, row in data.iterrows():
-                lat = row['latitud']
-                lon = row['longitud']
-                serviciable = row['serviciable']
-                cto_con_proyecto = row['cto_con_proyecto']
-
-                # Definir el color según las condiciones
-                if serviciable == "SI":
-                    icon_color = 'green'
-                elif serviciable == "NO":
-                    icon_color = 'red'
-                elif cto_con_proyecto == "Sí":
-                    icon_color = 'orange'
-                elif cto_con_proyecto == "No Interesado":
-                    icon_color = 'gray'
+                # Lógica de colores actualizada para incluir rojo en "No Serviciable"
+                if apartment_id in serviciable_set:
+                    marker_color = 'green'  # 🟢 Serviciable
+                elif apartment_id in contrato_dict:
+                    if contrato_dict[apartment_id] == "Sí":
+                        marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
+                    elif contrato_dict[apartment_id] == "No Interesado":
+                        marker_color = 'gray'  # ⚫ Oferta (No Interesado)
+                    else:
+                        marker_color = 'blue'  # 🔵 Sin oferta ni contrato
                 else:
-                    icon_color = 'blue'  # Si no tiene contrato
+                    marker_color = 'red'  # 🔴 No Serviciable
 
-                # Crear marcador con el color correspondiente
                 folium.Marker(
-                    [lat, lon],
-                    icon=folium.Icon(icon='home', color=icon_color)
-                ).add_to(m)
+                    location=[row['latitud'], row['longitud']],
+                    popup=popup_text,
+                    icon=folium.Icon(color=marker_color, icon=marker_icon_type)
+                ).add_to(marker_cluster)
 
-            # Renderizar mapa en Streamlit
-            st_folium(m, height=500, width=700)
+            map_data = st_folium(m, height=500, width=700)
 
-    # Registrar trazabilidad
-    log_trazabilidad(st.session_state["username"], "Visualización de mapa", "Usuario visualizó el mapa de Rafa Sanz.")
 
-    # Sección de descarga de datos
-    st.subheader("Descargar Datos")
-    descarga_opcion = st.radio("Formato de descarga:", ["CSV", "Excel"])
+        if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
+            st.session_state.clicks.append(map_data["last_object_clicked"])
 
-    if descarga_opcion == "CSV":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó datos en CSV.")
-        st.download_button(
-            label="Descargar como CSV",
-            data=data.to_csv(index=False).encode(),
-            file_name="datos_rafa_sanz.csv",
-            mime="text/csv"
-        )
+        if st.session_state.clicks:
+            last_click = st.session_state.clicks[-1]
+            lat_click = last_click.get("lat", "")
+            lon_click = last_click.get("lng", "")
 
-    elif descarga_opcion == "Excel":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó datos en Excel.")
-        with io.BytesIO() as towrite:
-            with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data.to_excel(writer, index=False, sheet_name="Datos Rafa Sanz")
-            towrite.seek(0)
-            st.download_button(
-                label="Descargar como Excel",
-                data=towrite,
-                file_name="datos_rafa_sanz.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            if lat_click and lon_click:
+                google_maps_link = f"https://www.google.com/maps/search/?api=1&query={lat_click},{lon_click}"
+                st.markdown(f"""
+                    <div style="text-align: center; margin: 5px 0;">
+                        <a href="{google_maps_link}" target="_blank" style="
+                            background-color: #0078ff;
+                            color: white;
+                            padding: 6px 12px;
+                            font-size: 14px;
+                            font-weight: bold;
+                            border-radius: 6px;
+                            text-decoration: none;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                        ">
+                            🗺️ Ver en Google Maps
+                        </a>
+                    </div>
+                """, unsafe_allow_html=True)
 
-    st.info("Dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
+            with st.spinner("⏳ Cargando formulario..."):
+                mostrar_formulario(last_click)
+
+    # Sección de Viabilidades
+    elif menu_opcion == "✔️ Viabilidades":
+        #st.info("Sección de Viabilidades en construcción.")
+        viabilidades_section()
+
+    # Sección de Visualización de datos (en construcción o con otra funcionalidad)
+    elif menu_opcion == "📈 Visualización de Datos":
+        st.subheader("📊 Datos de Ofertas con Contrato")
+
+        # Verificar si el usuario ha iniciado sesión
+        if "username" not in st.session_state:
+            st.error("❌ No has iniciado sesión. Por favor, vuelve a la pantalla de inicio de sesión.")
+            st.stop()
+
+        comercial_usuario = st.session_state["username"]  # Obtener el comercial logueado
+
+        try:
+            conn = sqlite3.connect("data/usuarios.db")
+
+            # Consulta SQL con filtro por comercial logueado (primera tabla: ofertas_comercial)
+            query_ofertas = """
+            SELECT oc.apartment_id, oc.provincia, oc.municipio, oc.poblacion, 
+                   oc.vial, oc.numero, oc.letra, oc.cp, oc.nombre_cliente, 
+                   oc.telefono, oc.direccion_alternativa, du.site_operational_state
+            FROM ofertas_comercial oc
+            LEFT JOIN datos_uis du ON oc.apartment_id = du.apartment_id
+            WHERE LOWER(oc.Contrato) = 'sí' 
+            AND LOWER(du.comercial) = LOWER(?)
+            """
+
+            df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
+
+            # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
+            query_viabilidades = """
+            SELECT v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
+                   v.serviciable, v.coste, v.comentarios_comercial
+            FROM viabilidades v
+            WHERE LOWER(v.usuario) = LOWER(?)
+            """
+
+            df_viabilidades = pd.read_sql(query_viabilidades, conn, params=(comercial_usuario,))
+
+            conn.close()
+
+            # Verificar si hay datos para mostrar en la primera tabla (ofertas_comercial)
+            if df_ofertas.empty:
+                st.warning(f"⚠️ No hay ofertas con contrato activo para el comercial '{comercial_usuario}'.")
+            else:
+                st.subheader("📋 Tabla de Ofertas con Contrato Activo")
+                st.dataframe(df_ofertas, use_container_width=True)
+
+            # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
+            if df_viabilidades.empty:
+                st.warning(f"⚠️ No hay viabilidades disponibles para el comercial '{comercial_usuario}'.")
+            else:
+                st.subheader("📋 Tabla de Viabilidades")
+                st.dataframe(df_viabilidades, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"❌ Error al cargar los datos: {e}")
+
+    # Botón de Cerrar Sesión en la barra lateral
+    if st.sidebar.button("Cerrar Sesión"):
+        #cerrar_sesion()
+        log_trazabilidad(st.session_state["username"], "Cierre sesión",
+                         f"El comercial {st.session_state['username']} cerró sesión.")
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+        st.rerun()
+
+
+def generar_ticket():
+    """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
+    conn = sqlite3.connect("data/usuarios.db")
+    cursor = conn.cursor()
+    fecha_actual = datetime.now().strftime("%Y%m%d")
+
+    # Buscar el mayor número consecutivo para la fecha actual
+    cursor.execute("SELECT MAX(CAST(SUBSTR(ticket, 9, 3) AS INTEGER)) FROM viabilidades WHERE ticket LIKE ?",
+                   (f"{fecha_actual}%",))
+    max_consecutivo = cursor.fetchone()[0]
+
+    # Si no hay tickets previos, empezar desde 1
+    if max_consecutivo is None:
+        max_consecutivo = 0
+
+    # Generar el nuevo ticket con el siguiente consecutivo
+    ticket = f"{fecha_actual}{max_consecutivo + 1:03d}"
+    conn.close()
+    return ticket
+
+def guardar_viabilidad(datos):
+    """
+    Inserta los datos en la tabla Viabilidades.
+    Se espera que 'datos' sea una tupla con el siguiente orden:
+    (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
+    """
+    conn = sqlite3.connect("data/usuarios.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO viabilidades (
+            latitud, 
+            longitud, 
+            provincia, 
+            municipio, 
+            poblacion, 
+            vial, 
+            numero, 
+            letra, 
+            cp, 
+            comentario, 
+            fecha_viabilidad, 
+            ticket, 
+            nombre_cliente, 
+            telefono, 
+            usuario
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+    """, datos)
+    conn.commit()
+    conn.close()
+    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente.")
+
+
+# Función para obtener viabilidades guardadas en la base de datos
+def obtener_viabilidades():
+    """Recupera las viabilidades asociadas al usuario logueado."""
+    conn = sqlite3.connect("data/usuarios.db")
+    cursor = conn.cursor()
+    # Se asume que el usuario logueado está guardado en st.session_state["username"]
+    cursor.execute("SELECT latitud, longitud, ticket FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
+    viabilidades = cursor.fetchall()
+    conn.close()
+    return viabilidades
+
+
+def viabilidades_section():
+    st.title("✔️ Viabilidades")
+    st.markdown("""**Leyenda:**
+             ⚫ Viabilidad ya existente
+             🔴 Viabilidad nueva
+            """)
+    st.write("Haz click en el mapa para agregar un marcador rojo que represente el punto de viabilidad.")
+
+    # Inicializar estados de sesión si no existen
+    if "viabilidad_marker" not in st.session_state:
+        st.session_state.viabilidad_marker = None
+    if "map_center" not in st.session_state:
+        st.session_state.map_center = (43.463444, -3.790476)  # Ubicación inicial predeterminada
+    if "map_zoom" not in st.session_state:
+        st.session_state.map_zoom = 12  # Zoom inicial
+
+    # Crear el mapa centrado en la última ubicación guardada
+    m = folium.Map(
+        location=st.session_state.map_center,
+        zoom_start=st.session_state.map_zoom,
+        tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        attr="Google"
+    )
+
+    # Agregar marcadores de viabilidades guardadas (solo las del usuario logueado) en negro
+    viabilidades = obtener_viabilidades()
+    for v in viabilidades:
+        lat, lon, ticket = v
+        folium.Marker(
+            [lat, lon],
+            icon=folium.Icon(color="black"),
+            popup=f"Ticket: {ticket}"
+        ).add_to(m)
+
+    # Si hay un marcador, agregarlo al mapa en rojo
+    if st.session_state.viabilidad_marker:
+        lat = st.session_state.viabilidad_marker["lat"]
+        lon = st.session_state.viabilidad_marker["lon"]
+        folium.Marker(
+            [lat, lon],
+            icon=folium.Icon(color="red")
+        ).add_to(m)
+
+    # Mostrar el mapa y capturar clics
+    map_data = st_folium(m, height=500, width=700)
+    Geocoder().add_to(m)
+
+    # Detectar el clic para agregar el marcador
+    if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+        click = map_data["last_clicked"]
+        st.session_state.viabilidad_marker = {"lat": click["lat"], "lon": click["lng"]}
+        st.session_state.map_center = (click["lat"], click["lng"])  # Guardar la nueva vista
+        st.session_state.map_zoom = map_data["zoom"]  # Actualizar el zoom también
+        st.rerun()  # Actualizamos cuando se coloca un marcador
+
+    # Botón para eliminar el marcador y crear uno nuevo
+    if st.session_state.viabilidad_marker:
+        if st.button("Eliminar marcador y crear uno nuevo"):
+            st.session_state.viabilidad_marker = None
+            st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
+            st.rerun()
+
+    # Mostrar el formulario si hay un marcador
+    if st.session_state.viabilidad_marker:
+        lat = st.session_state.viabilidad_marker["lat"]
+        lon = st.session_state.viabilidad_marker["lon"]
+
+        st.subheader("Completa los datos del punto de viabilidad")
+        with st.form("viabilidad_form"):
+            st.text_input("Latitud", value=str(lat), disabled=True)
+            st.text_input("Longitud", value=str(lon), disabled=True)
+            provincia = st.text_input("Provincia")
+            municipio = st.text_input("Municipio")
+            poblacion = st.text_input("Población")
+            vial = st.text_input("Vial")
+            numero = st.text_input("Número")
+            letra = st.text_input("Letra")
+            cp = st.text_input("Código Postal")
+            nombre_cliente = st.text_input("Nombre Cliente")
+            telefono = st.text_input("Telefono")
+            comentario = st.text_area("Comentario")
+            submit = st.form_submit_button("Enviar Formulario")
+
+            if submit:
+                # Generar ticket único
+                ticket = generar_ticket()
+
+                # Insertar en la base de datos.
+                # Se añade el usuario logueado (st.session_state["username"]) al final de la tupla.
+                guardar_viabilidad((
+                    lat,
+                    lon,
+                    provincia,
+                    municipio,
+                    poblacion,
+                    vial,
+                    numero,
+                    letra,
+                    cp,
+                    comentario,
+                    ticket,
+                    nombre_cliente,
+                    telefono,
+                    st.session_state["username"]
+                ))
+
+                st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+
+                # Resetear marcador para permitir nuevas viabilidades
+                st.session_state.viabilidad_marker = None
+                st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
+                st.rerun()
+
+
+
+def get_user_location():
+    """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
+    html_code = """
+        <script>
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    var lat = position.coords.latitude;
+                    var lon = position.coords.longitude;
+                    window.parent.postMessage({lat: lat, lon: lon}, "*");
+                }, function() {
+                    alert("No se pudo obtener la ubicación del dispositivo.");
+                });
+            } else {
+                alert("Geolocalización no soportada por este navegador.");
+            }
+        </script>
+    """
+    components.html(html_code, height=0, width=0)
+    if "lat" in st.session_state and "lon" in st.session_state:
+        lat = st.session_state["lat"]
+        lon = st.session_state["lon"]
+        return lat, lon
+    return None
+
+def validar_email(email):
+    return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
+
+
+def mostrar_formulario(click_data):
+    """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
+    st.subheader("📄 Enviar Oferta")
+    popup_text = click_data.get("popup", "")
+    apartment_id = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
+    lat_value = click_data.get("lat", "N/D")
+    lng_value = click_data.get("lng", "N/D")
+
+    try:
+        conn = sqlite3.connect("data/usuarios.db")
+        query = """
+            SELECT * FROM datos_uis 
+            WHERE latitud = ? AND longitud = ?
+        """
+        df = pd.read_sql(query, conn, params=(lat_value, lng_value))
+        conn.close()
+        if df.empty:
+            st.warning("⚠️ No se encontraron datos para estas coordenadas.")
+            provincia = municipio = poblacion = vial = numero = letra = cp = "No disponible"
+        else:
+            apartment_id = df.iloc[0]["apartment_id"]
+            provincia = df.iloc[0]["provincia"]
+            municipio = df.iloc[0]["municipio"]
+            poblacion = df.iloc[0]["poblacion"]
+            vial = df.iloc[0]["vial"]
+            numero = df.iloc[0]["numero"]
+            letra = df.iloc[0]["letra"]
+            cp = df.iloc[0]["cp"]
+    except Exception as e:
+        st.error(f"❌ Error al obtener datos de la base de datos: {e}")
+        return
+
+    st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.text_input("📍 Provincia", value=provincia, disabled=True)
+    with col2:
+        st.text_input("🏙️ Municipio", value=municipio, disabled=True)
+    with col3:
+        st.text_input("👥 Población", value=poblacion, disabled=True)
+    col4, col5, col6, col7 = st.columns([2, 1, 1, 1])
+    with col4:
+        st.text_input("🚦 Vial", value=vial, disabled=True)
+    with col5:
+        st.text_input("🔢 Número", value=numero, disabled=True)
+    with col6:
+        st.text_input("🔠 Letra", value=letra, disabled=True)
+    with col7:
+        st.text_input("📮 Código Postal", value=cp, disabled=True)
+    col8, col9 = st.columns(2)
+    with col8:
+        st.text_input("📌 Latitud", value=lat_value, disabled=True)
+    with col9:
+        st.text_input("📌 Longitud", value=lng_value, disabled=True)
+
+    es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
+
+    # Mostrar los nuevos campos solo si es "Sí" en "Es Serviciable"
+    if es_serviciable == "Sí":
+        tipo_vivienda = st.selectbox("🏠 Tipo de Ui", ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"], index=0)
+
+        # Si elige "Otro", mostrar campo para que puedan ingresar el tipo de vivienda
+        if tipo_vivienda == "Otro":
+            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui")
+        else:
+            tipo_vivienda_otro = ""  # Si no elige "Otro", el valor es vacío
+
+        contrato = st.radio("📑 Tipo de Contrato", ["Sí", "No Interesado"], index=0, horizontal=True)
+    else:
+        tipo_vivienda = contrato = tipo_vivienda_otro = None  # Si no es serviciable, los campos no se muestran
+
+    if es_serviciable == "No":
+        motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
+        client_name = ""
+        phone = ""
+        alt_address = ""
+        observations = ""
+        contiene_incidencias = ""
+        motivo_incidencia = ""
+        imagen_incidencia = None
+    else:
+        client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
+        phone = st.text_input("📞 Teléfono", max_chars=15)
+        alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
+        observations = st.text_area("📝 Observaciones")
+        contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
+        if contiene_incidencias == "Sí":
+            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia")
+            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
+        else:
+            motivo_incidencia = ""
+            imagen_incidencia = None
+        motivo_serviciable = ""
+
+    if st.button("🚀 Enviar Oferta"):
+        if phone and not phone.isdigit():
+            st.error("❌ El teléfono debe contener solo números.")
+            return
+
+        oferta_data = {
+            "Apartment ID": apartment_id,
+            "Provincia": provincia,
+            "Municipio": municipio,
+            "Población": poblacion,
+            "Vial": vial,
+            "Número": numero,
+            "Letra": letra,
+            "Código Postal": cp,
+            "Latitud": lat_value,
+            "Longitud": lng_value,
+            "Nombre Cliente": client_name,
+            "Teléfono": phone,
+            "Dirección Alternativa": alt_address,
+            "Observaciones": observations,
+            "serviciable": es_serviciable,
+            "motivo_serviciable": motivo_serviciable,
+            "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
+            "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
+            "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
+            # Guardar el tipo de vivienda o el valor "Otro"
+            "Contrato": contrato,  # Solo se incluye si es "Sí" en serviciable
+            "fecha": pd.Timestamp.now()
+        }
+
+        with st.spinner("⏳ Guardando la oferta en la base de datos..."):
+            guardar_en_base_de_datos(oferta_data, imagen_incidencia)
+
 
 if __name__ == "__main__":
-    mapa_dashboard()
+    comercial_dashboard()

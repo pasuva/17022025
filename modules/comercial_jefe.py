@@ -24,17 +24,25 @@ def log_trazabilidad(usuario, accion, detalles):
 
 @st.cache_data
 def cargar_datos():
-    """Carga los datos de la base de datos con caché"""
+    """Carga los datos de las tablas de base de datos con caché"""
     conn = sqlite3.connect("data/usuarios.db")
-    query = "SELECT apartment_id, latitud, longitud, fecha, provincia, cto_con_proyecto FROM datos_uis WHERE comercial = 'RAFA SANZ'"
-    data = pd.read_sql(query, conn)
+    # Cargar datos de la tabla datos_uis
+    query_datos_uis = "SELECT apartment_id, latitud, longitud, fecha, provincia, cto_con_proyecto FROM datos_uis WHERE comercial = 'RAFA SANZ'"
+    datos_uis = pd.read_sql(query_datos_uis, conn)
+
+    # Cargar datos de la tabla ofertas_comercial
+    query_ofertas_comercial = "SELECT apartment_id, serviciable, contrato FROM ofertas_comercial"
+    ofertas_comercial = pd.read_sql(query_ofertas_comercial, conn)
+
     conn.close()
-    return data
+
+    return datos_uis, ofertas_comercial
 
 def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz"""
     st.set_page_config(page_title="Mapa de Ubicaciones", page_icon="🗺️", layout="wide")
     st.title("🗺️ Mapa de Ubicaciones")
+
     # Descripción de los íconos (explicación de cada ícono)
     st.markdown("""
         **Iconos:**
@@ -42,11 +50,11 @@ def mapa_dashboard():
         ℹ️ **Oferta sin Proyecto:** Representado por un icono de información azul.
         \n
         **Colores:**
-        🟢 **Serviciable:** Representado por un icono de casa verde.
-        🟠 **Oferta (Contrato: Sí):** Representado por un icono de casa naranja.
-        ⚫ **Oferta (No Interesado):** Representado por un icono de casa gris.
-        🔵 **Sin Oferta:** Representado por un icono de casa azul.
-        🔴 **No Serviciable:** Representado por un icono de casa roja.
+        🟢 **Serviciable (Sí)**
+        🟠 **Oferta (Contrato: Sí)**
+        ⚫ **Oferta (Contrato: No Interesado)**
+        🔵 **No Visitado (No existe en ofertas_comercial)**
+        🔴 **No Serviciable**
     """)
 
     # Barra lateral con bienvenida
@@ -54,62 +62,75 @@ def mapa_dashboard():
 
     st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
 
+    # Botón de Cerrar Sesión en la barra lateral
+    with st.sidebar:
+        if st.button("Cerrar sesión"):
+            # Registrar trazabilidad del cierre de sesión
+            detalles = f"El comercial {st.session_state['username']} cerró sesión."
+            log_trazabilidad(st.session_state["username"], "Cierre sesión", detalles)
+
+            # Eliminar los datos de la sesión
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+            st.rerun()
+
     # Filtros para reducir datos antes de cargarlos
     fecha_min = st.sidebar.date_input("Fecha mínima", value=pd.to_datetime("2024-01-01"))
     fecha_max = st.sidebar.date_input("Fecha máxima", value=pd.to_datetime("2030-12-31"))
 
     # Cargar los datos
     with st.spinner("Cargando datos..."):
-        data = cargar_datos()
-        if data.empty:
+        datos_uis, ofertas_comercial = cargar_datos()
+        if datos_uis.empty:
             st.error("❌ No se encontraron datos para Rafa Sanz.")
             return
 
     # Asegúrate de que la columna 'fecha' sea de tipo datetime64[ns]
-    data['fecha'] = pd.to_datetime(data['fecha'], errors='coerce')
+    datos_uis['fecha'] = pd.to_datetime(datos_uis['fecha'], errors='coerce')
 
     # Asegúrate de que fecha_min y fecha_max sean de tipo datetime64[ns]
     fecha_min = pd.to_datetime(fecha_min)
     fecha_max = pd.to_datetime(fecha_max)
 
     # Filtrar los datos por fecha
-    data = data[(data["fecha"] >= fecha_min) & (data["fecha"] <= fecha_max)]
+    datos_uis = datos_uis[(datos_uis["fecha"] >= fecha_min) & (datos_uis["fecha"] <= fecha_max)]
 
     # Filtro de provincia
-    provincias = data['provincia'].unique()  # Cargar provincias únicas
+    provincias = datos_uis['provincia'].unique()  # Cargar provincias únicas
     provincia_seleccionada = st.sidebar.selectbox("Selecciona una provincia", provincias)
 
     # Filtrar los datos por provincia
-    data = data[data["provincia"] == provincia_seleccionada]
+    datos_uis = datos_uis[datos_uis["provincia"] == provincia_seleccionada]
 
     # Limpiar datos
-    data = data.dropna(subset=['latitud', 'longitud'])
-    data['latitud'] = data['latitud'].astype(float)
-    data['longitud'] = data['longitud'].astype(float)
+    datos_uis = datos_uis.dropna(subset=['latitud', 'longitud'])
+    datos_uis['latitud'] = datos_uis['latitud'].astype(float)
+    datos_uis['longitud'] = datos_uis['longitud'].astype(float)
 
     # Reducir datos si hay demasiados puntos
-    if len(data) > 5000:
+    if len(datos_uis) > 5000:
         st.warning("🔹 Se ha reducido la cantidad de puntos para mejorar la visualización.")
-        data = data.sample(n=5000, random_state=42)
+        datos_uis = datos_uis.sample(n=5000, random_state=42)
 
     # Agrupar puntos si hay demasiados
-    if len(data) > 3000:
+    if len(datos_uis) > 3000:
         st.warning("🔹 Se han agrupado los puntos cercanos.")
         kmeans = KMeans(n_clusters=100, random_state=42)
-        data["cluster"] = kmeans.fit_predict(data[["latitud", "longitud"]])
+        datos_uis["cluster"] = kmeans.fit_predict(datos_uis[["latitud", "longitud"]])
 
         # Usar centroides de los clusters en lugar de puntos individuales
-        data = data.groupby("cluster").agg({"latitud": "mean", "longitud": "mean"}).reset_index()
+        datos_uis = datos_uis.groupby("cluster").agg({"latitud": "mean", "longitud": "mean"}).reset_index()
 
         # Verifica que después de la agrupación haya datos
-        if data.empty:
+        if datos_uis.empty:
             st.error("❌ No se encontraron puntos después de agrupar los datos.")
             return
 
     # Crear mapa centrado en el primer punto
     with st.spinner("Generando mapa..."):
-        if not data.empty:
-            centro_mapa = [data.iloc[0]['latitud'], data.iloc[0]['longitud']]
+        if not datos_uis.empty:
+            centro_mapa = [datos_uis.iloc[0]['latitud'], datos_uis.iloc[0]['longitud']]
             m = folium.Map(
                 location=centro_mapa,
                 zoom_start=12,
@@ -118,20 +139,36 @@ def mapa_dashboard():
             )
 
             # Agregar puntos con FastMarkerCluster
-            locations = list(zip(data["latitud"], data["longitud"]))
+            locations = list(zip(datos_uis["latitud"], datos_uis["longitud"]))
             FastMarkerCluster(locations).add_to(m)
 
-            # Añadir marcadores con diferentes iconos (SI/NO) para la columna `cto_con_proyecto`
-            for _, row in data.iterrows():
+            # Añadir marcadores con diferentes iconos y colores
+            for _, row in datos_uis.iterrows():
                 lat = row['latitud']
                 lon = row['longitud']
-                cto_con_proyecto = row['cto_con_proyecto']
+                apartment_id = row['apartment_id']
 
-                # Añadir los marcadores con diferentes iconos
-                if cto_con_proyecto == "SI":
-                    folium.Marker([lat, lon], icon=folium.Icon(icon='home', color='blue')).add_to(m)
+                # Buscar si el apartment_id está en ofertas_comercial
+                oferta = ofertas_comercial[ofertas_comercial['apartment_id'] == apartment_id]
+
+                # Determinar el color según los criterios especificados
+                if not oferta.empty:
+                    serviciable = oferta.iloc[0]['serviciable']
+                    contrato = oferta.iloc[0]['contrato']
+
+                    if serviciable == "Sí":
+                        color = 'green'  # Serviciable
+                    elif serviciable == "No":
+                        color = 'red'  # No Serviciable
+                    elif contrato == "Sí":
+                        color = 'orange'  # Oferta con Contrato
+                    elif contrato == "No Interesado":
+                        color = 'black'  # Oferta No Interesado
                 else:
-                    folium.Marker([lat, lon], icon=folium.Icon(icon='info-sign', color='blue')).add_to(m)
+                    color = 'blue'  # No Visitado (sin datos en ofertas_comercial)
+
+                # Añadir el marcador con el color adecuado
+                folium.Marker([lat, lon], icon=folium.Icon(icon='home', color=color)).add_to(m)
 
             # Renderizar mapa en Streamlit
             st_folium(m, height=500, width=700)
@@ -147,7 +184,7 @@ def mapa_dashboard():
         log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó datos en CSV.")
         st.download_button(
             label="Descargar como CSV",
-            data=data.to_csv(index=False).encode(),
+            data=datos_uis.to_csv(index=False).encode(),
             file_name="datos_rafa_sanz.csv",
             mime="text/csv"
         )
@@ -156,7 +193,7 @@ def mapa_dashboard():
         log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó datos en Excel.")
         with io.BytesIO() as towrite:
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data.to_excel(writer, index=False, sheet_name="Datos Rafa Sanz")
+                datos_uis.to_excel(writer, index=False, sheet_name="Datos Rafa Sanz")
             towrite.seek(0)
             st.download_button(
                 label="Descargar como Excel",
