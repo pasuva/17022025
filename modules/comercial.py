@@ -11,6 +11,8 @@ import time
 from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
+from modules.notificaciones import correo_oferta_comercial, limpiar_texto
+
 
 def log_trazabilidad(usuario, accion, detalles):
     """Registra en la base de datos la trazabilidad de acciones del usuario."""
@@ -239,7 +241,7 @@ def comercial_dashboard():
                     else:
                         marker_color = 'blue'  # 🔵 Sin oferta ni contrato
                 else:
-                    marker_color = 'red'  # 🔴 No Serviciable
+                    marker_color = 'blue'  # 🔴 No Serviciable
 
                 folium.Marker(
                     location=[row['latitud'], row['longitud']],
@@ -687,6 +689,15 @@ def mostrar_formulario(click_data):
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia)
+
+            # Llamar a la notificación (notificación tipo 1)
+            destinatario_admin = "psvpasuva@gmail.com"  # Dirección del administrador
+            descripcion_oferta = f"Se ha añadido una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
+
+            # Enviar el correo de oferta
+            correo_oferta_comercial(destinatario_admin, apartment_id, descripcion_oferta)
+
+            st.success("✅ Oferta enviada con éxito y notificación al administrador realizada.")
 
 
 if __name__ == "__main__":

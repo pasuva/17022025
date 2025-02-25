@@ -648,7 +648,7 @@ def admin_dashboard():
     # Opción: Viabilidades (En construcción)
     elif opcion == "✔️ Viabilidades":
         st.header("✔️ Viabilidades")
-        st.write("Esta sección está en construcción. Pronto podrás consultar las viabilidades aquí.")
+        st.write("Puedes consultar y completar los tickets de viabilidades aquí")
         viabilidades_seccion()
 
     # Opción: Generar Informes
@@ -659,17 +659,19 @@ def admin_dashboard():
 
         # Selección de tipo de informe
         informe_tipo = st.selectbox("Selecciona el tipo de informe:",
-                                    ["Informe de Datos UIS", "Informe de Ofertas Comerciales"])
+                                    ["Informe de Datos UIS", "Informe de Ofertas Comerciales",
+                                     "Informe de Viabilidades"])
 
-        # Filtros comunes para ambos informes
+        # Filtros comunes para todos los informes
         st.sidebar.subheader("Filtros de Información")
 
         df_filtrado = st.session_state.get("df", pd.DataFrame())
         columnas_disponibles = df_filtrado.columns.tolist() if not df_filtrado.empty else []
 
-        filtro_columna = st.selectbox("Selecciona la columna para filtrar en Datos UIS:",
-                                      columnas_disponibles) if columnas_disponibles else None
+        filtro_columnas = st.multiselect("Selecciona las columnas para filtrar en Datos UIS:",
+                                         columnas_disponibles) if columnas_disponibles else []
 
+        # Informe de Datos UIS
         if informe_tipo == "Informe de Datos UIS":
             st.write("Generando informe para los datos UIS...")
 
@@ -682,21 +684,25 @@ def admin_dashboard():
                 fecha_fin = st.date_input("Fecha de fin:", pd.to_datetime("2025-12-31"))
                 fecha_inicio = pd.to_datetime(fecha_inicio)
                 fecha_fin = pd.to_datetime(fecha_fin)
-            if filtro_columna and st.text_input(f"Filtra por {filtro_columna}:"):
-                valor_filtro = st.text_input(f"Filtra por {filtro_columna}:")
-                df_filtrado = df_filtrado[
-                    df_filtrado[filtro_columna].astype(str).str.contains(valor_filtro, case=False)]
+            if filtro_columnas:
+                for columna in filtro_columnas:
+                    valor_filtro = st.text_input(f"Filtra por {columna}:")
+                    if valor_filtro:
+                        df_filtrado = df_filtrado[
+                            df_filtrado[columna].astype(str).str.contains(valor_filtro, case=False)]
             if "provincia" in df_filtrado.columns and provincias != "Todas":
                 df_filtrado = df_filtrado[df_filtrado["provincia"] == provincias]
             if "fecha" in df_filtrado.columns:
                 df_filtrado = df_filtrado[df_filtrado["fecha"].between(fecha_inicio, fecha_fin)]
 
+        # Informe de Ofertas Comerciales
         elif informe_tipo == "Informe de Ofertas Comerciales":
             st.write("Generando informe para las ofertas comerciales...")
             ofertas_filtradas = st.session_state.get("df", pd.DataFrame())
             columnas_ofertas = ofertas_filtradas.columns.tolist() if not ofertas_filtradas.empty else []
-            filtro_columna_ofertas = st.selectbox("Selecciona la columna para filtrar en Ofertas Comerciales:",
-                                                  columnas_ofertas) if columnas_ofertas else None
+            filtro_columnas_ofertas = st.multiselect("Selecciona las columnas para filtrar en Ofertas Comerciales:",
+                                                     columnas_ofertas) if columnas_ofertas else []
+
             if "provincia" in ofertas_filtradas.columns:
                 provincias_ofertas = st.selectbox("Selecciona la provincia para ofertas:",
                                                   ["Todas"] + ofertas_filtradas.provincia.unique().tolist())
@@ -706,16 +712,43 @@ def admin_dashboard():
                 fecha_fin_oferta = st.date_input("Fecha de fin para ofertas:", pd.to_datetime("2025-12-31"))
                 fecha_inicio_oferta = pd.to_datetime(fecha_inicio_oferta)
                 fecha_fin_oferta = pd.to_datetime(fecha_fin_oferta)
-            if filtro_columna_ofertas and st.text_input(f"Filtra por {filtro_columna_ofertas}:"):
-                valor_filtro_oferta = st.text_input(f"Filtra por {filtro_columna_ofertas}:")
-                ofertas_filtradas = ofertas_filtradas[
-                    ofertas_filtradas[filtro_columna_ofertas].astype(str).str.contains(valor_filtro_oferta, case=False)]
+            if filtro_columnas_ofertas:
+                for columna in filtro_columnas_ofertas:
+                    valor_filtro_oferta = st.text_input(f"Filtra por {columna}:")
+                    if valor_filtro_oferta:
+                        ofertas_filtradas = ofertas_filtradas[
+                            ofertas_filtradas[columna].astype(str).str.contains(valor_filtro_oferta, case=False)]
             if "provincia" in ofertas_filtradas.columns and provincias_ofertas != "Todas":
                 ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["provincia"] == provincias_ofertas]
             if "fecha" in ofertas_filtradas.columns:
                 ofertas_filtradas = ofertas_filtradas[
                     ofertas_filtradas["fecha"].between(fecha_inicio_oferta, fecha_fin_oferta)]
 
+        # Informe de Viabilidades
+        elif informe_tipo == "Informe de Viabilidades":
+            st.write("Generando informe para las viabilidades...")
+            viabilidades_df = st.session_state.get("viabilidades_df", pd.DataFrame())
+            columnas_viabilidades = viabilidades_df.columns.tolist() if not viabilidades_df.empty else []
+            filtro_columnas_viabilidades = st.multiselect("Selecciona las columnas para filtrar en Viabilidades:",
+                                                          columnas_viabilidades) if columnas_viabilidades else []
+
+            if filtro_columnas_viabilidades:
+                for columna in filtro_columnas_viabilidades:
+                    valor_filtro_viabilidad = st.text_input(f"Filtra por {columna}:")
+                    if valor_filtro_viabilidad:
+                        viabilidades_df = viabilidades_df[
+                            viabilidades_df[columna].astype(str).str.contains(valor_filtro_viabilidad, case=False)]
+
+            # Filtro por fechas en viabilidades
+            if "fecha_viabilidad" in viabilidades_df.columns:
+                fecha_inicio_viabilidad = st.date_input("Fecha de inicio de viabilidad:", pd.to_datetime("2022-01-01"))
+                fecha_fin_viabilidad = st.date_input("Fecha de fin de viabilidad:", pd.to_datetime("2025-12-31"))
+                viabilidades_df['fecha_viabilidad'] = pd.to_datetime(viabilidades_df['fecha_viabilidad'],
+                                                                     errors='coerce')
+                viabilidades_df = viabilidades_df[
+                    viabilidades_df['fecha_viabilidad'].between(fecha_inicio_viabilidad, fecha_fin_viabilidad)]
+
+        # Personalización del Informe
         st.sidebar.subheader("Personalización del Informe")
         encabezado_titulo = st.sidebar.text_input("Título del Informe:", "Informe de Datos")
         mensaje_intro = st.sidebar.text_area("Mensaje Introductorio:",
@@ -783,6 +816,38 @@ def admin_dashboard():
                 else:
                     st.error(
                         "❌ No se han encontrado ofertas comerciales que coincidan con los filtros para generar el informe.")
+            elif informe_tipo == "Informe de Viabilidades":
+                if not viabilidades_df.empty:
+                    towrite = io.BytesIO()
+                    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+                        viabilidades_df.to_excel(writer, index=False, sheet_name='Informe Viabilidades')
+                        worksheet = writer.sheets['Informe Viabilidades']
+                        worksheet.write('A1', encabezado_titulo)
+                        worksheet.write('A2', mensaje_intro)
+                        worksheet.write('A3', f"Fecha de generación: {fecha_generacion}")
+                        worksheet.write(len(viabilidades_df) + 3, 0, pie_de_pagina)
+                    towrite.seek(0)
+                    st.download_button(
+                        label="📥 Descargar Informe de Viabilidades en Excel",
+                        data=towrite,
+                        file_name="informe_viabilidades.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    pdf_buffer = generar_pdf(viabilidades_df, encabezado_titulo, mensaje_intro, fecha_generacion,
+                                             pie_de_pagina)
+                    st.download_button(
+                        label="📥 Descargar Informe de Viabilidades en PDF",
+                        data=pdf_buffer,
+                        file_name="informe_viabilidades.pdf",
+                        mime="application/pdf"
+                    )
+                    log_trazabilidad(st.session_state["username"], "Generar Informe",
+                                     "El admin generó un informe de Viabilidades.")
+                else:
+                    st.error(
+                        "❌ No se han encontrado viabilidades que coincidan con los filtros para generar el informe.")
+
+
 
     # Opción: Gestionar Usuarios
     elif opcion == "👥 Gestionar Usuarios":
@@ -946,7 +1011,7 @@ def admin_dashboard():
         with st.spinner("Cargando trazabilidad..."):
             try:
                 conn = sqlite3.connect("data/usuarios.db")
-                query = "SELECT * FROM trazabilidad"
+                query = "SELECT usuario_id, accion, detalles, fecha FROM trazabilidad"
                 trazabilidad_data = pd.read_sql(query, conn)
                 conn.close()
                 if trazabilidad_data.empty:
