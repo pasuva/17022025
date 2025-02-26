@@ -1,5 +1,5 @@
 import streamlit as st
-from modules import login, admin, supervisor, comercial, comercial_jefe
+from modules import login, admin, supervisor, comercial, comercial_jefe, comercial_rafa
 
 # Iniciar sesión si no está iniciada
 if "logged_in" not in st.session_state:
@@ -18,5 +18,7 @@ else:
         comercial.comercial_dashboard()
     elif rol == "comercial_jefe":
         comercial_jefe.mapa_dashboard()
+    elif rol == "comercial_rafa":
+        comercial_rafa.comercial_dashboard()
     else:
         st.error("Rol no reconocido")

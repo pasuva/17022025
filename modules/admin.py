@@ -547,7 +547,7 @@ def admin_dashboard():
                     mime="text/csv"
                 )
 
-    # Opción: Visualizar datos de la tabla ofertas_comercial
+    # Opción: Visualizar datos de la tabla ofertas_comercial y comercial_rafa
     elif opcion == "📊 Ofertas Comerciales":
         st.header("📊 Visualizar Ofertas Comerciales")
         st.write("Aquí puedes ver las ofertas comerciales registradas.")
@@ -557,39 +557,65 @@ def admin_dashboard():
 
         with st.spinner("Cargando ofertas comerciales..."):
             try:
-                conn = sqlite3.connect("data/usuarios.db")
-                query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
-                tables = pd.read_sql(query_tables, conn)
-                if 'ofertas_comercial' not in tables['name'].values:
-                    st.error("❌ La tabla 'ofertas_comercial' no se encuentra en la base de datos.")
-                    conn.close()
-                    return
-                query = "SELECT * FROM ofertas_comercial"
-                data = pd.read_sql(query, conn)
+                conn = sqlite3.connect("data/usuarios.db")  # Conexión a la base de datos correcta
+
+                # Consultar ambas tablas
+                query_ofertas_comercial = "SELECT * FROM ofertas_comercial"
+                query_comercial_rafa = "SELECT * FROM comercial_rafa"  # Cambiar si tienes un nombre diferente en esta tabla
+
+                # Cargar los datos de ambas tablas
+                ofertas_comercial_data = pd.read_sql(query_ofertas_comercial, conn)
+                comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
+
+                # Cerrar conexión
                 conn.close()
-                if data.empty:
-                    st.error("❌ No se encontraron ofertas comerciales en la base de datos.")
+
+                # Comprobar si ambas tablas contienen datos
+                if ofertas_comercial_data.empty and comercial_rafa_data.empty:
+                    st.error("❌ No se encontraron datos en ambas tablas.")
                     return
+
+                # Filtrar comercial_rafa para solo mostrar registros con datos en la columna 'serviciable'
+                comercial_rafa_data_filtrada = comercial_rafa_data[comercial_rafa_data['serviciable'].notna()]
+
+                # Unir ambos DataFrames si hay datos en la tabla 'comercial_rafa' filtrados
+                if not comercial_rafa_data_filtrada.empty:
+                    combined_data = pd.concat([ofertas_comercial_data, comercial_rafa_data_filtrada], ignore_index=True)
+                else:
+                    # Si no hay datos en la tabla 'comercial_rafa' para mostrar, solo usamos ofertas_comercial_data
+                    combined_data = ofertas_comercial_data
+
             except Exception as e:
-                st.error(f"❌ Error al cargar ofertas comerciales de la base de datos: {e}")
+                st.error(f"❌ Error al cargar datos de la base de datos: {e}")
                 return
 
-        if data.columns.duplicated().any():
-            st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
-            data = data.loc[:, ~data.columns.duplicated()]
+        # Si la tabla combinada está vacía, mostrar un mensaje
+        if combined_data.empty:
+            st.warning(
+                "⚠️ No se encontraron ofertas comerciales finalizadas.")
+            return
 
-        st.session_state["df"] = data
+        # Eliminar columnas duplicadas si las hay
+        if combined_data.columns.duplicated().any():
+            st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
+            combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
+
+        # Guardar en sesión de Streamlit para mostrar en la tabla
+        st.session_state["df"] = combined_data
+
         st.write("Filtra las columnas del dataframe:")
-        columnas = st.multiselect("Selecciona las columnas a mostrar", data.columns.tolist(),
-                                  default=data.columns.tolist())
-        st.dataframe(data[columnas], use_container_width=True)
+        columnas = st.multiselect("Selecciona las columnas a mostrar", combined_data.columns.tolist(),
+                                  default=combined_data.columns.tolist())
+        st.dataframe(combined_data[columnas], use_container_width=True)
 
         st.subheader("Selecciona el formato para la descarga:")
         download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"], key="oferta_download")
+
+        # Opción de descarga en Excel
         if download_format == "Excel":
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data[columnas].to_excel(writer, index=False, sheet_name='Ofertas')
+                combined_data[columnas].to_excel(writer, index=False, sheet_name='Ofertas')
             towrite.seek(0)
             with st.spinner("Preparando archivo Excel..."):
                 st.download_button(
@@ -598,8 +624,10 @@ def admin_dashboard():
                     file_name="ofertas_comerciales.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+        # Opción de descarga en CSV
         elif download_format == "CSV":
-            csv = data[columnas].to_csv(index=False).encode()
+            csv = combined_data[columnas].to_csv(index=False).encode()
             with st.spinner("Preparando archivo CSV..."):
                 st.download_button(
                     label="📥 Descargar CSV",
@@ -610,7 +638,7 @@ def admin_dashboard():
 
         # Desplegable para ofertas con imagen
         offers_with_image = []
-        for idx, row in data.iterrows():
+        for idx, row in combined_data.iterrows():
             fichero_imagen = row.get("fichero_imagen", None)
             if fichero_imagen and isinstance(fichero_imagen, str) and os.path.exists(fichero_imagen):
                 offers_with_image.append((row["apartment_id"], fichero_imagen))
@@ -881,7 +909,7 @@ def admin_dashboard():
 
         st.subheader("Agregar Nuevo Usuario")
         nombre = st.text_input("Nombre del Usuario")
-        rol = st.selectbox("Selecciona el Rol", ["admin", "supervisor", "comercial", "comercial_jefe"])
+        rol = st.selectbox("Selecciona el Rol", ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"])
         password = st.text_input("Contraseña", type="password")
         if st.button("Agregar Usuario"):
             if nombre and password:
