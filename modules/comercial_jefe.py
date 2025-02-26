@@ -28,7 +28,7 @@ def cargar_datos():
     conn = sqlite3.connect("data/usuarios.db")
     # Cargar datos de la tabla datos_uis (incluimos municipio y población)
     query_datos_uis = """
-        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, poblacion, cto_con_proyecto 
+        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, cto_con_proyecto 
         FROM datos_uis 
         WHERE comercial = 'RAFA SANZ'
     """
@@ -226,7 +226,12 @@ def mapa_dashboard():
             lat = row['latitud']
             lon = row['longitud']
             apartment_id = row['apartment_id']
+            vial = row.get('vial', None)  # Si existe
+            numero = row.get('numero', None)  # Si existe
+            letra = row.get('letra', None)  # Si existe
             oferta = comercial_rafa[comercial_rafa['apartment_id'] == apartment_id]
+
+            # Determinamos el color del marcador según los criterios
             if not oferta.empty:
                 serviciable = oferta.iloc[0]['serviciable']
                 contrato = oferta.iloc[0]['Contrato']
@@ -242,12 +247,27 @@ def mapa_dashboard():
                     color = 'gray'
             else:
                 color = 'blue'
-            folium.Marker([lat, lon], icon=folium.Icon(icon='home', color=color)).add_to(m)
+
+            # Crear el popup con la información
+            popup_text = f"""
+            <b>Apartment ID:</b> {apartment_id}<br>
+            <b>Vial:</b> {vial if vial else 'No Disponible'}<br>
+            <b>Número:</b> {numero if numero else 'No Disponible'}<br>
+            <b>Letra:</b> {letra if letra else 'No Disponible'}<br>
+            """
+
+            # Crear el marcador con el popup
+            folium.Marker(
+                [lat, lon],
+                icon=folium.Icon(icon='home', color=color),
+                popup=folium.Popup(popup_text, max_width=300)  # Popup con texto
+            ).add_to(m)
         st_folium(m, height=500, width=700)
 
     # Mostrar la tabla de zonas asignadas ocupando el ancho completo, justo debajo de las columnas
     conn = sqlite3.connect("data/usuarios.db")
     assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
+    total_ofertas = pd.read_sql("SELECT DISTINCT * FROM comercial_rafa", conn)
     conn.close()
     if not assigned_zones.empty:
         st.write("Zonas ya asignadas:")
@@ -255,6 +275,9 @@ def mapa_dashboard():
 
     # Registro de trazabilidad para la visualización del mapa
     log_trazabilidad(st.session_state["username"], "Visualización de mapa", "Usuario visualizó el mapa de Rafa Sanz.")
+
+    st.write("Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
+    st.dataframe(total_ofertas, use_container_width=True)
 
     # Sección de descarga de datos
     st.subheader("Descargar Datos")
