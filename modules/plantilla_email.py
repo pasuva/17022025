@@ -68,6 +68,7 @@ def generar_html(asunto, contenido):
 
             <div class="footer">
                 <p>📧 Este es un correo automático, por favor no respondas a este mensaje.</p>
+                <img src="https://verdetuoperador.com/wp-content/uploads/2024/11/logotipo_verde_tuoperador_telefonia_fibra_y_television.png"/>
             </div>
         </div>
     </body>

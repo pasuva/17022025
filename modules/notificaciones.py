@@ -5,7 +5,6 @@ from email.mime.text import MIMEText
 from email.header import Header
 
 from modules import plantilla_email
-from modules.plantilla_email import generar_html  # Importamos la plantilla HTML
 
 # Función para limpiar las cadenas y eliminar saltos de línea problemáticos
 def limpiar_texto(texto):
@@ -62,5 +61,27 @@ def correo_viabilidad_administracion(destinatario, ticket_id, descripcion_viabil
     contenido = {
         "mensaje": f"La administración ha completado la viabilidad para el ticket <strong>{ticket_id}</strong>.",
         "Descripción de la viabilidad": descripcion_viabilidad
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+
+# 4. Correo de asignacion de zona a comercial
+def correo_asignacion_administracion(destinatario, municipio_sel, poblacion_sel, descripcion_asignacion):
+    asunto = f"Asignación realizada para {municipio_sel} - {poblacion_sel}"
+    descripcion_asignacion = limpiar_texto(descripcion_asignacion)
+    contenido = {
+        "mensaje": f"Se le ha asignado la zona <strong>{municipio_sel} - {poblacion_sel}</strong>. Ya puede "
+                   f"comenzar a realizar ofertas en la zona asignada. Entre en su panel de usuario para ver mas detalles.",
+        "Descripción de la asignación": descripcion_asignacion
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+
+# 5. Correo de desasignacion de zona a comercial
+def correo_desasignacion_administracion(destinatario, municipio_sel, poblacion_sel, descripcion_desasignacion):
+    asunto = f"Asignación realizada para {municipio_sel} - {poblacion_sel}"
+    descripcion_desasignacion = limpiar_texto(descripcion_desasignacion)
+    contenido = {
+        "mensaje": f"Se le ha desasignado la zona por errores de asignación u otros motivos<strong>{municipio_sel} - {poblacion_sel}</strong>. "
+                   f"Entre en su panel de usuario para ver mas detalles.",
+        "Descripción de la desasignación": descripcion_desasignacion
     }
     enviar_notificacion(destinatario, asunto, contenido)

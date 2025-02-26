@@ -7,6 +7,7 @@ from folium.plugins import FastMarkerCluster
 from sklearn.cluster import KMeans
 from datetime import datetime
 import io
+from modules.notificaciones import correo_oferta_comercial, correo_asignacion_administracion, correo_desasignacion_administracion
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -170,7 +171,13 @@ def mapa_dashboard():
                         """, (comercial_elegido, municipio_sel, poblacion_sel))
                         conn.commit()
                         conn.close()
-                        st.success("✅ Zona asignada correctamente.")
+
+                        # Enviar correo al comercial desasignado
+                        destinatario_comercial = "psvpasuva@gmail.com"  # Reemplaza con el email real del comercial
+                        descripcion_asignacion = f"Se ha asignado la zona {municipio_sel} - {poblacion_sel} a tu responsabilidad."
+                        correo_asignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel, descripcion_asignacion)
+
+                        st.success("✅ Zona asignada correctamente y notificación enviada al responsable.")
                         log_trazabilidad(st.session_state["username"], "Asignación",
                                          f"Asignó zona {municipio_sel} - {poblacion_sel} a {comercial_elegido}")
         elif accion == "Desasignar Zona":
@@ -186,13 +193,28 @@ def mapa_dashboard():
                 if zona_seleccionada:
                     municipio_sel, poblacion_sel = zona_seleccionada.split(" - ")
                     if st.button("Desasignar Zona"):
+                        # Obtener el comercial asignado a la zona
+                        conn = sqlite3.connect("data/usuarios.db")
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT comercial FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
+                                       (municipio_sel, poblacion_sel))
+                        comercial_asignado = cursor.fetchone()[0]
+                        conn.close()
+
+                        # Desasignar la zona
                         conn = sqlite3.connect("data/usuarios.db")
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
                                        (municipio_sel, poblacion_sel))
                         conn.commit()
                         conn.close()
-                        st.success("✅ Zona desasignada correctamente.")
+
+                        # Enviar correo al comercial desasignado
+                        destinatario_comercial = "psvpasuva@gmail.com"  # Reemplaza con el email real del comercial
+                        descripcion_desasignacion = f"Se ha desasignado la zona {municipio_sel} - {poblacion_sel} de tu responsabilidad."
+                        correo_desasignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel, descripcion_desasignacion)
+
+                        st.success("✅ Zona desasignada correctamente y notificación enviada al responsable.")
                         log_trazabilidad(st.session_state["username"], "Desasignación",
                                          f"Desasignó zona {municipio_sel} - {poblacion_sel}")
         # Mostrar la tabla de zonas asignadas (dentro del panel de asignación)
@@ -202,67 +224,70 @@ def mapa_dashboard():
 
     # --- Generar el mapa en la columna izquierda, usando los valores de asignación para centrar ---
     with col1:
-        # Por defecto, usar el centro del primer registro
-        center = [datos_uis.iloc[0]['latitud'], datos_uis.iloc[0]['longitud']]
-        zoom_start = 12
-        # Si se han seleccionado municipio y población en el panel de asignación, recalcule el centro
-        if "municipio_sel" in st.session_state and "poblacion_sel" in st.session_state:
-            zone_data = datos_uis[(datos_uis["municipio"] == st.session_state["municipio_sel"]) &
-                                  (datos_uis["poblacion"] == st.session_state["poblacion_sel"])]
-            if not zone_data.empty:
-                center = [zone_data["latitud"].mean(), zone_data["longitud"].mean()]
-                zoom_start = 14  # Zoom más cercano para la zona
+        # Generar el mapa con spinner
+        with col1:
+            with st.spinner("⏳ Cargando mapa..."):
+                # Por defecto, usar el centro del primer registro
+                center = [datos_uis.iloc[0]['latitud'], datos_uis.iloc[0]['longitud']]
+                zoom_start = 12
+                # Si se han seleccionado municipio y población en el panel de asignación, recalcule el centro
+                if "municipio_sel" in st.session_state and "poblacion_sel" in st.session_state:
+                    zone_data = datos_uis[(datos_uis["municipio"] == st.session_state["municipio_sel"]) &
+                                          (datos_uis["poblacion"] == st.session_state["poblacion_sel"])]
+                    if not zone_data.empty:
+                        center = [zone_data["latitud"].mean(), zone_data["longitud"].mean()]
+                        zoom_start = 14  # Zoom más cercano para la zona
 
-        m = folium.Map(
-            location=center,
-            zoom_start=zoom_start,
-            tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-            attr="Google"
-        )
-        locations = list(zip(datos_uis["latitud"], datos_uis["longitud"]))
-        FastMarkerCluster(locations).add_to(m)
-        # Añadir marcadores con criterios de color
-        for _, row in datos_uis.iterrows():
-            lat = row['latitud']
-            lon = row['longitud']
-            apartment_id = row['apartment_id']
-            vial = row.get('vial', None)  # Si existe
-            numero = row.get('numero', None)  # Si existe
-            letra = row.get('letra', None)  # Si existe
-            oferta = comercial_rafa[comercial_rafa['apartment_id'] == apartment_id]
+                m = folium.Map(
+                    location=center,
+                    zoom_start=zoom_start,
+                    tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                    attr="Google"
+                )
+                locations = list(zip(datos_uis["latitud"], datos_uis["longitud"]))
+                FastMarkerCluster(locations).add_to(m)
+                # Añadir marcadores con criterios de color
+                for _, row in datos_uis.iterrows():
+                    lat = row['latitud']
+                    lon = row['longitud']
+                    apartment_id = row['apartment_id']
+                    vial = row.get('vial', None)  # Si existe
+                    numero = row.get('numero', None)  # Si existe
+                    letra = row.get('letra', None)  # Si existe
+                    oferta = comercial_rafa[comercial_rafa['apartment_id'] == apartment_id]
 
-            # Determinamos el color del marcador según los criterios
-            if not oferta.empty:
-                serviciable = oferta.iloc[0]['serviciable']
-                contrato = oferta.iloc[0]['Contrato']
-                if serviciable == "Sí":
-                    color = 'green'
-                elif serviciable == "No":
-                    color = 'red'
-                elif contrato == "Sí":
-                    color = 'orange'
-                elif contrato == "No Interesado":
-                    color = 'black'
-                else:
-                    color = 'gray'
-            else:
-                color = 'blue'
+                    # Determinamos el color del marcador según los criterios
+                    if not oferta.empty:
+                        serviciable = oferta.iloc[0]['serviciable']
+                        contrato = oferta.iloc[0]['Contrato']
+                        if serviciable == "Sí":
+                            color = 'green'
+                        elif serviciable == "No":
+                            color = 'red'
+                        elif contrato == "Sí":
+                            color = 'orange'
+                        elif contrato == "No Interesado":
+                            color = 'black'
+                        else:
+                            color = 'gray'
+                    else:
+                        color = 'blue'
 
-            # Crear el popup con la información
-            popup_text = f"""
-            <b>Apartment ID:</b> {apartment_id}<br>
-            <b>Vial:</b> {vial if vial else 'No Disponible'}<br>
-            <b>Número:</b> {numero if numero else 'No Disponible'}<br>
-            <b>Letra:</b> {letra if letra else 'No Disponible'}<br>
-            """
+                    # Crear el popup con la información
+                    popup_text = f"""
+                    <b>Apartment ID:</b> {apartment_id}<br>
+                    <b>Vial:</b> {vial if vial else 'No Disponible'}<br>
+                    <b>Número:</b> {numero if numero else 'No Disponible'}<br>
+                    <b>Letra:</b> {letra if letra else 'No Disponible'}<br>
+                    """
 
-            # Crear el marcador con el popup
-            folium.Marker(
-                [lat, lon],
-                icon=folium.Icon(icon='home', color=color),
-                popup=folium.Popup(popup_text, max_width=300)  # Popup con texto
-            ).add_to(m)
-        st_folium(m, height=500, width=700)
+                    # Crear el marcador con el popup
+                    folium.Marker(
+                        [lat, lon],
+                        icon=folium.Icon(icon='home', color=color),
+                        popup=folium.Popup(popup_text, max_width=300)  # Popup con texto
+                    ).add_to(m)
+                st_folium(m, height=500, width=700)
 
     # Mostrar la tabla de zonas asignadas ocupando el ancho completo, justo debajo de las columnas
     conn = sqlite3.connect("data/usuarios.db")

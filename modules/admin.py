@@ -555,7 +555,7 @@ def admin_dashboard():
         if "df" in st.session_state:
             del st.session_state["df"]
 
-        with st.spinner("Cargando ofertas comerciales..."):
+        with st.spinner("⏳ Cargando ofertas comerciales..."):
             try:
                 conn = sqlite3.connect("data/usuarios.db")  # Conexión a la base de datos correcta
 
