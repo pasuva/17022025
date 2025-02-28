@@ -29,11 +29,13 @@ def log_trazabilidad(usuario, accion, detalles):
     except sqlite3.OperationalError as e:
         st.error(f"Error al escribir en la base de datos de trazabilidad: {e}")
 
-def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
-    """Guarda la oferta en SQLite y almacena la imagen si es necesario."""
+
+def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
+    """Guarda o actualiza la oferta en SQLite y almacena la imagen si es necesario."""
     try:
         conn = sqlite3.connect("data/usuarios.db")
         cursor = conn.cursor()
+
         # Crear tabla comercial_rafa si no existe, definiendo apartment_id como PRIMARY KEY
         cursor.execute('''CREATE TABLE IF NOT EXISTS comercial_rafa (
                             apartment_id TEXT PRIMARY KEY,
@@ -55,37 +57,44 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                             incidencia TEXT,
                             motivo_incidencia TEXT,
                             fichero_imagen TEXT,
-                            fecha TEXT
+                            fecha TEXT,
                             Tipo_Vivienda TEXT,
-                            Contrato TEXT
+                            Contrato TEXT,
                             comercial TEXT
                         )''')
 
-        # Verificar si ya existe un registro con el mismo apartment_id
-        cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
-        if cursor.fetchone()[0] > 0:
-            st.error("❌ Ya existe una oferta registrada con este Apartment ID.")
+        # Verificar si el apartment_id existe en la base de datos
+        cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE apartment_id = ?", (apartment_id,))
+        if cursor.fetchone()[0] == 0:
+            # Si no existe, mostrar error y detener el proceso
+            st.error("❌ El Apartment ID no existe en la base de datos. No se puede guardar ni actualizar la oferta.")
             conn.close()
             return
+
+        # Si el apartment_id existe, se procede a actualizar
+        st.info(f"⚠️ El Apartment ID {apartment_id} ya existe, se actualizarán los datos.")
 
         # Guardar la imagen si hay incidencia
         imagen_path = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
             # Extraemos la extensión del archivo subido
             extension = os.path.splitext(imagen_incidencia.name)[1]
-            imagen_path = f"data/incidencias/{oferta_data['Apartment ID']}{extension}"
+            imagen_path = f"data/incidencias/{apartment_id}{extension}"
             os.makedirs(os.path.dirname(imagen_path), exist_ok=True)
             with open(imagen_path, "wb") as f:
                 f.write(imagen_incidencia.getbuffer())
 
-        # Insertar datos en la base de datos
-        cursor.execute('''INSERT INTO comercial_rafa (
-                            apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
-                            nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
-                            motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        comercial_logueado = st.session_state.get("username", None)
+
+        # Actualizar los datos en la base de datos
+        cursor.execute('''UPDATE comercial_rafa SET 
+                            provincia = ?, municipio = ?, poblacion = ?, vial = ?, numero = ?, letra = ?, 
+                            cp = ?, latitud = ?, longitud = ?, nombre_cliente = ?, telefono = ?, 
+                            direccion_alternativa = ?, observaciones = ?, serviciable = ?, motivo_serviciable = ?, 
+                            incidencia = ?, motivo_incidencia = ?, fichero_imagen = ?, fecha = ?, Tipo_Vivienda = ?, 
+                            Contrato = ?, comercial = ?
+                          WHERE apartment_id = ?''',
                        (
-                           oferta_data["Apartment ID"],
                            oferta_data["Provincia"],
                            oferta_data["Municipio"],
                            oferta_data["Población"],
@@ -106,15 +115,32 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                            imagen_path,
                            oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                            oferta_data["Tipo_Vivienda"],
-                           oferta_data["Contrato"]
+                           oferta_data["Contrato"],
+                           comercial_logueado,
+                           apartment_id  # Utilizamos el apartment_id para identificar la fila
                        ))
 
         conn.commit()
         conn.close()
-        st.success("✅ ¡Oferta enviada y guardada en la base de datos con éxito!")
+        st.success("✅ ¡Oferta actualizada con éxito en la base de datos!")
+
+        # Llamar a la notificación (notificación tipo 1)
+        destinatario_admin = "rebeca.sanchru@gmail.com"  # Dirección del administrador
+        descripcion_oferta = f"Se ha actualizado una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
+
+        # Enviar el correo de oferta
+        correo_oferta_comercial(destinatario_admin, apartment_id, descripcion_oferta)
+
+        st.success("✅ Oferta actualizada con éxito")
+        st.info(f"📧 Se ha enviado una notificación al administrador sobre la oferta actualizada.")
+
         # Registrar trazabilidad del guardado de la oferta
-        log_trazabilidad(st.session_state["username"], "Guardar Oferta",
-                         f"Oferta guardada para Apartment ID: {oferta_data['Apartment ID']}")
+        log_trazabilidad(st.session_state["username"], "Actualizar Oferta",
+                         f"Oferta actualizada para Apartment ID: {apartment_id}")
+
+    except Exception as e:
+        st.error(f"❌ Error al guardar o actualizar la oferta en la base de datos: {e}")
+
     except Exception as e:
         st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
 
@@ -187,7 +213,7 @@ def comercial_dashboard():
                 query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
                 ofertas_df = pd.read_sql(query_ofertas, conn)
 
-                query_ams = "SELECT apartment_id FROM comercial_rafa WHERE LOWER(serviciable) = 'sí'"
+                query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(serviciable) = 'sí'"
                 ams_df = pd.read_sql(query_ams, conn)
                 conn.close()
 
@@ -221,37 +247,57 @@ def comercial_dashboard():
         serviciable_set = set(ams_df["apartment_id"])
         contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
 
-        with st.spinner("⏳ Cargando mapa..."):
-            m = folium.Map(location=[lat, lon], zoom_start=12,
-                           tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-                           attr="Google")
-            Geocoder().add_to(m)
-            marker_cluster = MarkerCluster().add_to(m)
+        with st.spinner("⏳ Cargando datos..."):
+            try:
+                conn = sqlite3.connect("data/usuarios.db")  # Cambiar a la nueva base de datos
 
-            for _, row in df.iterrows():
-                popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
-                apartment_id = row['apartment_id']
+                # Consulta para obtener apartamentos no servicibles
+                query_serviciable = "SELECT apartment_id FROM comercial_rafa WHERE LOWER(serviciable) = 'no'"
+                serviciable_no_df = pd.read_sql(query_serviciable, conn)
+                serviciable_no_set = set(serviciable_no_df["apartment_id"])  # Set de IDs no servicibles
 
-                # Lógica de colores actualizada para incluir rojo en "No Serviciable"
-                if apartment_id in serviciable_set:
-                    marker_color = 'green'  # 🟢 Serviciable
-                elif apartment_id in contrato_dict:
-                    if contrato_dict[apartment_id] == "Sí":
-                        marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
-                    elif contrato_dict[apartment_id] == "No Interesado":
-                        marker_color = 'gray'  # ⚫ Oferta (No Interesado)
-                    else:
-                        marker_color = 'blue'  # 🔵 Sin oferta ni contrato
-                else:
-                    marker_color = 'red'  # 🔴 No Serviciable
+                # Consulta para obtener las ofertas
+                query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
+                ofertas_df = pd.read_sql(query_ofertas, conn)
 
-                folium.Marker(
-                    location=[row['latitud'], row['longitud']],
-                    popup=popup_text,
-                    icon=folium.Icon(color=marker_color, icon=marker_icon_type)
-                ).add_to(marker_cluster)
+                # Aquí tu código para la ubicación y mapa
+                # ...
 
-            map_data = st_folium(m, height=500, width=700)
+                with st.spinner("⏳ Cargando mapa..."):
+                    m = folium.Map(location=[lat, lon], zoom_start=12,
+                                   tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", attr="Google")
+                    marker_cluster = MarkerCluster().add_to(m)
+
+                    for _, row in df.iterrows():
+                        popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
+                        apartment_id = row['apartment_id']
+
+                        # Lógica de color para los apartamentos no servicibles (rojo)
+                        if apartment_id in serviciable_no_set:
+                            marker_color = 'red'  # 🔴 No Serviciable
+                        elif apartment_id in serviciable_set:
+                            marker_color = 'green'  # 🟢 Serviciable
+                        elif apartment_id in contrato_dict:
+                            if contrato_dict[apartment_id] == "Sí":
+                                marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
+                            elif contrato_dict[apartment_id] == "No Interesado":
+                                marker_color = 'black'  # ⚫ Oferta (No Interesado)
+                            else:
+                                marker_color = 'blue'  # 🔵 Sin oferta ni contrato
+                        else:
+                            marker_color = 'blue'  # 🔵 Sin oferta ni contrato
+
+                        folium.Marker(
+                            location=[row['latitud'], row['longitud']],
+                            popup=popup_text,
+                            icon=folium.Icon(color=marker_color, icon=marker_icon_type)
+                        ).add_to(marker_cluster)
+
+                    map_data = st_folium(m, height=500, width=700)
+                conn.close()
+
+            except Exception as e:
+                st.error(f"❌ Error al cargar los datos: {e}")
 
         if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
             st.session_state.clicks.append(map_data["last_object_clicked"])
@@ -293,35 +339,53 @@ def comercial_dashboard():
     elif menu_opcion == "📈 Visualización de Datos":
         st.subheader("📊 Datos de Ofertas con Contrato")
 
+        # Verificar si el usuario ha iniciado sesión
         if "username" not in st.session_state:
             st.error("❌ No has iniciado sesión. Por favor, vuelve a la pantalla de inicio de sesión.")
             st.stop()
 
-        comercial_usuario = st.session_state["username"]  # Obtener el comercial logueado
+        #comercial_usuario = st.session_state["username"]  # Obtener el comercial logueado
+        comercial_usuario = st.session_state.get("username", None)
 
         try:
-            conn = sqlite3.connect("data/usuarios.db")  # Cambiar a la nueva base de datos
+            conn = sqlite3.connect("data/usuarios.db")
 
             # Consulta SQL con filtro por comercial logueado (primera tabla: comercial_rafa)
             query_ofertas = """
-            SELECT oc.apartment_id, oc.provincia, oc.municipio, oc.poblacion, 
-                   oc.vial, oc.numero, oc.letra, oc.cp, oc.nombre_cliente, 
-                   oc.telefono, oc.direccion_alternativa, oc.serviciable, oc.motivo_serviciable
-            FROM comercial_rafa oc
-            WHERE LOWER(oc.Comercial) = LOWER(?)
-            AND LOWER(oc.Contrato) = 'sí'
+            SELECT *
+            FROM comercial_rafa
+            WHERE LOWER(Contrato) = 'sí' 
+            AND LOWER(comercial) = LOWER(?)
             """
 
             df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
+            #df_ofertas = pd.read_sql(query_ofertas, conn)
 
-            # Verificar si hay datos para mostrar
+            # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
+            query_viabilidades = """
+            SELECT v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
+                   v.serviciable, v.coste, v.comentarios_comercial
+            FROM viabilidades v
+            WHERE LOWER(v.usuario) = LOWER(?)
+            """
+
+            df_viabilidades = pd.read_sql(query_viabilidades, conn, params=(comercial_usuario,))
+
+            conn.close()
+
+            # Verificar si hay datos para mostrar en la primera tabla (ofertas_comercial)
             if df_ofertas.empty:
                 st.warning(f"⚠️ No hay ofertas con contrato activo para el comercial '{comercial_usuario}'.")
             else:
                 st.subheader("📋 Tabla de Ofertas con Contrato Activo")
                 st.dataframe(df_ofertas, use_container_width=True)
 
-            conn.close()
+            # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
+            if df_viabilidades.empty:
+                st.warning(f"⚠️ No hay viabilidades disponibles para el comercial '{comercial_usuario}'.")
+            else:
+                st.subheader("📋 Tabla de Viabilidades")
+                st.dataframe(df_viabilidades, use_container_width=True)
 
         except Exception as e:
             st.error(f"❌ Error al cargar los datos: {e}")
@@ -691,17 +755,7 @@ def mostrar_formulario(click_data):
         }
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
-            guardar_en_base_de_datos(oferta_data, imagen_incidencia)
-
-            # Llamar a la notificación (notificación tipo 1)
-            destinatario_admin = "rebeca.sanchru@gmail.com"  # Dirección del administrador
-            descripcion_oferta = f"Se ha añadido una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
-
-            # Enviar el correo de oferta
-            correo_oferta_comercial(destinatario_admin, apartment_id, descripcion_oferta)
-
-            st.success("✅ Oferta enviada con éxito")
-            st.info(f"📧 Se ha enviado una notificación al administrador sobre la oferta completada.")
+            guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id)
 
 
 if __name__ == "__main__":

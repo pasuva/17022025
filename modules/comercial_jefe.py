@@ -3,11 +3,10 @@ import pandas as pd
 import sqlite3
 import folium
 from streamlit_folium import st_folium
-from folium.plugins import FastMarkerCluster
-from sklearn.cluster import KMeans
 from datetime import datetime
 import io
-from modules.notificaciones import correo_oferta_comercial, correo_asignacion_administracion, correo_desasignacion_administracion
+from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion
+from folium.plugins import MarkerCluster
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -29,7 +28,7 @@ def cargar_datos():
     conn = sqlite3.connect("data/usuarios.db")
     # Cargar datos de la tabla datos_uis (incluimos municipio y población)
     query_datos_uis = """
-        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, cto_con_proyecto 
+        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, cto_con_proyecto, serviciable 
         FROM datos_uis 
         WHERE comercial = 'RAFA SANZ'
     """
@@ -60,7 +59,7 @@ def mapa_dashboard():
         🔴 **No Serviciable (No)**
         🟠 **Oferta (Contrato: Sí)**
         ⚫ **Oferta (Contrato: No Interesado)**
-        🔵 **No Visitado (No existe en comercial_rafa)**
+        🔵 **No Visitado**
     """)
 
     # Barra lateral con bienvenida y botón de cerrar sesión
@@ -124,17 +123,6 @@ def mapa_dashboard():
     datos_uis = datos_uis.dropna(subset=['latitud', 'longitud'])
     datos_uis['latitud'] = datos_uis['latitud'].astype(float)
     datos_uis['longitud'] = datos_uis['longitud'].astype(float)
-    if len(datos_uis) > 5000:
-        st.warning("🔹 Se ha reducido la cantidad de puntos para mejorar la visualización.")
-        datos_uis = datos_uis.sample(n=5000, random_state=42)
-    if len(datos_uis) > 3000:
-        st.warning("🔹 Se han agrupado los puntos cercanos.")
-        kmeans = KMeans(n_clusters=100, random_state=42)
-        datos_uis["cluster"] = kmeans.fit_predict(datos_uis[["latitud", "longitud"]])
-        datos_uis = datos_uis.groupby("cluster").agg({"latitud": "mean", "longitud": "mean"}).reset_index()
-        if datos_uis.empty:
-            st.error("❌ No se encontraron puntos después de agrupar los datos.")
-            return
 
     # --- Crear columnas: la columna derecha tendrá el panel de asignación ---
     col1, col2 = st.columns([3, 3])
@@ -226,17 +214,21 @@ def mapa_dashboard():
     with col1:
         # Generar el mapa con spinner
         with col1:
-            with st.spinner("⏳ Cargando mapa..."):
-                # Por defecto, usar el centro del primer registro
+            # Dentro de la sección donde generas el mapa...
+            with st.spinner("⏳ Cargando mapa... (Puede tardar según la cantidad de puntos)"):
+                # Definir la ubicación inicial en base a los datos disponibles
                 center = [datos_uis.iloc[0]['latitud'], datos_uis.iloc[0]['longitud']]
                 zoom_start = 12
-                # Si se han seleccionado municipio y población en el panel de asignación, recalcule el centro
+
+                # Si el usuario ha filtrado por municipio/población, centrar el mapa en esa zona
                 if "municipio_sel" in st.session_state and "poblacion_sel" in st.session_state:
-                    zone_data = datos_uis[(datos_uis["municipio"] == st.session_state["municipio_sel"]) &
-                                          (datos_uis["poblacion"] == st.session_state["poblacion_sel"])]
+                    zone_data = datos_uis[
+                        (datos_uis["municipio"] == st.session_state["municipio_sel"]) &
+                        (datos_uis["poblacion"] == st.session_state["poblacion_sel"])
+                        ]
                     if not zone_data.empty:
                         center = [zone_data["latitud"].mean(), zone_data["longitud"].mean()]
-                        zoom_start = 14  # Zoom más cercano para la zona
+                        zoom_start = 14
 
                 m = folium.Map(
                     location=center,
@@ -244,49 +236,61 @@ def mapa_dashboard():
                     tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
                     attr="Google"
                 )
-                locations = list(zip(datos_uis["latitud"], datos_uis["longitud"]))
-                FastMarkerCluster(locations).add_to(m)
-                # Añadir marcadores con criterios de color
+
+                # Agrupar marcadores
+                marker_cluster = MarkerCluster(
+                    disableClusteringAtZoom=16,
+                    maxClusterRadius=50,
+                    spiderfyOnMaxZoom=True
+                ).add_to(m)
+
+                # Definir colores y asignarlos correctamente
                 for _, row in datos_uis.iterrows():
                     lat = row['latitud']
                     lon = row['longitud']
                     apartment_id = row['apartment_id']
-                    vial = row.get('vial', None)  # Si existe
-                    numero = row.get('numero', None)  # Si existe
-                    letra = row.get('letra', None)  # Si existe
+                    vial = row.get('vial', 'No Disponible')
+                    numero = row.get('numero', 'No Disponible')
+                    letra = row.get('letra', 'No Disponible')
+
+                    # Buscar en comercial_rafa
                     oferta = comercial_rafa[comercial_rafa['apartment_id'] == apartment_id]
 
-                    # Determinamos el color del marcador según los criterios
-                    if not oferta.empty:
-                        serviciable = oferta.iloc[0]['serviciable']
-                        contrato = oferta.iloc[0]['Contrato']
-                        if serviciable == "Sí":
-                            color = 'green'
-                        elif serviciable == "No":
-                            color = 'red'
-                        elif contrato == "Sí":
-                            color = 'orange'
-                        elif contrato == "No Interesado":
-                            color = 'black'
-                        else:
-                            color = 'gray'
-                    else:
-                        color = 'blue'
+                    # Color por defecto
+                    color = 'blue'
 
-                    # Crear el popup con la información
+                    # Revisar 'serviciable' primero
+                    if str(row.get('serviciable', '')).strip().lower() == "sí":
+                        color = 'green'
+                    elif not oferta.empty:
+                        oferta_serviciable = str(oferta.iloc[0].get('serviciable', '')).strip().lower()
+                        contrato = str(oferta.iloc[0].get('Contrato', '')).strip().lower()
+
+                        if oferta_serviciable == "no":
+                            color = 'red'
+                        elif contrato == "sí":
+                            color = 'orange'
+                        elif contrato == "no interesado":
+                            color = 'black'
+
+                    # Icono según cto_con_proyecto
+                    icon_name = 'home' if str(row.get('cto_con_proyecto', '')).strip().lower() == 'si' else 'info-sign'
+
+                    # Popup con información
                     popup_text = f"""
-                    <b>Apartment ID:</b> {apartment_id}<br>
-                    <b>Vial:</b> {vial if vial else 'No Disponible'}<br>
-                    <b>Número:</b> {numero if numero else 'No Disponible'}<br>
-                    <b>Letra:</b> {letra if letra else 'No Disponible'}<br>
+                        <b>Apartment ID:</b> {apartment_id}<br>
+                        <b>Vial:</b> {vial}<br>
+                        <b>Número:</b> {numero}<br>
+                        <b>Letra:</b> {letra}<br>
                     """
 
-                    # Crear el marcador con el popup
                     folium.Marker(
                         [lat, lon],
-                        icon=folium.Icon(icon='home', color=color),
-                        popup=folium.Popup(popup_text, max_width=300)  # Popup con texto
-                    ).add_to(m)
+                        icon=folium.Icon(icon=icon_name, color=color),
+                        popup=folium.Popup(popup_text, max_width=300)
+                    ).add_to(marker_cluster)
+
+                # Mostrar el mapa en Streamlit
                 st_folium(m, height=500, width=700)
 
     # Mostrar la tabla de zonas asignadas ocupando el ancho completo, justo debajo de las columnas
