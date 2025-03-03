@@ -237,7 +237,7 @@ def comercial_dashboard():
                 coord_counts[coord] = coord_counts.get(coord, 0) + 1
 
             for index, row in df.iterrows():
-                popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
+                popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
                 apartment_id = row['apartment_id']
 
                 # Filtrar la oferta correspondiente a este apartment_id
