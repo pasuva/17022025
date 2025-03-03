@@ -13,7 +13,6 @@ from modules import login
 from folium.plugins import Geocoder
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
 
-
 def log_trazabilidad(usuario, accion, detalles):
     """Registra en la base de datos la trazabilidad de acciones del usuario."""
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -179,6 +178,10 @@ def comercial_dashboard():
                     st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
                     conn.close()
                     return
+
+                # Si el comercial es Nestor, cargamos los datos de Roberto
+                if comercial.lower() == "nestor":
+                     comercial = "roberto"
 
                 query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
                 df = pd.read_sql(query, conn, params=(comercial,))
