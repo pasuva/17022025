@@ -1,0 +1,10 @@
+v1.0.0 - Implementación inicial
+v1.0.1 - Mejoras en el sistema de autenticación
+v1.0.2 - Se ha solucionado el problema con la geolocalización del usuario
+v1.0.3 - Corrección del marcador rojo en el mapa para ubicaciones no serviciables
+v1.0.4 - Mejora en el sistema de cierre de sesión para evitar sesiones bloqueadas
+v1.0.5 - Ahora cada usuario solo puede visualizar sus propias UIs asignadas
+v1.0.6 - Ajuste en el zoom del clúster para mejorar la experiencia en zonas con alta densidad de marcadores
+v1.0.7 - Corrección en la visualización de datos dentro del pop-up del mapa
+v1.0.8 - Validación mejorada en los campos del formulario para evitar envíos con datos incompletos o incorrectos
+v1.1.0 - Mejoras en seguridad y rendimiento
