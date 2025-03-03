@@ -183,7 +183,7 @@ def comercial_dashboard():
                 query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
                 df = pd.read_sql(query, conn, params=(comercial,))
 
-                query_ofertas = "SELECT apartment_id, Contrato FROM ofertas_comercial"
+                query_ofertas = "SELECT apartment_id, serviciable, Contrato FROM ofertas_comercial"
                 ofertas_df = pd.read_sql(query_ofertas, conn)
 
                 query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(site_operational_state) = 'serviciable'"
@@ -220,19 +220,36 @@ def comercial_dashboard():
         contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
 
         with st.spinner("⏳ Cargando mapa..."):
-            m = folium.Map(location=[lat, lon], zoom_start=12,
+            m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
                            tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
                            attr="Google")
             Geocoder().add_to(m)
-            marker_cluster = MarkerCluster().add_to(m)
 
+            if m.options['zoom'] >= 15:  # Si el zoom es alto, desactivar clustering
+                cluster_layer = m
+            else:
+                cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
+
+            # 📌 Detectar coordenadas duplicadas para aplicar desplazamiento ordenado
+            coord_counts = {}
             for _, row in df.iterrows():
+                coord = (row['latitud'], row['longitud'])
+                coord_counts[coord] = coord_counts.get(coord, 0) + 1
+
+            for index, row in df.iterrows():
                 popup_text = f"🏠 {row['address_id']} - 📍 {row['latitud']}, {row['longitud']}"
                 apartment_id = row['apartment_id']
 
-                # Lógica de colores actualizada para incluir rojo en "No Serviciable"
+                # Filtrar la oferta correspondiente a este apartment_id
+                oferta = ofertas_df[ofertas_df["apartment_id"] == apartment_id]
+                oferta_serviciable = str(
+                    oferta.iloc[0].get("serviciable", "")).strip().lower() if not oferta.empty else ""
+
+                # Determinar el color del marcador
                 if apartment_id in serviciable_set:
                     marker_color = 'green'  # 🟢 Serviciable
+                elif oferta_serviciable == "no":
+                    marker_color = 'red'  # 🔴 No Serviciable
                 elif apartment_id in contrato_dict:
                     if contrato_dict[apartment_id] == "Sí":
                         marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
@@ -241,13 +258,27 @@ def comercial_dashboard():
                     else:
                         marker_color = 'blue'  # 🔵 Sin oferta ni contrato
                 else:
-                    marker_color = 'blue'  # 🔴 No Serviciable
+                    marker_color = 'blue'  # 🔵 Default (Sin información)
+
+                # 📌 Aplicar desplazamiento ordenado SOLO si hay coordenadas duplicadas
+                coord = (row['latitud'], row['longitud'])
+                offset_factor = coord_counts[coord]  # Cuántos hay en la misma posición
+                if offset_factor > 1:
+                    lat_offset = (offset_factor * 0.00003)  # Desplazamiento fijo incremental
+                    lon_offset = (offset_factor * -0.00003)
+                else:
+                    lat_offset, lon_offset = 0, 0  # No mover si no está duplicado
+
+                new_lat = row['latitud'] + lat_offset
+                new_lon = row['longitud'] + lon_offset
+
+                coord_counts[coord] -= 1  # Reducir el contador después de usarlo
 
                 folium.Marker(
-                    location=[row['latitud'], row['longitud']],
+                    location=[new_lat, new_lon],  # 📍 Usamos coordenadas desplazadas si es necesario
                     popup=popup_text,
                     icon=folium.Icon(color=marker_color, icon=marker_icon_type)
-                ).add_to(marker_cluster)
+                ).add_to(cluster_layer)
 
             map_data = st_folium(m, height=500, width=700)
 
