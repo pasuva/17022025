@@ -12,7 +12,6 @@ from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
-from streamlit_geolocation import streamlit_geolocation
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -603,34 +602,28 @@ def viabilidades_section():
 
 
 def get_user_location():
-    """Obtiene la ubicación del usuario a través de un componente de geolocalización."""
-
-    st.write(f"Pulsa el botón de ubicación para centrar el mapa en el lugar en el que te encuentras actualmente.")
-
-    # Usar el componente de geolocalización
-    location = streamlit_geolocation()
-
-    # Verificar si se ha obtenido la ubicación
-    if location is None:
-        st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
-        lat, lon = 43.463444, -3.790476  # Ubicación predeterminada si no se obtiene la geolocalización
-    else:
-        # Extraer latitud y longitud del diccionario
-        lat = location.get('latitude')
-        lon = location.get('longitude')
-
-        # Si por alguna razón no se obtuvieron las coordenadas, usar las predeterminadas
-        if lat is None or lon is None:
-            st.warning("❌ No se pudo obtener la ubicación precisa. Cargando el mapa en la ubicación predeterminada.")
-            lat, lon = 43.463444, -3.790476
-
-    return lat, lon
-
-# Obtener la ubicación
-lat, lon = get_user_location()
-
-# Mostrar solo la latitud y longitud, sin mostrar el diccionario completo
-st.write(f"Ubicación obtenida: Latitud = {lat}, Longitud = {lon}")
+    """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
+    html_code = """
+        <script>
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    var lat = position.coords.latitude;
+                    var lon = position.coords.longitude;
+                    window.parent.postMessage({lat: lat, lon: lon}, "*");
+                }, function() {
+                    alert("No se pudo obtener la ubicación del dispositivo.");
+                });
+            } else {
+                alert("Geolocalización no soportada por este navegador.");
+            }
+        </script>
+    """
+    components.html(html_code, height=0, width=0)
+    if "lat" in st.session_state and "lon" in st.session_state:
+        lat = st.session_state["lat"]
+        lon = st.session_state["lon"]
+        return lat, lon
+    return None
 
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
