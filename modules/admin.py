@@ -12,7 +12,7 @@ from reportlab.pdfgen import canvas
 import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
 import streamlit as st
-from modules.notificaciones import correo_viabilidad_administracion
+from modules.notificaciones import correo_viabilidad_administracion, correo_usuario
 
 # Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime
@@ -62,7 +62,7 @@ def cargar_usuarios():
     if conn:
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id, username, role FROM usuarios")
+            cursor.execute("SELECT id, username, role, email FROM usuarios")
             usuarios = cursor.fetchall()
             return usuarios
         except sqlite3.Error as e:
@@ -75,50 +75,132 @@ def cargar_usuarios():
 
 
 # Función para agregar un nuevo usuario
-def agregar_usuario(username, rol, password):
+def agregar_usuario(username, rol, password, email):
     conn = obtener_conexion()
     cursor = conn.cursor()
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     try:
-        cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)", (username, hashed_pw, rol))
+        cursor.execute("INSERT INTO usuarios (username, password, role, email) VALUES (?, ?, ?, ?)", (username, hashed_pw, rol, email))
         conn.commit()
         st.success(f"Usuario '{username}' creado con éxito.")
         log_trazabilidad(st.session_state["username"], "Agregar Usuario",
                          f"El admin agregó al usuario '{username}' con rol '{rol}'.")
+
+        # Enviar correo al usuario
+        asunto = "🆕 ¡Nuevo Usuario Creado!"
+        mensaje = (
+            f"Estimado {username},<br><br>"
+            f"Se ha creado una cuenta para ti en nuestro sistema con los siguientes detalles:<br><br>"
+            f"📋 <strong>Nombre:</strong> {username}<br>"
+            f"🛠 <strong>Rol:</strong> {rol}<br>"
+            f"📧 <strong>Email:</strong> {email}<br><br>"
+            f"🔑 <strong>Tu contraseña es:</strong> {password}<br><br>"
+            f"Por favor, ingresa al sistema y comprueba que todo es correcto.<br><br>"
+            f"⚠️ <strong>Por seguridad:</strong> No compartas esta información con nadie. "
+            f"Si no has realizado esta solicitud o tienes alguna duda sobre la creación de tu cuenta, por favor contacta con nuestro equipo de soporte de inmediato.<br><br>"
+            f"Si has recibido este correo por error, te recomendamos solicitar el cambio de tu contraseña tan pronto como puedas para garantizar la seguridad de tu cuenta.<br><br>"
+            f"Gracias por ser parte de nuestro sistema.<br><br>"
+        )
+
+        correo_usuario(email, asunto, mensaje)  # Llamada a la función de correo
+
     except sqlite3.IntegrityError:
         st.error(f"El usuario '{username}' ya existe.")
     finally:
         conn.close()
 
 
-# Función para editar un usuario existente
-def editar_usuario(id, username, rol, password):
+def editar_usuario(id, username, rol, password, email):
     conn = obtener_conexion()
     cursor = conn.cursor()
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() if password else None
 
-    if password:
-        cursor.execute("UPDATE usuarios SET username = ?, role = ?, password = ? WHERE id = ?",
-                       (username, rol, hashed_pw, id))
+    # Obtenemos los datos actuales del usuario
+    cursor.execute("SELECT username, role, email, password FROM usuarios WHERE id = ?", (id,))
+    usuario_actual = cursor.fetchone()
+
+    if usuario_actual:
+        # Guardamos los valores actuales
+        username_anterior, rol_anterior, email_anterior, password_anterior = usuario_actual
+
+        # Realizamos las actualizaciones solo si hay cambios
+        hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() if password else None
+
+        # Si la contraseña fue cambiada, realizamos la actualización correspondiente
+        if password:
+            cursor.execute("UPDATE usuarios SET username = ?, role = ?, password = ?, email = ? WHERE id = ?",
+                           (username, rol, hashed_pw, email, id))
+        else:
+            cursor.execute("UPDATE usuarios SET username = ?, role = ?, email = ? WHERE id = ?",
+                           (username, rol, email, id))
+
+        conn.commit()
+        conn.close()
+
+        st.success(f"Usuario con ID {id} actualizado correctamente.")
+        log_trazabilidad(st.session_state["username"], "Editar Usuario", f"El admin editó al usuario con ID {id}.")
+
+        # Ahora creamos el mensaje del correo, especificando qué ha cambiado
+        cambios = []
+
+        if username != username_anterior:
+            cambios.append(f"📋 Nombre cambiado de <strong>{username_anterior}</strong> a <strong>{username}</strong>.")
+        if rol != rol_anterior:
+            cambios.append(f"🛠 Rol cambiado de <strong>{rol_anterior}</strong> a <strong>{rol}</strong>.")
+        if email != email_anterior:
+            cambios.append(f"📧 Email cambiado de <strong>{email_anterior}</strong> a <strong>{email}</strong>.")
+        if password:  # Si la contraseña fue modificada
+            cambios.append(f"🔑 Tu contraseña ha sido cambiada. Asegúrate de usar una nueva contraseña segura.")
+
+        # Si no hay cambios, se indica en el correo
+        if not cambios:
+            cambios.append("❗ No se realizaron cambios en tu cuenta.")
+
+        # Asunto y cuerpo del correo
+        asunto = "🔄 ¡Detalles de tu cuenta actualizados!"
+        mensaje = (
+            f"📢 Se han realizado cambios en tu cuenta con los siguientes detalles:<br><br>"
+            f"{''.join([f'🔄 <strong>{cambio}</strong><br>' for cambio in cambios])}"  # Unimos los cambios en un formato adecuado
+            f"<br>ℹ️ Si no realizaste estos cambios o tienes alguna duda, por favor contacta con el equipo de administración.<br><br>"
+            f"⚠️ <strong>Por seguridad, te recordamos no compartir este correo con nadie. Si no reconoces los cambios, por favor contacta con el equipo de administración de inmediato.</strong><br><br>"
+        )
+
+        # Enviamos el correo
+        correo_usuario(email, asunto, mensaje)  # Llamada a la función de correo
     else:
-        cursor.execute("UPDATE usuarios SET username = ?, role = ? WHERE id = ?", (username, rol, id))
-
-    conn.commit()
-    conn.close()
-    st.success(f"Usuario con ID {id} actualizado correctamente.")
-    log_trazabilidad(st.session_state["username"], "Editar Usuario", f"El admin editó al usuario con ID {id}.")
+        conn.close()
+        st.error(f"Usuario con ID {id} no encontrado.")
 
 
 # Función para eliminar un usuario
 def eliminar_usuario(id):
     conn = obtener_conexion()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM usuarios WHERE id = ?", (id,))
-    conn.commit()
-    conn.close()
-    st.success(f"Usuario con ID {id} eliminado correctamente.")
-    log_trazabilidad(st.session_state["username"], "Eliminar Usuario", f"El admin eliminó al usuario con ID {id}.")
+    cursor.execute("SELECT username, email FROM usuarios WHERE id = ?", (id,))
+    usuario = cursor.fetchone()
+
+    if usuario:
+        nombre_usuario = usuario[0]
+        email_usuario = usuario[1]
+
+        cursor.execute("DELETE FROM usuarios WHERE id = ?", (id,))
+        conn.commit()
+        conn.close()
+
+        st.success(f"Usuario con ID {id} eliminado correctamente.")
+        log_trazabilidad(st.session_state["username"], "Eliminar Usuario", f"El admin eliminó al usuario con ID {id}.")
+
+        # Enviar correo de baja al usuario
+        asunto = "❌ Tu cuenta ha sido desactivada"
+        mensaje = (
+            f"📢 Tu cuenta ha sido desactivada y eliminada de nuestro sistema. <br><br>"
+            f"ℹ️ Si consideras que esto ha sido un error o necesitas más detalles, por favor, contacta con el equipo de administración.<br><br>"
+            f"🔒 <strong>Por seguridad, no compartas este correo con nadie. Si no reconoces esta acción, contacta con el equipo de administración de inmediato.</strong><br><br>"
+        )
+
+        correo_usuario(email_usuario, asunto, mensaje)  # Llamada a la función de correo
+    else:
+        st.error("Usuario no encontrado.")
 
 
 # Función para generar PDF con los datos del informe
@@ -380,10 +462,9 @@ def mostrar_formulario(click_data):
         comentarios_internos = st.text_area("📄 Comentarios Internos", value="", key="comentarios_internos_input")
 
     # Si el administrador guarda los cambios
-    # Si el administrador guarda los cambios
     if st.button(f"💾 Guardar cambios para el Ticket {ticket}"):
         try:
-            # Conectar a la base de datos
+            # Conectar a la base de datos (usuarios.db)
             conn = sqlite3.connect("data/usuarios.db")
             cursor = conn.cursor()
 
@@ -400,20 +481,38 @@ def mostrar_formulario(click_data):
                 coste, comentarios_internos, ticket
             ))
 
-            # 📢 Enviar notificación al comercial ANTES de cerrar la conexión
+            # 📢 Consultar el correo del comercial asociado al ticket:
+            cursor.execute("""
+                SELECT email 
+                FROM usuarios
+                WHERE username = (SELECT usuario FROM viabilidades WHERE ticket = ?)
+            """, (ticket,))
+            email_comercial = cursor.fetchone()
 
-            descripcion_viabilidad = f"La viabilidad del ticket {ticket} ha sido completada.\n\n" \
-                                     f"📌 Comentarios internos: {comentarios_internos}\n" \
-                                     f"📍 Municipio: {municipio_admin}\n" \
-                                     f"💰 Coste: {coste}€\n" \
-                                     f"🔍 Es Serviciable: {serviciable}\n" \
-                                     f"⚙️ CTO Admin: {cto_admin}\n" \
-                                     f"🏠 Apartment ID: {apartment_id}"
+            # Verificar si se encontró el correo
+            if email_comercial:
+                destinatario_comercial = email_comercial[0]
+            else:
+                st.error("❌ No se encontró el correo del comercial correspondiente.")
+                destinatario_comercial = "psvpasuva@gmail.com"  # Correo predeterminado
 
-            destinatario_comercial = "psvpasuva@gmail.com"  # Ajusta el correo del comercial
+            # Preparar el contenido del correo
+            descripcion_viabilidad = (
+                f"📢 La viabilidad del ticket {ticket} ha sido completada.<br><br>"
+                f"📌 **Comentarios Internos**: {comentarios_comercial}<br>"
+                f"📍 **Municipio**: {municipio_admin}<br>"
+                f"💰 **Coste**: {coste}€<br>"
+                f"🔍 **Es Serviciable**: {serviciable}<br>"
+                f"⚙️ **CTO Admin**: {cto_admin}<br>"
+                f"🏠 **Apartment ID**: {apartment_id}<br><br>"
+                f"ℹ️ Por favor, revise los detalles de la viabilidad y asegúrese de que toda la información sea correcta. "
+                f"Si tiene alguna pregunta o necesita realizar alguna modificación, no dude en ponerse en contacto con el equipo de administración."
+            )
+
+            # Enviar el correo al comercial
             correo_viabilidad_administracion(destinatario_comercial, ticket, descripcion_viabilidad)
 
-            # 🔹 Confirmar los cambios en la base de datos
+            # Confirmar los cambios en la base de datos
             conn.commit()
             conn.close()
 
@@ -904,42 +1003,52 @@ def admin_dashboard():
         usuarios = cargar_usuarios()
         if usuarios:
             st.subheader("Lista de Usuarios")
-            df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Nombre", "Rol"])
+            df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Nombre", "Rol", "Email"])
             st.dataframe(df_usuarios)
 
         st.subheader("Agregar Nuevo Usuario")
         nombre = st.text_input("Nombre del Usuario")
-        rol = st.selectbox("Selecciona el Rol", ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"])
+        rol = st.selectbox("Selecciona el Rol",
+                           ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"])
+        email = st.text_input("Email del Usuario")  # Nuevo campo de email
         password = st.text_input("Contraseña", type="password")
+
         if st.button("Agregar Usuario"):
-            if nombre and password:
-                agregar_usuario(nombre, rol, password)
+            if nombre and password and email:
+                agregar_usuario(nombre, rol, password, email)  # Modificado para incluir email
             else:
                 st.error("Por favor, completa todos los campos.")
 
         st.subheader("Editar Usuario")
         usuario_id = st.number_input("ID del Usuario a Editar", min_value=1, step=1)
+
         if usuario_id:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("SELECT username, role FROM usuarios WHERE id = ?", (usuario_id,))
+            cursor.execute("SELECT username, role, email FROM usuarios WHERE id = ?", (usuario_id,))
             usuario = cursor.fetchone()
             conn.close()
+
             if usuario:
                 nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
-                nuevo_rol = st.selectbox("Nuevo Rol", ["admin", "supervisor", "comercial"],
-                                         index=["admin", "supervisor", "comercial"].index(usuario[1]))
+                nuevo_rol = st.selectbox("Nuevo Rol", ["admin", "supervisor", "comercial", "comercial_rafa", "comercial_jefe"],
+                                         index=["admin", "supervisor", "comercial", "comercial_rafa", "comercial_jefe"].index(usuario[1]))
+                nuevo_email = st.text_input("Nuevo Email", value=usuario[2])  # Permite modificar el email
                 nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
+
                 if st.button("Guardar Cambios"):
-                    editar_usuario(usuario_id, nuevo_nombre, nuevo_rol, nueva_contraseña)
+                    editar_usuario(usuario_id, nuevo_nombre, nuevo_rol, nueva_contraseña,
+                                   nuevo_email)  # Modificado para incluir email
             else:
                 st.error("Usuario no encontrado.")
 
         st.subheader("Eliminar Usuario")
         eliminar_id = st.number_input("ID del Usuario a Eliminar", min_value=1, step=1)
+
         if eliminar_id:
             if st.button("Eliminar Usuario"):
                 eliminar_usuario(eliminar_id)
+
 
     # Opción: Cargar Nuevos Datos
     elif opcion == "📤 Cargar Nuevos Datos":

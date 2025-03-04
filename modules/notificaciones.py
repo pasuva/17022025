@@ -77,11 +77,33 @@ def correo_asignacion_administracion(destinatario, municipio_sel, poblacion_sel,
 
 # 5. Correo de desasignacion de zona a comercial
 def correo_desasignacion_administracion(destinatario, municipio_sel, poblacion_sel, descripcion_desasignacion):
-    asunto = f"Asignación realizada para {municipio_sel} - {poblacion_sel}"
+    asunto = f"Desasignación realizada para {municipio_sel} - {poblacion_sel}"
     descripcion_desasignacion = limpiar_texto(descripcion_desasignacion)
     contenido = {
-        "mensaje": f"Se le ha desasignado la zona por errores de asignación u otros motivos<strong>{municipio_sel} - {poblacion_sel}</strong>. "
+        "mensaje": f"Se le ha desasignado la zona por errores de asignación u otros motivos <strong>{municipio_sel} - {poblacion_sel}</strong>. "
                    f"Entre en su panel de usuario para ver mas detalles.",
         "Descripción de la desasignación": descripcion_desasignacion
     }
+    enviar_notificacion(destinatario, asunto, contenido)
+
+# 6. Correo de gestion de usuarios
+def correo_usuario(destinatario, asunto, mensaje):
+    """
+    Función para enviar un correo a un usuario específico con un asunto y mensaje
+    proporcionados. Utiliza el sistema de notificaciones del proyecto.
+
+    :param destinatario: Email del destinatario.
+    :param asunto: Asunto del correo.
+    :param mensaje: Cuerpo del correo en formato de texto.
+    """
+    # Limpiar el texto del mensaje para evitar errores en el HTML
+    mensaje = limpiar_texto(mensaje)
+
+    # Definir el contenido del correo
+    contenido = {
+        "mensaje": asunto,
+        "Descripción": f"{mensaje}"
+    }
+
+    # Llamada a la función que envía la notificación
     enviar_notificacion(destinatario, asunto, contenido)

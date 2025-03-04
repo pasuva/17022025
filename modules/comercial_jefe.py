@@ -160,14 +160,51 @@ def mapa_dashboard():
                         conn.commit()
                         conn.close()
 
-                        # Enviar correo al comercial desasignado
-                        destinatario_comercial = "psvpasuva@gmail.com"  # Reemplaza con el email real del comercial
-                        descripcion_asignacion = f"Se ha asignado la zona {municipio_sel} - {poblacion_sel} a tu responsabilidad."
-                        correo_asignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel, descripcion_asignacion)
+                        try:
+                            # Conectar a la base de datos (usuarios.db)
+                            conn = sqlite3.connect("data/usuarios.db")
+                            cursor = conn.cursor()
 
-                        st.success("✅ Zona asignada correctamente y notificación enviada al responsable.")
-                        log_trazabilidad(st.session_state["username"], "Asignación",
-                                         f"Asignó zona {municipio_sel} - {poblacion_sel} a {comercial_elegido}")
+                            # Consultar el correo del comercial asignado desde la tabla "usuarios"
+                            # usando el nombre (comercial_elegido) obtenido de la tabla "comercial_rafa"
+                            cursor.execute("""
+                                SELECT email
+                                FROM usuarios
+                                WHERE username = ?
+                            """, (comercial_elegido,))
+                            email_comercial = cursor.fetchone()
+
+                            # Verificar si se encontró el correo
+                            if email_comercial:
+                                destinatario_comercial = email_comercial[0]
+                            else:
+                                st.error("❌ No se encontró el correo del comercial asignado.")
+                                destinatario_comercial = "psvpasuva@gmail.com"  # Correo predeterminado
+
+                            # Preparar el mensaje de notificación con un lenguaje amigable para el usuario
+                            descripcion_asignacion = (
+                                f"📍 Le informamos que se le ha asignado la zona {municipio_sel} - {poblacion_sel} como parte de sus responsabilidades.<br><br>"
+                                f"💼 Ya puede comenzar a realizar ofertas en dicha área y gestionar las tareas correspondientes de manera inmediata. <br>"
+                                f"🔑 Esta asignación implica que ahora estará a cargo de todas las actividades y tareas relacionadas con esta zona. <br>"
+                                f"ℹ️ Le recomendamos revisar detenidamente la asignación a través de su panel de usuario para conocer los detalles específicos de la zona y las tareas relacionadas. <br>"
+                                f"🚨 Si tiene alguna duda o necesita información adicional, no dude en ponerse en contacto con el equipo de administración para recibir asistencia personalizada.<br><br>"
+                                f"🔧 Estamos aquí para ayudarle en todo lo que necesite y asegurar que su trabajo en esta nueva zona sea exitoso. <br>"
+                                f"¡Gracias!"
+                            )
+
+                            # Enviar el correo al comercial asignado
+                            correo_asignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel,
+                                                             descripcion_asignacion)
+
+                            st.success("✅ Zona asignada correctamente y notificación enviada al responsable.")
+                            log_trazabilidad(st.session_state["username"], "Asignación",
+                                             f"Asignó zona {municipio_sel} - {poblacion_sel} a {comercial_elegido}")
+
+                            conn.commit()
+                            conn.close()
+
+                        except Exception as e:
+                            st.error(f"❌ Error al enviar la notificación: {e}")
         elif accion == "Desasignar Zona":
             conn = sqlite3.connect("data/usuarios.db")
             assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
@@ -197,14 +234,50 @@ def mapa_dashboard():
                         conn.commit()
                         conn.close()
 
-                        # Enviar correo al comercial desasignado
-                        destinatario_comercial = "psvpasuva@gmail.com"  # Reemplaza con el email real del comercial
-                        descripcion_desasignacion = f"Se ha desasignado la zona {municipio_sel} - {poblacion_sel} de tu responsabilidad."
-                        correo_desasignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel, descripcion_desasignacion)
+                        try:
+                            # Conectar a la base de datos (usuarios.db)
+                            conn = sqlite3.connect("data/usuarios.db")
+                            cursor = conn.cursor()
 
-                        st.success("✅ Zona desasignada correctamente y notificación enviada al responsable.")
-                        log_trazabilidad(st.session_state["username"], "Desasignación",
-                                         f"Desasignó zona {municipio_sel} - {poblacion_sel}")
+                            # Consultar el correo del comercial desasignado desde la tabla "usuarios"
+                            # usando el nombre que se encuentra en la variable 'comercial_elegido'
+                            cursor.execute("""
+                                SELECT email
+                                FROM usuarios
+                                WHERE username = ?
+                            """, (comercial_asignado,))
+                            email_comercial = cursor.fetchone()
+
+                            # Verificar si se encontró el correo
+                            if email_comercial:
+                                destinatario_comercial = email_comercial[0]
+                            else:
+                                st.error("❌ No se encontró el correo del comercial desasignado.")
+                                destinatario_comercial = "psvpasuva@gmail.com"  # Correo predeterminado
+
+                            # Preparar el contenido del correo con un lenguaje amigable para el usuario
+                            descripcion_desasignacion = (
+                                f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel} de su responsabilidad. <br>"
+                                f"🔄 Este cambio puede deberse a una reestructuración o a un ajuste en las zonas asignadas. <br>"
+                                f"⚠️ Esto significa que ya no estará a cargo de las actividades y tareas correspondientes a esta zona. <br>"
+                                f"ℹ️ Le sugerimos revisar su asignación actualizada en el sistema para obtener detalles sobre las nuevas zonas o responsabilidades que tiene asignadas. <br>"
+                                f"📞 Si tiene alguna pregunta sobre este cambio o requiere asistencia adicional, no dude en contactar con el equipo de administración. <br>"
+                                f"💬 Estamos a su disposición para cualquier consulta o aclaración que pueda necesitar, y para ayudarle con la transición a sus nuevas responsabilidades."
+                            )
+
+                            # Enviar el correo al comercial desasignado
+                            correo_desasignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel,
+                                                                descripcion_desasignacion)
+
+                            st.success("✅ Zona desasignada correctamente y notificación enviada al responsable.")
+                            log_trazabilidad(st.session_state["username"], "Desasignación",
+                                             f"Desasignó zona {municipio_sel} - {poblacion_sel}")
+
+                            conn.commit()
+                            conn.close()
+
+                        except Exception as e:
+                            st.error(f"❌ Error al enviar la notificación: {e}")
         # Mostrar la tabla de zonas asignadas (dentro del panel de asignación)
         conn = sqlite3.connect("data/usuarios.db")
         assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
