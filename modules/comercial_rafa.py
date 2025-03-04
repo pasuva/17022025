@@ -450,7 +450,7 @@ def guardar_viabilidad(datos):
     conn.commit()
 
     # Obtener el email del admin
-    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin' LIMIT 1")
+    cursor.execute("SELECT email FROM usuarios WHERE role = 'rebe' LIMIT 1")
     resultado = cursor.fetchone()
     email_admin = resultado[0] if resultado else None  # Extraer email correctamente
 
@@ -776,7 +776,7 @@ def mostrar_formulario(click_data):
             conn = sqlite3.connect("data/usuarios.db")
             cursor = conn.cursor()
 
-            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin' LIMIT 1")  # Asumimos que solo hay un admin
+            cursor.execute("SELECT email FROM usuarios WHERE role = 'rebe' LIMIT 1")  # Asumimos que solo hay un admin
             resultado = cursor.fetchone()
             email_admin = resultado[0] if resultado else None  # Extraer el email correctamente
 
