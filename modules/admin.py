@@ -1,11 +1,12 @@
 import zipfile
-
 import folium
-import pandas as pd
 import io  # Necesario para trabajar con flujos de bytes
 import sqlite3
 import datetime
 import bcrypt
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 from folium.plugins import MarkerCluster
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -13,10 +14,8 @@ import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
 import streamlit as st
 from modules.notificaciones import correo_viabilidad_administracion, correo_usuario
-
 # Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime
-
 from streamlit_folium import st_folium
 
 
@@ -562,8 +561,8 @@ def admin_dashboard():
     # Opciones de navegación con iconos
     opcion = st.sidebar.radio(
         "Selecciona una opción:",
-        ("📈 Ver Datos", "📊 Ofertas Comerciales", "✔️ Viabilidades", "📤 Cargar Nuevos Datos", "📑 Generador de informes",
-         "📜 Trazabilidad y logs", "👥 Gestionar Usuarios", "⚙️ Ajustes"),
+        ("🏠 Home", "📈 Ver Datos", "📊 Ofertas Comerciales", "✔️ Viabilidades", "📤 Cargar Nuevos Datos", "📑 Generador de informes",
+         "📜 Trazabilidad y logs", "👥 Gestionar Usuarios", "🔄 Control de versiones"),
         index=0,
         key="menu",
     )
@@ -582,7 +581,9 @@ def admin_dashboard():
             st.rerun()
 
     # Opción: Visualizar datos de la tabla datos_uis
-    if opcion == "📈 Ver Datos":
+    if opcion == "🏠 Home":
+        home_page()
+    elif opcion == "📈 Ver Datos":
         st.header("📊 Visualizar y gestionar datos (Datos UIS)")
         st.write("Aquí puedes cargar y gestionar la base de datos de datos_uis.")
 
@@ -671,7 +672,7 @@ def admin_dashboard():
 
                 # Comprobar si ambas tablas contienen datos
                 if ofertas_comercial_data.empty and comercial_rafa_data.empty:
-                    st.error("❌ No se encontraron datos en ambas tablas.")
+                    st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
                     return
 
                 # Filtrar comercial_rafa para solo mostrar registros con datos en la columna 'serviciable'
@@ -1097,6 +1098,8 @@ def admin_dashboard():
 
                     # Borramos todos los registros de la tabla
                     cursor.execute("DELETE FROM datos_uis")
+                    # Reiniciamos el ID autoincremental
+                    cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
                     conn.commit()
 
                     # Preparamos los datos para la inserción
@@ -1207,11 +1210,335 @@ def admin_dashboard():
             except Exception as e:
                 st.error(f"❌ Error al cargar la trazabilidad: {e}")
 
-    elif opcion == "⚙️ Ajustes":
-        st.header("⚙️ Ajustes")
-        st.write("Aquí puedes configurar los ajustes de la aplicación.")
-        log_trazabilidad(st.session_state["username"], "Ajustes", "El admin accedió a la sección de ajustes.")
+    elif opcion == "🔄 Control de versiones":
+        log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
+        mostrar_control_versiones()
 
+
+# Función para leer y mostrar el control de versiones
+def mostrar_control_versiones():
+    try:
+        # Leer el archivo version.txt
+        with open("modules/version.txt", "r", encoding="utf-8") as file:
+            versiones = file.readlines()
+
+        # Mostrar el encabezado de la sección
+        st.markdown("<h2 style='text-align: center; color: #4CAF50;'>🔄 <strong>Control de Versiones</strong></h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Aquí puedes ver el historial de cambios y versiones de la aplicación. Cada entrada incluye el número de versión y una breve descripción de lo que se ha actualizado o modificado.</p>", unsafe_allow_html=True)
+
+        # Formato para mostrar las versiones con diseño más elegante
+        st.markdown("<h3 style='color: #333;'>Historial de versiones</h3>", unsafe_allow_html=True)
+
+        # Mostrar las versiones en formato de lista bonita
+        for version in versiones:
+            version_info = version.strip().split(" - ")
+            if len(version_info) == 2:
+                st.markdown(
+                    f"<div style='background-color: #f7f7f7; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>"
+                    f"<h4 style='color: #4CAF50; font-size: 18px;'>{version_info[0]}</h4>"
+                    f"<p style='font-size: 14px; color: #666;'>{version_info[1]}</p>"
+                    f"</div>", unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f"<div style='background-color: #f7f7f7; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>"
+                    f"<h4 style='color: #4CAF50; font-size: 18px;'>{version_info[0]}</h4>"
+                    f"<p style='font-size: 14px; color: #666;'>Sin descripción disponible.</p>"
+                    f"</div>", unsafe_allow_html=True)
+
+        # Añadir una pequeña nota técnica para el admin con una fuente diferenciada
+        st.markdown("<br><i style='font-size: 14px; color: #888;'>Nota técnica: Esta sección muestra el historial completo de cambios aplicados al sistema. Asegúrese de revisar las versiones anteriores para comprender las mejoras y correcciones implementadas.</i>", unsafe_allow_html=True)
+
+    except FileNotFoundError:
+        st.error("El archivo `version.txt` no se encuentra en el sistema.")
+    except Exception as e:
+        st.error(f"Ha ocurrido un error al cargar el control de versiones: {e}")
+
+
+#HOME Y GRAFICOS ASOCIADOS
+# Función para crear el gráfico interactivo de Serviciabilidad
+def create_serviciable_graph(cursor):
+    cursor.execute("""
+        SELECT serviciable, COUNT(*) 
+        FROM datos_uis 
+        GROUP BY serviciable
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["serviciable", "count"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="serviciable", y="count", title="Distribución de Serviciabilidad",
+                 labels={"serviciable": "Serviciable", "count": "Cantidad"},
+                 color="serviciable", color_discrete_sequence=px.colors.qualitative.Set2)
+    fig.update_layout(barmode='group', height=300)
+    return fig
+
+# Función para crear el gráfico interactivo de Incidencias por Provincia
+def create_incidencias_graph(cursor):
+    cursor.execute("""
+        SELECT provincia, COUNT(*) 
+        FROM ofertas_comercial
+        WHERE incidencia IS NOT NULL
+        GROUP BY provincia
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["provincia", "count"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="provincia", y="count", title="Incidencias por Provincia",
+                 labels={"provincia": "Provincia", "count": "Cantidad"},
+                 color="provincia", color_discrete_sequence=px.colors.qualitative.Pastel)
+    fig.update_layout(barmode='group', height=300)
+    fig.update_xaxes(tickangle=45)  # Rotar las etiquetas de los ejes X
+    return fig
+
+# Función para crear el gráfico interactivo de Motivos de Serviciabilidad
+def create_motivos_serviciabilidad_graph(cursor):
+    cursor.execute("""
+        SELECT motivo_serviciable, COUNT(*) 
+        FROM ofertas_comercial
+        GROUP BY motivo_serviciable
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["motivo_serviciable", "count"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="motivo_serviciable", y="count", title="Motivos de Serviciabilidad",
+                 labels={"motivo_serviciable": "Motivo", "count": "Cantidad"},
+                 color="motivo_serviciable", color_discrete_sequence=px.colors.qualitative.Dark24)
+    fig.update_layout(barmode='group', height=300)
+    fig.update_xaxes(tickangle=45)  # Rotar las etiquetas de los ejes X
+    return fig
+
+# Gráfico de la distribución geográfica de los apartamentos (basado en latitud y longitud)
+def create_geographic_distribution_graph(cursor):
+    cursor.execute("""
+        SELECT latitud, longitud 
+        FROM datos_uis
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["latitud", "longitud"])
+
+    # Crear gráfico interactivo de dispersión en el mapa con Plotly
+    fig = px.scatter_geo(df, lat="latitud", lon="longitud", title="Distribución Geográfica de los Apartamentos",
+                         scope="world", height=400)
+    return fig
+
+# Gráfico de Incidencias por Mes
+def create_incidencias_by_month_graph(cursor):
+    cursor.execute("""
+        SELECT strftime('%Y-%m', fecha), COUNT(*) 
+        FROM ofertas_comercial
+        WHERE incidencia IS NOT NULL
+        GROUP BY strftime('%Y-%m', fecha)
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["Mes", "Cantidad"])
+
+    # Crear gráfico interactivo de líneas con Plotly
+    fig = px.line(df, x="Mes", y="Cantidad", title="Incidencias por Mes",
+                  labels={"Mes": "Mes", "Cantidad": "Número de Incidencias"})
+    fig.update_layout(height=300)
+    return fig
+
+# Gráfico de Costes de Viabilidades
+def create_coste_viabilidad_graph(cursor):
+    cursor.execute("""
+        SELECT coste 
+        FROM viabilidades
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["coste"])
+
+    # Crear gráfico interactivo de histograma con Plotly
+    fig = px.histogram(df, x="coste", title="Distribución de Costes de Viabilidad",
+                        labels={"coste": "Coste"}, nbins=20)
+    fig.update_layout(height=300)
+    return fig
+
+# Gráfico Promedio de Coste de Viabilidad por Provincia
+def create_avg_cost_by_province_graph(cursor):
+    cursor.execute("""
+        SELECT provincia, AVG(coste) 
+        FROM viabilidades
+        GROUP BY provincia
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["provincia", "avg_cost"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="provincia", y="avg_cost", title="Promedio de Coste de Viabilidad por Provincia",
+                 labels={"provincia": "Provincia", "avg_cost": "Promedio de Coste"})
+    fig.update_layout(height=300)
+    return fig
+
+# Gráfico Número de Incidencias por Cliente
+def create_incidencias_by_cliente_graph(cursor):
+    cursor.execute("""
+        SELECT nombre_cliente, COUNT(*) 
+        FROM ofertas_comercial
+        WHERE incidencia IS NOT NULL
+        GROUP BY nombre_cliente
+        ORDER BY COUNT(*) DESC
+        LIMIT 10
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["nombre_cliente", "incidencias_count"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="nombre_cliente", y="incidencias_count", title="Top 10 Clientes con Más Incidencias",
+                 labels={"nombre_cliente": "Cliente", "incidencias_count": "Número de Incidencias"})
+    fig.update_layout(height=300)
+    fig.update_xaxes(tickangle=45)  # Rotar etiquetas de ejes X
+    return fig
+
+# Gráfico Distribución de Tipos de Vivienda
+def create_tipo_vivienda_distribution_graph(cursor):
+    cursor.execute("""
+        SELECT Tipo_Vivienda, COUNT(*) 
+        FROM comercial_rafa
+        GROUP BY Tipo_Vivienda
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["Tipo_Vivienda", "count"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="Tipo_Vivienda", y="count", title="Distribución de Tipos de Vivienda",
+                 labels={"Tipo_Vivienda": "Tipo de Vivienda", "count": "Cantidad"})
+    fig.update_layout(height=300)
+    return fig
+
+# Gráfico de Tendencia de Cambio de Estado Operacional por Provincia
+def create_operational_state_trend_graph(cursor):
+    cursor.execute("""
+        SELECT strftime('%Y-%m', fecha) AS month, provincia, COUNT(*) 
+        FROM datos_uis
+        WHERE apartment_operational_state IS NOT NULL
+        GROUP BY month, provincia
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["Mes", "Provincia", "Count"])
+
+    # Crear gráfico interactivo de líneas con Plotly
+    fig = px.line(df, x="Mes", y="Count", color="Provincia", title="Tendencia de Cambio de Estado Operacional por Provincia",
+                  labels={"Mes": "Mes", "Count": "Cantidad de Cambios", "Provincia": "Provincia"})
+    fig.update_layout(height=300)
+    return fig
+
+# Gráfico de Viabilidades por Municipio
+def create_viabilities_by_municipio_graph(cursor):
+    cursor.execute("""
+        SELECT municipio, COUNT(*) 
+        FROM viabilidades
+        GROUP BY municipio
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["municipio", "count"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="municipio", y="count", title="Viabilidades por Municipio",
+                 labels={"municipio": "Municipio", "count": "Cantidad de Viabilidades"})
+    fig.update_layout(height=300)
+    fig.update_xaxes(tickangle=45)  # Rotar etiquetas de ejes X
+    return fig
+
+# Gráfico de Distribución de Incidencias por Tipo de Incidencia
+def create_incidencias_by_tipo_graph(cursor):
+    cursor.execute("""
+        SELECT incidencia, COUNT(*) 
+        FROM ofertas_comercial
+        WHERE incidencia IS NOT NULL
+        GROUP BY incidencia
+    """)
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["incidencia", "count"])
+
+    # Crear gráfico interactivo de barras con Plotly
+    fig = px.bar(df, x="incidencia", y="count", title="Distribución de Incidencias por Tipo de Incidencia",
+                 labels={"incidencia": "Tipo de Incidencia", "count": "Cantidad"})
+    fig.update_layout(height=300)
+    return fig
+
+# Función principal de la página
+def home_page():
+    st.title("Panel de Administración - Home")
+
+    # Obtener la conexión y el cursor
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+
+    try:
+        # Mostrar resúmenes y gráficos
+        st.header("Resumen de Datos")
+
+        # Organizar los gráficos en columnas
+        col1, col2, col3 = st.columns(3)
+
+        # Gráfico de Serviciabilidad
+        with col1:
+            #st.subheader("Distribución de Serviciabilidad")
+            st.plotly_chart(create_serviciable_graph(cursor))
+
+        # Gráfico de Incidencias por Provincia
+        with col2:
+            #st.subheader("Incidencias por Provincia")
+            st.plotly_chart(create_incidencias_graph(cursor))
+
+        # Gráfico de Motivos de Serviciabilidad
+        with col3:
+            #st.subheader("Motivos de Serviciabilidad")
+            st.plotly_chart(create_motivos_serviciabilidad_graph(cursor))
+
+        # Gráfico de Incidencias por Mes
+        with col1:
+            #st.subheader("Incidencias por Mes")
+            st.plotly_chart(create_incidencias_by_month_graph(cursor))
+
+        # Gráfico de Costes de Viabilidad
+        with col2:
+            #st.subheader("Costes de Viabilidad")
+            st.plotly_chart(create_coste_viabilidad_graph(cursor))
+
+        # Gráfico de Distribución Geográfica
+        with col3:
+            #st.subheader("Distribución Geográfica de Apartamentos")
+            st.plotly_chart(create_geographic_distribution_graph(cursor))
+        # Gráfico Promedio de Coste de Viabilidad por Provincia
+        with col1:
+            #st.subheader("Promedio de Coste de Viabilidad por Provincia")
+            st.plotly_chart(create_avg_cost_by_province_graph(cursor))
+
+        # Gráfico de Número de Incidencias por Cliente
+        with col2:
+            #st.subheader("Top 10 Clientes con Más Incidencias")
+            st.plotly_chart(create_incidencias_by_cliente_graph(cursor))
+
+        # Gráfico de Distribución de Tipos de Vivienda
+        with col3:
+            #st.subheader("Distribución de Tipos de Vivienda")
+            st.plotly_chart(create_tipo_vivienda_distribution_graph(cursor))
+
+        # Gráfico de Tendencia de Cambio de Estado Operacional por Provincia
+        with col1:
+            #st.subheader("Tendencia de Cambio de Estado Operacional")
+            st.plotly_chart(create_operational_state_trend_graph(cursor))
+
+        # Gráfico de Viabilidades por Municipio
+        with col2:
+            #st.subheader("Viabilidades por Municipio")
+            st.plotly_chart(create_viabilities_by_municipio_graph(cursor))
+
+        # **Nuevo gráfico: Distribución de Incidencias por Tipo de Incidencia**
+        with col3:
+            #st.subheader("Distribución de Incidencias por Tipo")
+            st.plotly_chart(create_incidencias_by_tipo_graph(cursor))
+
+    except Exception as e:
+        st.error(f"Hubo un error al cargar los gráficos: {e}")
+        print(f"Error al generar los gráficos: {e}")
+    finally:
+        conn.close()  # No olvides cerrar la conexión al final
+#######
 
 if __name__ == "__main__":
     admin_dashboard()

@@ -16,3 +16,4 @@ v1.1.5 - Se modifican los mensajes de las notificaciones de correo para que sean
 v1.1.6 - Se ha implementado el envío de correos al usuario cuando se crea un nuevo usuario, se modifica un usuario o se elimina un usuario, con detalles de los cambios realizados, utilizando notificaciones más claras y amigables para los usuarios finales. Además, se ha introducido un formato HTML más organizado en los correos con iconos relevantes.
 v1.1.7 - Se ha añadido la funcionalidad de distinguir entre los campos modificados al editar un usuario para enviar notificaciones específicas indicando qué detalles del usuario han cambiado (nombre, rol, email, contraseña).
 v1.1.7 - Correccion de errores
+v1.1.8 - Arreglado reseteo de IDs autoincrementales de la BBDD

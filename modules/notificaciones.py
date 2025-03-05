@@ -107,3 +107,5 @@ def correo_usuario(destinatario, asunto, mensaje):
 
     # Llamada a la función que envía la notificación
     enviar_notificacion(destinatario, asunto, contenido)
+
+
