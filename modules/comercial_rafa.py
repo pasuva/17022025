@@ -12,6 +12,7 @@ from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
+from streamlit_option_menu import option_menu
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -35,33 +36,6 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
     try:
         conn = sqlite3.connect("data/usuarios.db")
         cursor = conn.cursor()
-
-        # Crear tabla comercial_rafa si no existe, definiendo apartment_id como PRIMARY KEY
-        cursor.execute('''CREATE TABLE IF NOT EXISTS comercial_rafa (
-                            apartment_id TEXT PRIMARY KEY,
-                            provincia TEXT,
-                            municipio TEXT,
-                            poblacion TEXT,
-                            vial TEXT,
-                            numero TEXT,
-                            letra TEXT,
-                            cp TEXT,
-                            latitud REAL,
-                            longitud REAL,
-                            nombre_cliente TEXT,
-                            telefono TEXT,
-                            direccion_alternativa TEXT,
-                            observaciones TEXT,
-                            serviciable TEXT,
-                            motivo_serviciable TEXT,
-                            incidencia TEXT,
-                            motivo_incidencia TEXT,
-                            fichero_imagen TEXT,
-                            fecha TEXT,
-                            Tipo_Vivienda TEXT,
-                            Contrato TEXT,
-                            comercial TEXT
-                        )''')
 
         # Verificar si el apartment_id existe en la base de datos
         cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE apartment_id = ?", (apartment_id,))
@@ -146,30 +120,47 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
-    st.sidebar.markdown("""
-        <style>
-            .user-circle {
-                width: 100px;
-                height: 100px;
-                border-radius: 50%;
-                background-color: #ff7f00;
-                color: white;
-                font-size: 50px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin-bottom: 30px;
-                text-align: center;
-                margin-left: auto;
-                margin-right: auto;
+    with st.sidebar:
+        st.sidebar.markdown("""
+            <style>
+                .user-circle {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50%;
+                    background-color: #ff7f00;
+                    color: white;
+                    font-size: 50px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 30px;
+                    text-align: center;
+                    margin-left: auto;
+                    margin-right: auto;
+                }
+            </style>
+            <div class="user-circle">👤</div>
+            <div>Rol: Comercial</div>
+        """, unsafe_allow_html=True)
+        st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
+        st.sidebar.markdown("---")
+        menu_opcion = option_menu(
+            menu_title=None,  # Título oculto
+            options=["Ofertas Comerciales", "Viabilidades", "Visualización de Datos"],
+            icons=["bar-chart", "check-circle", "graph-up"],  # Íconos de Bootstrap
+            menu_icon="list",  # Ícono del menú
+            default_index=0,  # Opción seleccionada por defecto
+            styles={
+                "container": {"padding": "0px", "background-color": "#262730"},  # Fondo oscuro
+                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos blancos
+                "nav-link": {
+                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
+                },  # Texto en blanco sin margen extra
+                "nav-link-selected": {
+                    "background-color": "#0073e6", "color": "white"  # Resaltado azul en la opción seleccionada
+                }
             }
-        </style>
-        <div class="user-circle">👤</div>
-        <div>Rol: Comercial</div>
-    """, unsafe_allow_html=True)
-    st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
-
-    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📊 Ofertas Comerciales", "✔️ Viabilidades", "📈 Visualización de Datos"])
+        )
     detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
 
@@ -184,7 +175,7 @@ def comercial_dashboard():
     # Se utiliza un ícono de marcador por defecto (sin comprobación de cto_con_proyecto)
     marker_icon_type = 'info-sign'
 
-    if menu_opcion == "📊 Ofertas Comerciales":
+    if menu_opcion == "Ofertas Comerciales":
         st.title("📍 Mapa de Ubicaciones")
         st.markdown("""
          🟢 Serviciable
@@ -260,9 +251,7 @@ def comercial_dashboard():
                 query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
                 ofertas_df = pd.read_sql(query_ofertas, conn)
 
-                # Aquí tu código para la ubicación y mapa
-                # ...
-
+                # Código para la ubicación y mapa
                 with st.spinner("⏳ Cargando mapa..."):
                     m = folium.Map(location=[lat, lon], zoom_start=12,
                                    tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", attr="Google")
@@ -332,11 +321,11 @@ def comercial_dashboard():
                 mostrar_formulario(last_click)
 
     # Sección de Viabilidades
-    elif menu_opcion == "✔️ Viabilidades":
+    elif menu_opcion == "Viabilidades":
         viabilidades_section()
 
     # Sección de Visualización de datos
-    elif menu_opcion == "📈 Visualización de Datos":
+    elif menu_opcion == "Visualización de Datos":
         st.subheader("📊 Datos de Ofertas con Contrato")
 
         # Verificar si el usuario ha iniciado sesión
@@ -344,7 +333,6 @@ def comercial_dashboard():
             st.error("❌ No has iniciado sesión. Por favor, vuelve a la pantalla de inicio de sesión.")
             st.stop()
 
-        #comercial_usuario = st.session_state["username"]  # Obtener el comercial logueado
         comercial_usuario = st.session_state.get("username", None)
 
         try:
@@ -359,7 +347,6 @@ def comercial_dashboard():
             """
 
             df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
-            #df_ofertas = pd.read_sql(query_ofertas, conn)
 
             # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """
@@ -488,7 +475,6 @@ def guardar_viabilidad(datos):
     # Mostrar mensaje de éxito en Streamlit
     st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
 
-
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
     """Recupera las viabilidades asociadas al usuario logueado."""
@@ -499,7 +485,6 @@ def obtener_viabilidades():
     viabilidades = cursor.fetchall()
     conn.close()
     return viabilidades
-
 
 def viabilidades_section():
     st.title("✔️ Viabilidades")
@@ -614,8 +599,6 @@ def viabilidades_section():
                 st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
                 st.rerun()
 
-
-
 def get_user_location():
     """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
     html_code = """
@@ -642,7 +625,6 @@ def get_user_location():
 
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
-
 
 def mostrar_formulario(click_data):
     """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""

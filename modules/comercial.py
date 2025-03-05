@@ -6,13 +6,13 @@ import sqlite3
 import os
 import re
 from streamlit_folium import st_folium
-import streamlit.components.v1 as components
 import time
 from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
 from streamlit_geolocation import streamlit_geolocation
+from streamlit_option_menu import option_menu
 
 def log_trazabilidad(usuario, accion, detalles):
     """Registra en la base de datos la trazabilidad de acciones del usuario."""
@@ -34,31 +34,6 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
     try:
         conn = sqlite3.connect("data/usuarios.db")
         cursor = conn.cursor()
-        # Crear tabla ofertas_comercial si no existe, definiendo apartment_id como PRIMARY KEY
-        cursor.execute('''CREATE TABLE IF NOT EXISTS ofertas_comercial (
-                            apartment_id TEXT PRIMARY KEY,
-                            provincia TEXT,
-                            municipio TEXT,
-                            poblacion TEXT,
-                            vial TEXT,
-                            numero TEXT,
-                            letra TEXT,
-                            cp TEXT,
-                            latitud REAL,
-                            longitud REAL,
-                            nombre_cliente TEXT,
-                            telefono TEXT,
-                            direccion_alternativa TEXT,
-                            observaciones TEXT,
-                            serviciable TEXT,
-                            motivo_serviciable TEXT,
-                            incidencia TEXT,
-                            motivo_incidencia TEXT,
-                            fichero_imagen TEXT,
-                            fecha TEXT
-                            Tipo_Vivienda TEXT,
-                            Contrato TEXT
-                        )''')
 
         # Verificar si ya existe un registro con el mismo apartment_id
         cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
@@ -119,30 +94,47 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
-    st.sidebar.markdown("""
-        <style>
-            .user-circle {
-                width: 100px;
-                height: 100px;
-                border-radius: 50%;
-                background-color: #ff7f00;
-                color: white;
-                font-size: 50px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin-bottom: 30px;
-                text-align: center;
-                margin-left: auto;
-                margin-right: auto;
+    with st.sidebar:
+        st.sidebar.markdown("""
+            <style>
+                .user-circle {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50%;
+                    background-color: #ff7f00;
+                    color: white;
+                    font-size: 50px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 30px;
+                    text-align: center;
+                    margin-left: auto;
+                    margin-right: auto;
+                }
+            </style>
+            <div class="user-circle">👤</div>
+            <div>Rol: Comercial</div>
+        """, unsafe_allow_html=True)
+        st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
+        st.sidebar.markdown("---")
+        menu_opcion = option_menu(
+            menu_title=None,  # Título oculto
+            options=["Ofertas Comerciales", "Viabilidades", "Visualización de Datos"],
+            icons=["bar-chart", "check-circle", "graph-up"],  # Íconos de Bootstrap
+            menu_icon="list",  # Ícono del menú
+            default_index=0,  # Opción seleccionada por defecto
+            styles={
+                "container": {"padding": "0px", "background-color": "#262730"},  # Fondo oscuro
+                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos blancos
+                "nav-link": {
+                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
+                },  # Texto en blanco sin margen extra
+                "nav-link-selected": {
+                    "background-color": "#0073e6", "color": "white"  # Resaltado azul en la opción seleccionada
+                }
             }
-        </style>
-        <div class="user-circle">👤</div>
-        <div>Rol: Comercial</div>
-    """, unsafe_allow_html=True)
-    st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
-
-    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📊 Ofertas Comerciales", "✔️ Viabilidades", "📈 Visualización de Datos"])
+        )
     detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
 
@@ -157,7 +149,7 @@ def comercial_dashboard():
     # Se utiliza un ícono de marcador por defecto (sin comprobación de cto_con_proyecto)
     marker_icon_type = 'info-sign'
 
-    if menu_opcion == "📊 Ofertas Comerciales":
+    if menu_opcion == "Ofertas Comerciales":
         st.title("📍 Mapa de Ubicaciones")
         st.markdown("""
          🟢 Serviciable
@@ -320,12 +312,11 @@ def comercial_dashboard():
                 mostrar_formulario(last_click)
 
     # Sección de Viabilidades
-    elif menu_opcion == "✔️ Viabilidades":
-        #st.info("Sección de Viabilidades en construcción.")
+    elif menu_opcion == "Viabilidades":
         viabilidades_section()
 
     # Sección de Visualización de datos (en construcción o con otra funcionalidad)
-    elif menu_opcion == "📈 Visualización de Datos":
+    elif menu_opcion == "Visualización de Datos":
         st.subheader("📊 Datos de Ofertas con Contrato")
 
         # Verificar si el usuario ha iniciado sesión
@@ -382,7 +373,6 @@ def comercial_dashboard():
 
     # Botón de Cerrar Sesión en la barra lateral
     if st.sidebar.button("Cerrar Sesión"):
-        #cerrar_sesion()
         log_trazabilidad(st.session_state["username"], "Cierre sesión",
                          f"El comercial {st.session_state['username']} cerró sesión.")
         for key in list(st.session_state.keys()):

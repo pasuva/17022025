@@ -8,7 +8,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "../data/usuarios.db")  # Base de datos de usuarios
 VERSION_FILE = os.path.join(BASE_DIR, "version.txt")  # Archivo de versiones
 
-
 def get_latest_version():
     """Obtiene la última versión registrada en el archivo de versiones."""
     try:
@@ -19,7 +18,6 @@ def get_latest_version():
     except FileNotFoundError:
         return "Desconocida"
     return "Desconocida"
-
 
 def verify_user(nombre, password):
     """Verifica si un usuario existe y su contraseña es correcta"""
@@ -35,7 +33,6 @@ def verify_user(nombre, password):
             return rol  # Retornamos el rol si la autenticación es correcta
     return None
 
-
 def log_trazabilidad(usuario, accion, detalles):
     """Inserta un registro en la tabla de trazabilidad"""
     conn = sqlite3.connect(DB_PATH)
@@ -49,7 +46,6 @@ def log_trazabilidad(usuario, accion, detalles):
 
     conn.commit()
     conn.close()
-
 
 def login():
     """Pantalla de inicio de sesión"""
@@ -103,7 +99,6 @@ def login():
             st.rerun()
         else:
             st.error("Usuario o contraseña incorrectos")
-
 
 if __name__ == "__main__":
     login()

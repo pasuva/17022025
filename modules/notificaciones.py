@@ -18,7 +18,7 @@ def enviar_notificacion(destinatario, asunto, contenido):
         html_content = plantilla_email.generar_html(asunto, contenido)  # Genera el contenido en HTML
 
         msg = MIMEMultipart()
-        msg['From'] = 'psvpasuva@gmail.com'  # Correo remitente
+        msg['From'] = 'noreply.verdetuoperador@gmail.com'  # Correo remitente
         msg['To'] = destinatario
         msg['Subject'] = str(Header(asunto, 'utf-8'))  # Codificación del asunto en UTF-8
         msg.attach(MIMEText(html_content, 'html', 'utf-8'))  # Se adjunta el contenido en HTML
@@ -26,8 +26,8 @@ def enviar_notificacion(destinatario, asunto, contenido):
         # Establecer conexión y enviar correo
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()  # Activar encriptación
-        server.login('psvpasuva@gmail.com', 'quhl gvsn nujb sqgm')  # Datos SMTP
-        server.sendmail('psvpasuva@gmail.com', destinatario, msg.as_string())  # Enviar correo
+        server.login('noreply.verdetuoperador@gmail.com', 'mwht uuwd slzc renq')  # Datos SMTP
+        server.sendmail('noreply.verdetuoperador@gmail.com', destinatario, msg.as_string())  # Enviar correo
         server.quit()
 
         print(f"✅ Correo enviado exitosamente a {destinatario}")

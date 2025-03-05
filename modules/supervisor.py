@@ -3,6 +3,7 @@ import pandas as pd
 import sqlite3
 import io
 from datetime import datetime
+from streamlit_option_menu import option_menu
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -30,33 +31,50 @@ def supervisor_dashboard():
     st.title("📁 Panel del Supervisor")
 
     # Mostrar el ícono de usuario centrado y más grande en la barra lateral
-    st.sidebar.markdown(""" 
-        <style> 
-            .user-circle { 
-                width: 100px; 
-                height: 100px; 
-                border-radius: 50%; 
-                background-color: #28a745; 
-                color: white; 
-                font-size: 50px; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center; 
-                margin-bottom: 30px; 
-                text-align: center; 
-                margin-left: auto; 
-                margin-right: auto; 
-            } 
-        </style> 
-        <div class="user-circle">👤</div> 
-        <div>Rol: Supervisor</div>
+    with st.sidebar:
+        st.sidebar.markdown(""" 
+            <style> 
+                .user-circle { 
+                    width: 100px; 
+                    height: 100px; 
+                    border-radius: 50%; 
+                    background-color: #28a745; 
+                    color: white; 
+                    font-size: 50px; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    margin-bottom: 30px; 
+                    text-align: center; 
+                    margin-left: auto; 
+                    margin-right: auto; 
+                } 
+            </style> 
+            <div class="user-circle">👤</div> 
+            <div>Rol: Supervisor</div>
         """, unsafe_allow_html=True)
 
-    # Mostrar el nombre del supervisor en la barra lateral
-    st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
-
-    # Menú lateral para elegir qué visualizar
-    menu_opcion = st.sidebar.radio("Selecciona la vista:", ["📈 Datos UIS", "📊 Ofertas Comerciales", "✔️ Viabilidades"])
+        # Mostrar el nombre del supervisor en la barra lateral
+        st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
+        st.sidebar.markdown("---")
+        # Menú lateral para elegir qué visualizar con el estilo de option_menu
+        menu_opcion = option_menu(
+            menu_title=None,  # Título oculto
+            options=["Datos UIS", "Ofertas Comerciales", "Viabilidades"],
+            icons=["graph-up", "bar-chart", "check-circle"],  # Íconos de Bootstrap
+            menu_icon="list",  # Ícono del menú
+            default_index=0,  # Opción seleccionada por defecto
+            styles={
+                "container": {"padding": "0px", "background-color": "#262730"},  # Fondo oscuro
+                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos blancos
+                "nav-link": {
+                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
+                },  # Texto en blanco sin margen extra
+                "nav-link-selected": {
+                    "background-color": "#0073e6", "color": "white"  # Resaltado azul en la opción seleccionada
+                }
+            }
+        )
 
     # Registrar trazabilidad de la selección del menú
     detalles = f"El supervisor seleccionó la vista '{menu_opcion}'."
@@ -90,19 +108,19 @@ def supervisor_dashboard():
             query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = pd.read_sql(query_tables, conn)
 
-            if menu_opcion == "📈 Datos UIS":
+            if menu_opcion == "Datos UIS":
                 if 'datos_uis' not in tables['name'].values:
                     st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
                     conn.close()
                     return
                 query = "SELECT * FROM datos_uis"
-            elif menu_opcion == "📊 Ofertas Comerciales":
+            elif menu_opcion == "Ofertas Comerciales":
                 if 'ofertas_comercial' not in tables['name'].values:
                     st.error("❌ La tabla 'ofertas_comercial' no se encuentra en la base de datos.")
                     conn.close()
                     return
                 query = "SELECT * FROM ofertas_comercial"
-            elif menu_opcion == "✔️ Viabilidades":
+            elif menu_opcion == "Viabilidades":
                 if 'viabilidades' not in tables['name'].values:
                     st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
                     conn.close()

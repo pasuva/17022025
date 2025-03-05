@@ -6,7 +6,6 @@ import datetime
 import bcrypt
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from folium.plugins import MarkerCluster
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -14,9 +13,9 @@ import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
 import streamlit as st
 from modules.notificaciones import correo_viabilidad_administracion, correo_usuario
-# Función de trazabilidad
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_folium import st_folium
+from streamlit_option_menu import option_menu
 
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -170,7 +169,6 @@ def editar_usuario(id, username, rol, password, email):
         conn.close()
         st.error(f"Usuario con ID {id} no encontrado.")
 
-
 # Función para eliminar un usuario
 def eliminar_usuario(id):
     conn = obtener_conexion()
@@ -200,7 +198,6 @@ def eliminar_usuario(id):
         correo_usuario(email_usuario, asunto, mensaje)  # Llamada a la función de correo
     else:
         st.error("Usuario no encontrado.")
-
 
 # Función para generar PDF con los datos del informe
 def generar_pdf(df, encabezado_titulo, mensaje_intro, fecha_generacion, pie_de_pagina):
@@ -240,7 +237,6 @@ def generar_pdf(df, encabezado_titulo, mensaje_intro, fecha_generacion, pie_de_p
     buffer.seek(0)
     return buffer
 
-
 # Función que genera un enlace de descarga en HTML (no se integra en la tabla)
 def get_download_link_icon(img_path):
     # Determinar el MIME type según la extensión
@@ -256,7 +252,6 @@ def get_download_link_icon(img_path):
     # Usamos un emoji de flecha abajo (⬇️) como icono
     html = f'<a href="data:{mime};base64,{b64}" download="{file_name}" style="text-decoration: none; font-size:20px;">⬇️</a>'
     return html
-
 
 def viabilidades_seccion():
     log_trazabilidad("Administrador", "Visualización de Viabilidades",
@@ -522,7 +517,6 @@ def mostrar_formulario(click_data):
         except Exception as e:
             st.error(f"❌ Hubo un error al guardar los cambios: {e}")
 
-
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")
     return {row[0] for row in cursor.fetchall()}
@@ -534,58 +528,76 @@ def admin_dashboard():
 
     # Personalizar la barra lateral
     st.sidebar.title("📊 Panel de Administración")
-    st.sidebar.markdown("""
-            <style>
-                .user-circle {
-                    width: 100px;
-                    height: 100px;
-                    border-radius: 50%;
-                    background-color: #0073e6;
-                    color: white;
-                    font-size: 50px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 30px;
-                    text-align: center;
-                    margin-left: auto;
-                    margin-right: auto;
-                }
-            </style>
-            <div class="user-circle">👤</div>
-            <div>Rol: Administrador</div>
-            """, unsafe_allow_html=True)
-    st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**!")
-    st.sidebar.markdown("---")
 
-    # Opciones de navegación con iconos
-    opcion = st.sidebar.radio(
-        "Selecciona una opción:",
-        ("🏠 Home", "📈 Ver Datos", "📊 Ofertas Comerciales", "✔️ Viabilidades", "📤 Cargar Nuevos Datos", "📑 Generador de informes",
-         "📜 Trazabilidad y logs", "👥 Gestionar Usuarios", "🔄 Control de versiones"),
-        index=0,
-        key="menu",
-    )
 
-    # Registrar la selección de la opción en trazabilidad
-    log_trazabilidad(st.session_state["username"], "Selección de opción", f"El admin seleccionó la opción '{opcion}'.")
-
-    # Botón de Cerrar sesión en la barra lateral
+    # Sidebar con opción de menú más moderno
     with st.sidebar:
-        if st.button("Cerrar sesión"):
-            log_trazabilidad(st.session_state["username"], "Cierre sesión",
-                             f"El admin {st.session_state['username']} cerró sesión.")
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
-            st.rerun()
+        st.sidebar.markdown("""
+                    <style>
+                        .user-circle {
+                            width: 100px;
+                            height: 100px;
+                            border-radius: 50%;
+                            background-color: #0073e6;
+                            color: white;
+                            font-size: 50px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            margin-bottom: 30px;
+                            text-align: center;
+                            margin-left: auto;
+                            margin-right: auto;
+                        }
+                    </style>
+                    <div class="user-circle">👤</div>
+                    <div>Rol: Administrador</div>
+                    """, unsafe_allow_html=True)
+        st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**!")
+        st.sidebar.markdown("---")
+
+        opcion = option_menu(
+            menu_title=None,  # Título del menú oculto
+            options=["Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades", "Cargar Nuevos Datos",
+                     "Generador de informes", "Trazabilidad y logs", "Gestionar Usuarios",
+                     "Control de versiones"],
+            icons=["house", "graph-up", "bar-chart", "check-circle", "upload",
+                   "file-earmark-text", "journal-text", "people", "arrow-clockwise"],  # Íconos de Bootstrap
+            menu_icon="list",
+            default_index=0,
+            styles={
+                "container": {"padding": "0px","background-color":"#262730"},  # Sin fondo ni márgenes
+                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos oscuros
+                "nav-link": {
+                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
+                },  # Texto en negro sin margen extra
+                "nav-link-selected": {
+                    "background-color": "#0073e6", "color": "white"
+                },  # Opción seleccionada resaltada en azul
+            }
+        )
+
+        # Registrar la selección de la opción en trazabilidad
+        log_trazabilidad(st.session_state["username"], "Selección de opción", f"El admin seleccionó la opción '{opcion}'.")
+
+        # Botón de Cerrar sesión en la barra lateral
+        with st.sidebar:
+            if st.button("Cerrar sesión"):
+                log_trazabilidad(st.session_state["username"], "Cierre sesión",
+                                 f"El admin {st.session_state['username']} cerró sesión.")
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+                st.rerun()
 
     # Opción: Visualizar datos de la tabla datos_uis
-    if opcion == "🏠 Home":
+    if opcion == "Home":
         home_page()
-    elif opcion == "📈 Ver Datos":
+    elif opcion == "Ver Datos":
         st.header("📊 Visualizar y gestionar datos (Datos UIS)")
-        st.write("Aquí puedes cargar y gestionar la base de datos de datos_uis.")
+        st.info("ℹ️ En esta sección puedes visualizar los datos en bruto de AMS, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
+                "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
+                "como prefieras visualizar el contenido de la tabla.")
 
         if "df" in st.session_state:
             del st.session_state["df"]
@@ -618,12 +630,10 @@ def admin_dashboard():
             data = data.loc[:, ~data.columns.duplicated()]
 
         st.session_state["df"] = data
-        st.write("Filtra las columnas del dataframe:")
-        columnas = st.multiselect("Selecciona las columnas a mostrar", data.columns.tolist(),
+        columnas = st.multiselect("Filtra las columnas a mostrar", data.columns.tolist(),
                                   default=data.columns.tolist())
         st.dataframe(data[columnas], use_container_width=True)
 
-        st.subheader("Selecciona el formato para la descarga:")
         download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"])
         if download_format == "Excel":
             towrite = io.BytesIO()
@@ -648,9 +658,13 @@ def admin_dashboard():
                 )
 
     # Opción: Visualizar datos de la tabla ofertas_comercial y comercial_rafa
-    elif opcion == "📊 Ofertas Comerciales":
+    elif opcion == "Ofertas Comerciales":
         st.header("📊 Visualizar Ofertas Comerciales")
         st.write("Aquí puedes ver las ofertas comerciales registradas.")
+        st.info(
+            "ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
+            "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
+            "como prefieras visualizar el contenido de la tabla.")
 
         if "df" in st.session_state:
             del st.session_state["df"]
@@ -703,12 +717,10 @@ def admin_dashboard():
         # Guardar en sesión de Streamlit para mostrar en la tabla
         st.session_state["df"] = combined_data
 
-        st.write("Filtra las columnas del dataframe:")
-        columnas = st.multiselect("Selecciona las columnas a mostrar", combined_data.columns.tolist(),
+        columnas = st.multiselect("Filtra las columnas a mostrar", combined_data.columns.tolist(),
                                   default=combined_data.columns.tolist())
         st.dataframe(combined_data[columnas], use_container_width=True)
 
-        st.subheader("Selecciona el formato para la descarga:")
         download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"], key="oferta_download")
 
         # Opción de descarga en Excel
@@ -791,15 +803,21 @@ def admin_dashboard():
             )
 
     # Opción: Viabilidades (En construcción)
-    elif opcion == "✔️ Viabilidades":
+    elif opcion == "Viabilidades":
         st.header("✔️ Viabilidades")
         st.write("Puedes consultar y completar los tickets de viabilidades aquí")
+        st.info(
+            "ℹ️ En esta sección puedes consultar y completar los tickets de viabilidades según el comercial, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
+            "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
+            "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
+            " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos.")
         viabilidades_seccion()
 
     # Opción: Generar Informes
-    elif opcion == "📑 Generador de informes":
+    elif opcion == "Generador de informes":
         st.header("📑 Generador de Informes")
-        st.write("Aquí puedes generar informes basados en los datos disponibles.")
+        st.info("🏗️ ZONA EN CONSTRUCCIÓN")
+        st.info("ℹ️ Aquí puedes generar informes basados en los datos disponibles.")
         log_trazabilidad(st.session_state["username"], "Generar Informe", "El admin accedió al generador de informes.")
 
         # Selección de tipo de informe
@@ -992,70 +1010,81 @@ def admin_dashboard():
                     st.error(
                         "❌ No se han encontrado viabilidades que coincidan con los filtros para generar el informe.")
 
-
-
     # Opción: Gestionar Usuarios
-    elif opcion == "👥 Gestionar Usuarios":
+    elif opcion == "Gestionar Usuarios":
         st.header("👥 Gestionar Usuarios")
-        st.write("Aquí puedes gestionar los usuarios registrados.")
+        st.info(
+            "ℹ️ Aquí puedes gestionar los usuarios registrados. Crea, edita o elimina usuarios en función de tus necesidades. "
+            "El usuario afectado recibirá una notificación por correo electrónico con la información asociada a la acción que realices.")
+
         log_trazabilidad(st.session_state["username"], "Gestionar Usuarios",
                          "El admin accedió a la sección de gestión de usuarios.")
 
         usuarios = cargar_usuarios()
         if usuarios:
-            st.subheader("Lista de Usuarios")
-            df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Nombre", "Rol", "Email"])
-            st.dataframe(df_usuarios)
+            # Usamos una columna para la tabla
+            col1, col2 = st.columns([2, 2])  # La columna izquierda será más grande
 
-        st.subheader("Agregar Nuevo Usuario")
-        nombre = st.text_input("Nombre del Usuario")
-        rol = st.selectbox("Selecciona el Rol",
-                           ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"])
-        email = st.text_input("Email del Usuario")  # Nuevo campo de email
-        password = st.text_input("Contraseña", type="password")
+            with col1:
+                st.subheader("Lista de Usuarios")
+                df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Nombre", "Rol", "Email"])
+                st.dataframe(df_usuarios)
 
-        if st.button("Agregar Usuario"):
-            if nombre and password and email:
-                agregar_usuario(nombre, rol, password, email)  # Modificado para incluir email
-            else:
-                st.error("Por favor, completa todos los campos.")
+            with col2:
+                # Columna derecha para el formulario de "Agregar Nuevo Usuario"
+                st.subheader("Agregar Nuevo Usuario")
+                nombre = st.text_input("Nombre del Usuario")
+                rol = st.selectbox("Selecciona el Rol",
+                                   ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"])
+                email = st.text_input("Email del Usuario")
+                password = st.text_input("Contraseña", type="password")
 
-        st.subheader("Editar Usuario")
-        usuario_id = st.number_input("ID del Usuario a Editar", min_value=1, step=1)
+                if st.button("Agregar Usuario"):
+                    if nombre and password and email:
+                        agregar_usuario(nombre, rol, password, email)
+                    else:
+                        st.error("Por favor, completa todos los campos.")
 
-        if usuario_id:
-            conn = obtener_conexion()
-            cursor = conn.cursor()
-            cursor.execute("SELECT username, role, email FROM usuarios WHERE id = ?", (usuario_id,))
-            usuario = cursor.fetchone()
-            conn.close()
+            # Formularios de "Editar Usuario" y "Eliminar Usuario" fuera de las columnas
+            st.subheader("Editar Usuario")
+            usuario_id = st.number_input("ID del Usuario a Editar", min_value=1, step=1)
 
-            if usuario:
-                nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
-                nuevo_rol = st.selectbox("Nuevo Rol", ["admin", "supervisor", "comercial", "comercial_rafa", "comercial_jefe"],
-                                         index=["admin", "supervisor", "comercial", "comercial_rafa", "comercial_jefe"].index(usuario[1]))
-                nuevo_email = st.text_input("Nuevo Email", value=usuario[2])  # Permite modificar el email
-                nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
+            if usuario_id:
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                cursor.execute("SELECT username, role, email FROM usuarios WHERE id = ?", (usuario_id,))
+                usuario = cursor.fetchone()
+                conn.close()
 
-                if st.button("Guardar Cambios"):
-                    editar_usuario(usuario_id, nuevo_nombre, nuevo_rol, nueva_contraseña,
-                                   nuevo_email)  # Modificado para incluir email
-            else:
-                st.error("Usuario no encontrado.")
+                if usuario:
+                    nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
+                    nuevo_rol = st.selectbox("Nuevo Rol",
+                                             ["admin", "supervisor", "comercial", "comercial_rafa", "comercial_jefe"],
+                                             index=["admin", "supervisor", "comercial", "comercial_rafa",
+                                                    "comercial_jefe"].index(usuario[1]))
+                    nuevo_email = st.text_input("Nuevo Email", value=usuario[2])
+                    nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
 
-        st.subheader("Eliminar Usuario")
-        eliminar_id = st.number_input("ID del Usuario a Eliminar", min_value=1, step=1)
+                    if st.button("Guardar Cambios"):
+                        editar_usuario(usuario_id, nuevo_nombre, nuevo_rol, nueva_contraseña, nuevo_email)
+                else:
+                    st.error("Usuario no encontrado.")
 
-        if eliminar_id:
-            if st.button("Eliminar Usuario"):
-                eliminar_usuario(eliminar_id)
+            st.subheader("Eliminar Usuario")
+            eliminar_id = st.number_input("ID del Usuario a Eliminar", min_value=1, step=1)
+
+            if eliminar_id:
+                if st.button("Eliminar Usuario"):
+                    eliminar_usuario(eliminar_id)
 
 
     # Opción: Cargar Nuevos Datos
-    elif opcion == "📤 Cargar Nuevos Datos":
+    elif opcion == "Cargar Nuevos Datos":
         st.header("📤 Cargar Nuevos Datos")
         st.write(
             "Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos. ¡ATENCIÓN! Se eliminarán todos los datos actuales.")
+        st.info(
+            "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión mas moderna. ¡ATENCIÓN! ¡Se eliminarán todos los datos actuales!")
         log_trazabilidad(
             st.session_state["username"],
             "Cargar Nuevos Datos",
@@ -1155,13 +1184,11 @@ def admin_dashboard():
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
 
-
-
-
     # Opción: Trazabilidad y logs
-    elif opcion == "📜 Trazabilidad y logs":
+    elif opcion == "Trazabilidad y logs":
         st.header("📜 Trazabilidad y logs")
-        st.write("Aquí se pueden visualizar los logs y la trazabilidad de las acciones realizadas.")
+        st.info("ℹ️ Aquí se pueden visualizar los logs y la trazabilidad de las acciones realizadas. Puedes utilizar las etiquetas rojas para filtrar la tabla y "
+                "descargar los datos relevantes en formato excel y csv.")
         log_trazabilidad(st.session_state["username"], "Visualización de Trazabilidad",
                          "El admin visualizó la sección de trazabilidad y logs.")
 
@@ -1178,12 +1205,10 @@ def admin_dashboard():
                         st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
                         trazabilidad_data = trazabilidad_data.loc[:, ~trazabilidad_data.columns.duplicated()]
 
-                    st.write("Filtra las columnas del dataframe:")
                     columnas = st.multiselect("Selecciona las columnas a mostrar", trazabilidad_data.columns.tolist(),
                                               default=trazabilidad_data.columns.tolist())
                     st.dataframe(trazabilidad_data[columnas], use_container_width=True)
 
-                    st.subheader("Selecciona el formato para la descarga:")
                     download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"],
                                                key="trazabilidad_download")
                     if download_format == "Excel":
@@ -1210,10 +1235,9 @@ def admin_dashboard():
             except Exception as e:
                 st.error(f"❌ Error al cargar la trazabilidad: {e}")
 
-    elif opcion == "🔄 Control de versiones":
+    elif opcion == "Control de versiones":
         log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
         mostrar_control_versiones()
-
 
 # Función para leer y mostrar el control de versiones
 def mostrar_control_versiones():
@@ -1223,11 +1247,9 @@ def mostrar_control_versiones():
             versiones = file.readlines()
 
         # Mostrar el encabezado de la sección
-        st.markdown("<h2 style='text-align: center; color: #4CAF50;'>🔄 <strong>Control de Versiones</strong></h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;'>Aquí puedes ver el historial de cambios y versiones de la aplicación. Cada entrada incluye el número de versión y una breve descripción de lo que se ha actualizado o modificado.</p>", unsafe_allow_html=True)
-
+        st.subheader("🔄 Control de versiones")
+        st.info("ℹ️ Aquí puedes ver el historial de cambios y versiones de la aplicación. Cada entrada incluye el número de versión y una breve descripción de lo que se ha actualizado o modificado.")
         # Formato para mostrar las versiones con diseño más elegante
-        st.markdown("<h3 style='color: #333;'>Historial de versiones</h3>", unsafe_allow_html=True)
 
         # Mostrar las versiones en formato de lista bonita
         for version in versiones:
@@ -1253,7 +1275,6 @@ def mostrar_control_versiones():
         st.error("El archivo `version.txt` no se encuentra en el sistema.")
     except Exception as e:
         st.error(f"Ha ocurrido un error al cargar el control de versiones: {e}")
-
 
 #HOME Y GRAFICOS ASOCIADOS
 # Función para crear el gráfico interactivo de Serviciabilidad
@@ -1461,7 +1482,8 @@ def create_incidencias_by_tipo_graph(cursor):
 
 # Función principal de la página
 def home_page():
-    st.title("Panel de Administración - Home")
+    st.title("Resumen de datos relevantes")
+    st.info("🏗️ ZONA EN CONSTRUCCIÓN")
 
     # Obtener la conexión y el cursor
     conn = obtener_conexion()
@@ -1476,61 +1498,49 @@ def home_page():
 
         # Gráfico de Serviciabilidad
         with col1:
-            #st.subheader("Distribución de Serviciabilidad")
             st.plotly_chart(create_serviciable_graph(cursor))
 
         # Gráfico de Incidencias por Provincia
         with col2:
-            #st.subheader("Incidencias por Provincia")
             st.plotly_chart(create_incidencias_graph(cursor))
 
         # Gráfico de Motivos de Serviciabilidad
         with col3:
-            #st.subheader("Motivos de Serviciabilidad")
             st.plotly_chart(create_motivos_serviciabilidad_graph(cursor))
 
         # Gráfico de Incidencias por Mes
         with col1:
-            #st.subheader("Incidencias por Mes")
             st.plotly_chart(create_incidencias_by_month_graph(cursor))
 
         # Gráfico de Costes de Viabilidad
         with col2:
-            #st.subheader("Costes de Viabilidad")
             st.plotly_chart(create_coste_viabilidad_graph(cursor))
 
         # Gráfico de Distribución Geográfica
         with col3:
-            #st.subheader("Distribución Geográfica de Apartamentos")
             st.plotly_chart(create_geographic_distribution_graph(cursor))
         # Gráfico Promedio de Coste de Viabilidad por Provincia
         with col1:
-            #st.subheader("Promedio de Coste de Viabilidad por Provincia")
             st.plotly_chart(create_avg_cost_by_province_graph(cursor))
 
         # Gráfico de Número de Incidencias por Cliente
         with col2:
-            #st.subheader("Top 10 Clientes con Más Incidencias")
             st.plotly_chart(create_incidencias_by_cliente_graph(cursor))
 
         # Gráfico de Distribución de Tipos de Vivienda
         with col3:
-            #st.subheader("Distribución de Tipos de Vivienda")
             st.plotly_chart(create_tipo_vivienda_distribution_graph(cursor))
 
         # Gráfico de Tendencia de Cambio de Estado Operacional por Provincia
         with col1:
-            #st.subheader("Tendencia de Cambio de Estado Operacional")
             st.plotly_chart(create_operational_state_trend_graph(cursor))
 
         # Gráfico de Viabilidades por Municipio
         with col2:
-            #st.subheader("Viabilidades por Municipio")
             st.plotly_chart(create_viabilities_by_municipio_graph(cursor))
 
-        # **Nuevo gráfico: Distribución de Incidencias por Tipo de Incidencia**
+        # Distribución de Incidencias por Tipo de Incidencia**
         with col3:
-            #st.subheader("Distribución de Incidencias por Tipo")
             st.plotly_chart(create_incidencias_by_tipo_graph(cursor))
 
     except Exception as e:
