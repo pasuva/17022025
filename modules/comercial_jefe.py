@@ -48,8 +48,7 @@ def cargar_datos():
 
 def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
-    st.set_page_config(page_title="Mapa de Ubicaciones", page_icon="🗺️", layout="wide")
-    st.title("🗺️ Mapa de Ubicaciones")
+    st.sidebar.title("📍 Mapa de Ubicaciones")
 
     # Descripción de los íconos
     st.markdown("""
@@ -93,16 +92,19 @@ def mapa_dashboard():
             detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
-            # Eliminar las cookies si existen
+            # Eliminar las cookies del session_id, username y role para esta sesión
+            if controller.get(f'{cookie_name}_session_id'):
+                controller.set(f'{cookie_name}_session_id', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_username'):
                 controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_role'):
                 controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
 
-            # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+            # Reiniciar el estado de sesión
             st.session_state["login_ok"] = False
             st.session_state["username"] = ""
             st.session_state["role"] = ""
+            st.session_state["session_id"] = ""
 
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()

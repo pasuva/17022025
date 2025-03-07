@@ -123,6 +123,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
+    st.sidebar.title("📍 Mapa de Ubicaciones")
     with st.sidebar:
         st.sidebar.markdown("""
             <style>
@@ -178,19 +179,22 @@ def comercial_dashboard():
     # Botón de Cerrar Sesión
     with st.sidebar:
         if st.button("Cerrar sesión"):
-            detalles = f"El comercial {st.session_state.get('username', 'N/A')} cerró sesión."
+            detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
-            # Eliminar las cookies si existen
+            # Eliminar las cookies del session_id, username y role para esta sesión
+            if controller.get(f'{cookie_name}_session_id'):
+                controller.set(f'{cookie_name}_session_id', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_username'):
                 controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_role'):
                 controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
 
-            # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+            # Reiniciar el estado de sesión
             st.session_state["login_ok"] = False
             st.session_state["username"] = ""
             st.session_state["role"] = ""
+            st.session_state["session_id"] = ""
 
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
@@ -199,7 +203,6 @@ def comercial_dashboard():
     marker_icon_type = 'info-sign'
 
     if menu_opcion == "Ofertas Comerciales":
-        st.title("📍 Mapa de Ubicaciones")
         st.markdown("""
          🟢 Serviciable
          🟠 Oferta (Contrato: Sí)
@@ -648,6 +651,9 @@ def mostrar_formulario(click_data):
     lat_value = click_data.get("lat", "N/D")
     lng_value = click_data.get("lng", "N/D")
 
+    # Generar una clave única para este formulario en base a las coordenadas
+    form_key = f"{lat_value}_{lng_value}"
+
     try:
         conn = sqlite3.connect("data/usuarios.db")  # Cambiar a la nueva base de datos
         query = """
@@ -672,7 +678,7 @@ def mostrar_formulario(click_data):
         st.error(f"❌ Error al obtener datos de la base de datos: {e}")
         return
 
-    # Mostrar los datos en el formulario
+    # Mostrar los datos fijos (no interactivos) sin necesidad de clave
     st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -696,24 +702,34 @@ def mostrar_formulario(click_data):
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
 
-    es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
+    # Campos interactivos: se les asigna una clave única basada en form_key para reiniciar el estado al cambiar de marcador
+    es_serviciable = st.radio("🛠️ ¿Es serviciable?",
+                              ["Sí", "No"],
+                              index=0,
+                              horizontal=True,
+                              key=f"es_serviciable_{form_key}")
 
-    # Mostrar los nuevos campos solo si es "Sí" en "Es Serviciable"
     if es_serviciable == "Sí":
-        tipo_vivienda = st.selectbox("🏠 Tipo de Ui", ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"], index=0)
-
-        # Si elige "Otro", mostrar campo para que puedan ingresar el tipo de vivienda
+        tipo_vivienda = st.selectbox("🏠 Tipo de Ui",
+                                     ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
+                                     index=0,
+                                     key=f"tipo_vivienda_{form_key}")
         if tipo_vivienda == "Otro":
-            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui")
+            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui",
+                                               key=f"tipo_vivienda_otro_{form_key}")
         else:
-            tipo_vivienda_otro = ""  # Si no elige "Otro", el valor es vacío
-
-        contrato = st.radio("📑 Tipo de Contrato", ["Sí", "No Interesado"], index=0, horizontal=True)
+            tipo_vivienda_otro = ""
+        contrato = st.radio("📑 Tipo de Contrato",
+                            ["Sí", "No Interesado"],
+                            index=0,
+                            horizontal=True,
+                            key=f"contrato_{form_key}")
     else:
-        tipo_vivienda = contrato = tipo_vivienda_otro = None  # Si no es serviciable, los campos no se muestran
+        tipo_vivienda = contrato = tipo_vivienda_otro = None
 
     if es_serviciable == "No":
-        motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
+        motivo_serviciable = st.text_area("❌ Motivo de No Servicio",
+                                          key=f"motivo_serviciable_{form_key}")
         client_name = ""
         phone = ""
         alt_address = ""
@@ -722,20 +738,33 @@ def mostrar_formulario(click_data):
         motivo_incidencia = ""
         imagen_incidencia = None
     else:
-        client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
-        phone = st.text_input("📞 Teléfono", max_chars=15)
-        alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
-        observations = st.text_area("📝 Observaciones")
-        contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
+        client_name = st.text_input("👤 Nombre del Cliente",
+                                    max_chars=100,
+                                    key=f"client_name_{form_key}")
+        phone = st.text_input("📞 Teléfono",
+                              max_chars=15,
+                              key=f"phone_{form_key}")
+        alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)",
+                                    key=f"alt_address_{form_key}")
+        observations = st.text_area("📝 Observaciones",
+                                    key=f"observations_{form_key}")
+        contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?",
+                                        ["Sí", "No"],
+                                        index=1,
+                                        horizontal=True,
+                                        key=f"contiene_incidencias_{form_key}")
         if contiene_incidencias == "Sí":
-            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia")
-            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
+            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia",
+                                             key=f"motivo_incidencia_{form_key}")
+            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)",
+                                                 type=["png", "jpg", "jpeg"],
+                                                 key=f"imagen_incidencia_{form_key}")
         else:
             motivo_incidencia = ""
             imagen_incidencia = None
         motivo_serviciable = ""
 
-    if st.button("🚀 Enviar Oferta"):
+    if st.button("🚀 Enviar Oferta", key=f"enviar_oferta_{form_key}"):
         if phone and not phone.isdigit():
             st.error("❌ El teléfono debe contener solo números.")
             return
@@ -760,8 +789,7 @@ def mostrar_formulario(click_data):
             "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
             "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
             "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
-            # Guardar el tipo de vivienda o el valor "Otro"
-            "Contrato": contrato,  # Solo se incluye si es "Sí" en serviciable
+            "Contrato": contrato,
             "fecha": pd.Timestamp.now()
         }
 
@@ -771,14 +799,11 @@ def mostrar_formulario(click_data):
             # Obtener el email del admin
             conn = sqlite3.connect("data/usuarios.db")
             cursor = conn.cursor()
-
-            cursor.execute("SELECT email FROM usuarios WHERE username = 'rebe' LIMIT 1")  # Asumimos que solo hay un admin
+            cursor.execute("SELECT email FROM usuarios WHERE username = 'rebe' LIMIT 1")
             resultado = cursor.fetchone()
-            email_admin = resultado[0] if resultado else None  # Extraer el email correctamente
-
+            email_admin = resultado[0] if resultado else None
             conn.close()
 
-            # Verificar si el correo existe antes de enviarlo
             nombre_comercial = st.session_state.get("username")
             if email_admin:
                 descripcion_oferta = (
@@ -801,14 +826,12 @@ def mostrar_formulario(click_data):
                     f"ℹ️ Por favor, revise los detalles de la oferta y asegúrese de que toda la información sea correcta. "
                     f"Si necesita realizar alguna modificación o tiene preguntas adicionales, no dude en ponerse en contacto con el comercial responsable o el equipo de administración."
                 )
-
-                # Enviar el correo solo al admin
                 correo_oferta_comercial(email_admin, apartment_id, descripcion_oferta)
-
                 st.success("✅ Oferta enviada con éxito")
                 st.info(f"📧 Se ha enviado una notificación a {email_admin} sobre la oferta completada.")
             else:
                 st.warning("⚠️ No se encontró el email del administrador, no se pudo enviar la notificación.")
+
 
 
 if __name__ == "__main__":

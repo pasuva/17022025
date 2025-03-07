@@ -527,7 +527,6 @@ def obtener_apartment_ids_existentes(cursor):
 # Función principal de la app (Dashboard de administración)
 def admin_dashboard():
     """Panel del administrador."""
-    st.set_page_config(page_title="Panel de Administración", page_icon="📊", layout="wide")
 
     # Personalizar la barra lateral
     st.sidebar.title("📊 Panel de Administración")
@@ -586,19 +585,22 @@ def admin_dashboard():
         # Botón de Cerrar sesión en la barra lateral
         with st.sidebar:
             if st.button("Cerrar sesión"):
-                detalles = f"El administrador {st.session_state.get('username', 'N/A')} cerró sesión."
+                detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
                 log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
-                # Eliminar las cookies si existen
+                # Eliminar las cookies del session_id, username y role para esta sesión
+                if controller.get(f'{cookie_name}_session_id'):
+                    controller.set(f'{cookie_name}_session_id', '', max_age=0, path='/')
                 if controller.get(f'{cookie_name}_username'):
                     controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
                 if controller.get(f'{cookie_name}_role'):
                     controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
 
-                # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+                # Reiniciar el estado de sesión
                 st.session_state["login_ok"] = False
                 st.session_state["username"] = ""
                 st.session_state["role"] = ""
+                st.session_state["session_id"] = ""
 
                 st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
                 st.rerun()

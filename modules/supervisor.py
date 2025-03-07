@@ -4,9 +4,10 @@ import sqlite3
 import io
 from datetime import datetime
 from streamlit_option_menu import option_menu
-from modules.cookie_instance import controller  # <-- Importa la instancia central
+from streamlit_cookies_controller import CookieController  # Se importa localmente
 
 cookie_name = "my_app"
+
 
 def log_trazabilidad(usuario, accion, detalles):
     conn = sqlite3.connect("data/usuarios.db")
@@ -19,8 +20,12 @@ def log_trazabilidad(usuario, accion, detalles):
     conn.commit()
     conn.close()
 
+
 def supervisor_dashboard():
-    st.title("📁 Panel del Supervisor")
+    # Instanciar el CookieController de forma local para este navegador
+    controller = CookieController(key="cookies")
+
+    st.sidebar.title("📁 Panel del Supervisor")
 
     with st.sidebar:
         st.sidebar.markdown(""" 
@@ -75,16 +80,19 @@ def supervisor_dashboard():
             detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
-            # Eliminar las cookies si existen
+            # Eliminar las cookies del session_id, username y role para esta sesión
+            if controller.get(f'{cookie_name}_session_id'):
+                controller.set(f'{cookie_name}_session_id', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_username'):
                 controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_role'):
                 controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
 
-            # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+            # Reiniciar el estado de sesión
             st.session_state["login_ok"] = False
             st.session_state["username"] = ""
             st.session_state["role"] = ""
+            st.session_state["session_id"] = ""
 
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
@@ -168,6 +176,7 @@ def supervisor_dashboard():
             )
 
     st.info("Recuerda que, dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
+
 
 if __name__ == "__main__":
     supervisor_dashboard()

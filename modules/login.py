@@ -1,9 +1,11 @@
-import streamlit as st
+import uuid
+import base64
+import os
 import sqlite3
 import bcrypt
-import os
+import streamlit as st
 from datetime import datetime
-from modules.cookie_instance import controller  # <-- Importa la instancia central
+from streamlit_cookies_controller import CookieController  # Se importa de forma local
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "../data/usuarios.db")
@@ -14,6 +16,7 @@ cookie_name = "my_app"
 if "login_ok" not in st.session_state:
     st.session_state["login_ok"] = False
 
+
 def get_latest_version():
     try:
         with open(VERSION_FILE, "r") as f:
@@ -23,6 +26,7 @@ def get_latest_version():
     except FileNotFoundError:
         return "Desconocida"
     return "Desconocida"
+
 
 def verify_user(nombre, password):
     conn = sqlite3.connect(DB_PATH)
@@ -37,6 +41,7 @@ def verify_user(nombre, password):
             return rol
     return None
 
+
 def log_trazabilidad(usuario, accion, detalles):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -48,22 +53,29 @@ def log_trazabilidad(usuario, accion, detalles):
     conn.commit()
     conn.close()
 
+
 def login():
+    # Se instancia localmente el controlador de cookies para que cada navegador administre sus propias cookies.
+    controller = CookieController(key="cookies")
+
     # Verificar si el usuario ya está autenticado usando cookies
     if "login_ok" not in st.session_state:
         st.session_state["login_ok"] = False
 
     # Recuperar las cookies usando los nombres adecuados
+    cookie_session_id = controller.get(f'{cookie_name}_session_id')
     cookie_username = controller.get(f'{cookie_name}_username')
     cookie_role = controller.get(f'{cookie_name}_role')
 
-    # Si existen ambas cookies, iniciamos sesión automáticamente
-    if (cookie_username and cookie_role and
-        cookie_username.strip() != "" and cookie_role.strip() != ""):
+    # Si existen las cookies y son válidas, iniciamos sesión automáticamente
+    if cookie_session_id and cookie_username and cookie_role:
         st.session_state["login_ok"] = True
         st.session_state["username"] = cookie_username
         st.session_state["role"] = cookie_role
+        st.session_state["session_id"] = cookie_session_id  # Guardamos el session_id
         st.success(f"¡Bienvenido de nuevo, {st.session_state['username']}!")
+        # Forzamos la recarga para que se ejecute el dashboard en app.py
+        st.rerun()
         return
 
     if not st.session_state["login_ok"]:
@@ -88,13 +100,25 @@ def login():
             <div class="user-circle">👤</div> 
             """, unsafe_allow_html=True)
 
-        st.title("🔐 Inicio de sesión")
+        # Genera un session_id único para esta sesión
+        session_id = str(uuid.uuid4())
+        st.session_state["session_id"] = session_id
 
+        st.markdown(
+            """
+            <h1 style="text-align: center; font-size: 50px; color: white;">
+                <img src="data:image/png;base64,{}" style="vertical-align: middle; width: 40px; height: 40px; margin-right: 10px;" />
+                VERDE SUITE
+            </h1>
+            """.format(base64.b64encode(open('img/Adobe_Express_file.png', 'rb').read()).decode()),
+            unsafe_allow_html=True
+        )
         version_actual = get_latest_version()
 
         if "last_seen_version" not in st.session_state or st.session_state["last_seen_version"] != version_actual:
             st.info(f"🚀 Nueva versión disponible: **{version_actual}**")
-            #st.session_state["last_seen_version"] = version_actual
+
+        st.success("🔐 Por favor, inicia sesión con tu usuario y tu contraseña.")
 
         nombre = st.text_input("Usuario")
         password = st.text_input("Contraseña", type="password")
@@ -105,9 +129,12 @@ def login():
                 st.session_state["login_ok"] = True
                 st.session_state["username"] = nombre
                 st.session_state["role"] = rol
+                st.session_state["session_id"] = session_id  # Guardamos el session_id
+
                 st.success(f"Bienvenido, {nombre} ({rol})")
 
-                # Guardar las credenciales en cookies con path explícito
+                # Guardar las credenciales en cookies con un session_id único y persistente
+                controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/')
                 controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/')
                 controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/')
 

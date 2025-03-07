@@ -1,9 +1,6 @@
 import streamlit as st
+st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
 from modules import login, admin, supervisor, comercial, comercial_jefe, comercial_rafa
-from streamlit_cookies_controller import CookieController
-
-cookie_name = "my_app"
-controller = CookieController(key="cookies")
 
 # Inicializar el estado de sesión si no existe
 if "login_ok" not in st.session_state:
