@@ -8,6 +8,9 @@ import io
 from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion
 from folium.plugins import MarkerCluster
 
+from modules.cookie_instance import controller  # <-- Importa la instancia central
+
+cookie_name = "my_app"
 
 def log_trazabilidad(usuario, accion, detalles):
     """ Inserta un registro en la tabla de trazabilidad """
@@ -87,10 +90,20 @@ def mapa_dashboard():
     st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**!")
     with st.sidebar:
         if st.button("Cerrar sesión"):
-            detalles = f"El comercial {st.session_state['username']} cerró sesión."
-            log_trazabilidad(st.session_state["username"], "Cierre sesión", detalles)
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
+            log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
+
+            # Eliminar las cookies si existen
+            if controller.get(f'{cookie_name}_username'):
+                controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
+            if controller.get(f'{cookie_name}_role'):
+                controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
+
+            # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+            st.session_state["login_ok"] = False
+            st.session_state["username"] = ""
+            st.session_state["role"] = ""
+
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
     st.sidebar.markdown("---")

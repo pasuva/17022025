@@ -14,6 +14,10 @@ from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_co
 from streamlit_geolocation import streamlit_geolocation
 from streamlit_option_menu import option_menu
 
+from modules.cookie_instance import controller  # <-- Importa la instancia central
+
+cookie_name = "my_app"
+
 def log_trazabilidad(usuario, accion, detalles):
     """Registra en la base de datos la trazabilidad de acciones del usuario."""
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -372,13 +376,24 @@ def comercial_dashboard():
             st.error(f"❌ Error al cargar los datos: {e}")
 
     # Botón de Cerrar Sesión en la barra lateral
-    if st.sidebar.button("Cerrar Sesión"):
-        log_trazabilidad(st.session_state["username"], "Cierre sesión",
-                         f"El comercial {st.session_state['username']} cerró sesión.")
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
-        st.rerun()
+    with st.sidebar:
+        if st.button("Cerrar sesión"):
+            detalles = f"El comercial {st.session_state.get('username', 'N/A')} cerró sesión."
+            log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
+
+            # Eliminar las cookies si existen
+            if controller.get(f'{cookie_name}_username'):
+                controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
+            if controller.get(f'{cookie_name}_role'):
+                controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
+
+            # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+            st.session_state["login_ok"] = False
+            st.session_state["username"] = ""
+            st.session_state["role"] = ""
+
+            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+            st.rerun()
 
 
 def generar_ticket():

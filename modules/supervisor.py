@@ -4,33 +4,24 @@ import sqlite3
 import io
 from datetime import datetime
 from streamlit_option_menu import option_menu
+from modules.cookie_instance import controller  # <-- Importa la instancia central
 
+cookie_name = "my_app"
 
 def log_trazabilidad(usuario, accion, detalles):
-    """ Inserta un registro en la tabla de trazabilidad """
-    conn = sqlite3.connect("data/usuarios.db")  # Usamos la misma base de datos de usuarios
+    conn = sqlite3.connect("data/usuarios.db")
     cursor = conn.cursor()
-
-    # Obtener la fecha y hora actual
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     cursor.execute("""
         INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
         VALUES (?, ?, ?, ?)
     """, (usuario, accion, detalles, fecha))
-
     conn.commit()
     conn.close()
 
-
 def supervisor_dashboard():
-    """Panel del supervisor"""
-    st.set_page_config(page_title="Panel del Supervisor", page_icon="📁", layout="wide")
-
-    # Título del panel
     st.title("📁 Panel del Supervisor")
 
-    # Mostrar el ícono de usuario centrado y más grande en la barra lateral
     with st.sidebar:
         st.sidebar.markdown(""" 
             <style> 
@@ -54,57 +45,56 @@ def supervisor_dashboard():
             <div>Rol: Supervisor</div>
         """, unsafe_allow_html=True)
 
-        # Mostrar el nombre del supervisor en la barra lateral
         st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
         st.sidebar.markdown("---")
-        # Menú lateral para elegir qué visualizar con el estilo de option_menu
         menu_opcion = option_menu(
-            menu_title=None,  # Título oculto
+            menu_title=None,
             options=["Datos UIS", "Ofertas Comerciales", "Viabilidades"],
-            icons=["graph-up", "bar-chart", "check-circle"],  # Íconos de Bootstrap
-            menu_icon="list",  # Ícono del menú
-            default_index=0,  # Opción seleccionada por defecto
+            icons=["graph-up", "bar-chart", "check-circle"],
+            menu_icon="list",
+            default_index=0,
             styles={
-                "container": {"padding": "0px", "background-color": "#262730"},  # Fondo oscuro
-                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos blancos
+                "container": {"padding": "0px", "background-color": "#262730"},
+                "icon": {"color": "#ffffff", "font-size": "18px"},
                 "nav-link": {
                     "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
-                },  # Texto en blanco sin margen extra
+                },
                 "nav-link-selected": {
-                    "background-color": "#0073e6", "color": "white"  # Resaltado azul en la opción seleccionada
+                    "background-color": "#0073e6", "color": "white"
                 }
             }
         )
 
-    # Registrar trazabilidad de la selección del menú
     detalles = f"El supervisor seleccionó la vista '{menu_opcion}'."
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
 
     st.write("Desde aquí puedes visualizar los datos y descargarlos.")
 
-    # Botón de Cerrar Sesión en la barra lateral
     with st.sidebar:
         if st.button("Cerrar sesión"):
-            # Registrar trazabilidad del cierre de sesión
-            detalles = f"El supervisor {st.session_state['username']} cerró sesión."
-            log_trazabilidad(st.session_state["username"], "Cierre sesión", detalles)
+            detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
+            log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
-            # Eliminar los datos de la sesión
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            # Eliminar las cookies si existen
+            if controller.get(f'{cookie_name}_username'):
+                controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
+            if controller.get(f'{cookie_name}_role'):
+                controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
+
+            # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+            st.session_state["login_ok"] = False
+            st.session_state["username"] = ""
+            st.session_state["role"] = ""
+
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
 
-    # Eliminar la variable "data" del session_state si existe
     if "data" in st.session_state:
         del st.session_state["data"]
 
-    # Cargar los datos directamente desde la base de datos según la opción seleccionada
     with st.spinner("Cargando datos... Esto puede tomar unos segundos."):
-
         try:
-            conn = sqlite3.connect("data/usuarios.db")  # Asegúrate de que la ruta sea correcta
-            # Verificar que la tabla exista
+            conn = sqlite3.connect("data/usuarios.db")
             query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = pd.read_sql(query_tables, conn)
 
@@ -138,31 +128,24 @@ def supervisor_dashboard():
             st.error(f"❌ Error al cargar datos de la base de datos: {e}")
             return
 
-    # Eliminar columnas duplicadas si existen
     if data.columns.duplicated().any():
         st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
         data = data.loc[:, ~data.columns.duplicated()]
 
-    # Guardar la variable en session_state para futuras referencias (opcional)
     st.session_state["data"] = data
 
-    # Filtro de columnas a mostrar
     st.subheader("Filtrar Columnas")
     columnas = st.multiselect("Selecciona las columnas a mostrar", data.columns.tolist(), default=data.columns.tolist())
 
-    # Mostrar los datos filtrados
     st.subheader("Datos Cargados")
     st.dataframe(data[columnas], use_container_width=True)
 
-    # Agregar opciones de descarga
     st.subheader("Descargar Datos")
     descarga_opcion = st.radio("¿Cómo quieres descargar los datos?", ["CSV", "Excel"])
 
     if descarga_opcion == "CSV":
-        # Registrar trazabilidad de la descarga de datos
         detalles = f"El supervisor descargó los datos en formato CSV."
         log_trazabilidad(st.session_state["username"], "Descarga de datos", detalles)
-
         st.download_button(
             label="Descargar como CSV",
             data=data[columnas].to_csv(index=False).encode(),
@@ -170,12 +153,9 @@ def supervisor_dashboard():
             mime="text/csv"
         )
     elif descarga_opcion == "Excel":
-        # Registrar trazabilidad de la descarga de datos
         detalles = f"El supervisor descargó los datos en formato Excel."
         log_trazabilidad(st.session_state["username"], "Descarga de datos", detalles)
-
         with st.spinner("Generando archivo Excel... Esto puede tardar unos segundos."):
-
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
                 data[columnas].to_excel(writer, index=False, sheet_name="Viabilidades")
@@ -188,7 +168,6 @@ def supervisor_dashboard():
             )
 
     st.info("Recuerda que, dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
-
 
 if __name__ == "__main__":
     supervisor_dashboard()

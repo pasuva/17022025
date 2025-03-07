@@ -17,6 +17,9 @@ from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_folium import st_folium
 from streamlit_option_menu import option_menu
 
+from modules.cookie_instance import controller  # <-- Importa la instancia central
+
+cookie_name = "my_app"
 
 def log_trazabilidad(usuario, accion, detalles):
     """Inserta un registro en la tabla de trazabilidad."""
@@ -583,10 +586,20 @@ def admin_dashboard():
         # Botón de Cerrar sesión en la barra lateral
         with st.sidebar:
             if st.button("Cerrar sesión"):
-                log_trazabilidad(st.session_state["username"], "Cierre sesión",
-                                 f"El admin {st.session_state['username']} cerró sesión.")
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
+                detalles = f"El administrador {st.session_state.get('username', 'N/A')} cerró sesión."
+                log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
+
+                # Eliminar las cookies si existen
+                if controller.get(f'{cookie_name}_username'):
+                    controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
+                if controller.get(f'{cookie_name}_role'):
+                    controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
+
+                # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+                st.session_state["login_ok"] = False
+                st.session_state["username"] = ""
+                st.session_state["role"] = ""
+
                 st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
                 st.rerun()
 

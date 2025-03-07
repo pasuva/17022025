@@ -1,11 +1,16 @@
 import streamlit as st
 from modules import login, admin, supervisor, comercial, comercial_jefe, comercial_rafa
+from streamlit_cookies_controller import CookieController
 
-# Iniciar sesión si no está iniciada
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
+cookie_name = "my_app"
+controller = CookieController(key="cookies")
 
-if not st.session_state["logged_in"]:
+# Inicializar el estado de sesión si no existe
+if "login_ok" not in st.session_state:
+    st.session_state["login_ok"] = False
+
+# Si no está logueado, mostramos el login
+if not st.session_state["login_ok"]:
     login.login()
 else:
     rol = st.session_state.get("role", "")

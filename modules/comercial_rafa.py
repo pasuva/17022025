@@ -14,6 +14,9 @@ from folium.plugins import Geocoder
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
 from streamlit_option_menu import option_menu
 
+from modules.cookie_instance import controller  # <-- Importa la instancia central
+
+cookie_name = "my_app"
 
 def log_trazabilidad(usuario, accion, detalles):
     """Registra en la base de datos la trazabilidad de acciones del usuario."""
@@ -171,6 +174,26 @@ def comercial_dashboard():
         return
 
     comercial = st.session_state.get("username")
+
+    # Botón de Cerrar Sesión
+    with st.sidebar:
+        if st.button("Cerrar sesión"):
+            detalles = f"El comercial {st.session_state.get('username', 'N/A')} cerró sesión."
+            log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
+
+            # Eliminar las cookies si existen
+            if controller.get(f'{cookie_name}_username'):
+                controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
+            if controller.get(f'{cookie_name}_role'):
+                controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
+
+            # En lugar de limpiar todo el session_state, reiniciamos las variables críticas
+            st.session_state["login_ok"] = False
+            st.session_state["username"] = ""
+            st.session_state["role"] = ""
+
+            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+            st.rerun()
 
     # Se utiliza un ícono de marcador por defecto (sin comprobación de cto_con_proyecto)
     marker_icon_type = 'info-sign'
@@ -376,15 +399,6 @@ def comercial_dashboard():
 
         except Exception as e:
             st.error(f"❌ Error al cargar los datos: {e}")
-
-    # Botón de Cerrar Sesión
-    if st.sidebar.button("Cerrar Sesión"):
-        log_trazabilidad(st.session_state["username"], "Cierre sesión", f"El comercial {st.session_state['username']} cerró sesión.")
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
-        st.rerun()
-
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
