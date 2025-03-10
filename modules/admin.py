@@ -585,7 +585,7 @@ def admin_dashboard():
         # Botón de Cerrar sesión en la barra lateral
         with st.sidebar:
             if st.button("Cerrar sesión"):
-                detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
+                detalles = f"El administrador {st.session_state.get('username', 'N/A')} cerró sesión."
                 log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
                 # Eliminar las cookies del session_id, username y role para esta sesión
@@ -675,7 +675,6 @@ def admin_dashboard():
     # Opción: Visualizar datos de la tabla ofertas_comercial y comercial_rafa
     elif opcion == "Ofertas Comerciales":
         st.header("📊 Visualizar Ofertas Comerciales")
-        st.write("Aquí puedes ver las ofertas comerciales registradas.")
         st.info(
             "ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
             "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
@@ -820,7 +819,6 @@ def admin_dashboard():
     # Opción: Viabilidades (En construcción)
     elif opcion == "Viabilidades":
         st.header("✔️ Viabilidades")
-        st.write("Puedes consultar y completar los tickets de viabilidades aquí")
         st.info(
             "ℹ️ En esta sección puedes consultar y completar los tickets de viabilidades según el comercial, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
             "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
@@ -1096,8 +1094,6 @@ def admin_dashboard():
     # Opción: Cargar Nuevos Datos
     elif opcion == "Cargar Nuevos Datos":
         st.header("📤 Cargar Nuevos Datos")
-        st.write(
-            "Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos. ¡ATENCIÓN! Se eliminarán todos los datos actuales.")
         st.info(
             "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión mas moderna. ¡ATENCIÓN! ¡Se eliminarán todos los datos actuales!")
         log_trazabilidad(

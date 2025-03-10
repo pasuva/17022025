@@ -7,6 +7,8 @@ import streamlit as st
 from datetime import datetime
 from streamlit_cookies_controller import CookieController  # Se importa de forma local
 
+controller = CookieController(key="cookie_controller")
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "../data/usuarios.db")
 VERSION_FILE = os.path.join(BASE_DIR, "version.txt")
@@ -56,7 +58,6 @@ def log_trazabilidad(usuario, accion, detalles):
 
 def login():
     # Se instancia localmente el controlador de cookies para que cada navegador administre sus propias cookies.
-    controller = CookieController(key="cookies")
 
     # Verificar si el usuario ya está autenticado usando cookies
     if "login_ok" not in st.session_state:
@@ -134,9 +135,11 @@ def login():
                 st.success(f"Bienvenido, {nombre} ({rol})")
 
                 # Guardar las credenciales en cookies con un session_id único y persistente
-                controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/')
-                controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/')
-                controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/')
+                controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/', same_site='None',
+                               secure=True)
+                controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/', same_site='None',
+                               secure=True)
+                controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/', same_site='None', secure=True)
 
                 detalles = f"Usuario '{nombre}' inició sesión en el sistema."
                 log_trazabilidad(nombre, "Inicio sesión", detalles)

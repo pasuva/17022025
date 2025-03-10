@@ -89,7 +89,7 @@ def mapa_dashboard():
     st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**!")
     with st.sidebar:
         if st.button("Cerrar sesión"):
-            detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
+            detalles = f"El gestor comercial {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
             # Eliminar las cookies del session_id, username y role para esta sesión

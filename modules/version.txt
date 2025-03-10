@@ -21,3 +21,4 @@ v1.1.9 - Limpieza del codigo, generado correo de noreply especifico de verde par
 v2.0.0 - Prototipo de "Home" solo para usuarios con rol de administrador. Visualizacion y estudio de datos en graficos. (ZONA EN CONSTRUCCION)
 v2.0.1 - Mejoras visuales, mejoras de informacion al usuario.
 v2.0.2 - Implementadas las sesiones de usuario persistentes. La sesion permanecera abierta y las credenciales del usuario guardadas en el navegador, durante las siguientes 24 horas. Por cuestiones de seguridad, tras esas 24 horas, se volveran a pedir las credenciales de usuario.
+v2.0.3 - Mejoras visuales de login, añadido icono empresarial, resuelto el problema de sesion permanente en navegadores de movil

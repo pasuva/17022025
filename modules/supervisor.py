@@ -72,8 +72,11 @@ def supervisor_dashboard():
 
     detalles = f"El supervisor seleccionó la vista '{menu_opcion}'."
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
-
-    st.write("Desde aquí puedes visualizar los datos y descargarlos.")
+    st.info(
+        "ℹ️ En este panel puedes visualizar tanto los datos de ams tanto las ofertas de los comerciales"
+        "así como las viabilidades, filtrar por etiquetas, columnas, buscar (lupa de la tabla)"
+        "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
+        "como prefieras visualizar el contenido de la tabla.")
 
     with st.sidebar:
         if st.button("Cerrar sesión"):

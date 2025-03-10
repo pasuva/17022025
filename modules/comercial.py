@@ -221,8 +221,9 @@ def comercial_dashboard():
 
         with st.spinner("⏳ Cargando mapa..."):
             m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
-                           tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                           tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
                            attr="Google")
+
             Geocoder().add_to(m)
 
             if m.options['zoom'] >= 15:  # Si el zoom es alto, desactivar clustering
@@ -378,7 +379,7 @@ def comercial_dashboard():
     # Botón de Cerrar Sesión en la barra lateral
     with st.sidebar:
         if st.button("Cerrar sesión"):
-            detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
+            detalles = f"El comercial {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
             # Eliminar las cookies del session_id, username y role para esta sesión
@@ -507,7 +508,7 @@ def viabilidades_section():
              ⚫ Viabilidad ya existente
              🔴 Viabilidad nueva
             """)
-    st.write("Haz click en el mapa para agregar un marcador rojo que represente el punto de viabilidad.")
+    st.info("ℹ️ Haz click en el mapa para agregar un marcador rojo que represente el punto de viabilidad.")
 
     # Inicializar estados de sesión si no existen
     if "viabilidad_marker" not in st.session_state:
@@ -521,7 +522,7 @@ def viabilidades_section():
     m = folium.Map(
         location=st.session_state.map_center,
         zoom_start=st.session_state.map_zoom,
-        tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
         attr="Google"
     )
 
@@ -617,8 +618,8 @@ def viabilidades_section():
 
 def get_user_location():
     """Obtiene la ubicación del usuario a través de un componente de geolocalización."""
-
-    st.write(f"Pulsa el botón de ubicación para centrar el mapa en el lugar en el que te encuentras actualmente.")
+    st.info(
+        "ℹ️ Pulsa el botón de ubicación para centrar el mapa en el lugar en el que te encuentras actualmente.")
 
     # Usar el componente de geolocalización
     location = streamlit_geolocation()
@@ -644,7 +645,7 @@ def get_user_location():
 lat, lon = get_user_location()
 
 # Mostrar solo la latitud y longitud, sin mostrar el diccionario completo
-st.write(f"Ubicación obtenida: Latitud = {lat}, Longitud = {lon}")
+#st.write(f"Ubicación obtenida: Latitud = {lat}, Longitud = {lon}")
 
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
