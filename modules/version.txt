@@ -22,3 +22,6 @@ v2.0.0 - Prototipo de "Home" solo para usuarios con rol de administrador. Visual
 v2.0.1 - Mejoras visuales, mejoras de informacion al usuario.
 v2.0.2 - Implementadas las sesiones de usuario persistentes. La sesion permanecera abierta y las credenciales del usuario guardadas en el navegador, durante las siguientes 24 horas. Por cuestiones de seguridad, tras esas 24 horas, se volveran a pedir las credenciales de usuario.
 v2.0.3 - Mejoras visuales de login, añadido icono empresarial, resuelto el problema de sesion permanente en navegadores de movil
+v2.0.4 - Mejoras visuales en mapa. Ahora es capa hibrida de Google Maps.
+v2.0.5 - Mejoras en el envío de notificaciones. Corrección de errores en el gestor de comerciales. Corrección de tildes y caracteres con UTF-8. Corrección de errores por los cuales, no se encontraba el ID de algunas ofertas.
+v2.0.6 - Corrección de errores. Ahora mantiene la última ubicación gestionada por el comercial, en lugar de recargar la ubicación por defecto.

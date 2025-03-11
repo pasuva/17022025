@@ -21,14 +21,13 @@ if "login_ok" not in st.session_state:
 
 def get_latest_version():
     try:
-        with open(VERSION_FILE, "r") as f:
+        with open(VERSION_FILE, "r", encoding="utf-8") as f:  # Especificar codificación UTF-8
             versions = f.readlines()
             if versions:
                 return versions[-1].strip()
     except FileNotFoundError:
         return "Desconocida"
     return "Desconocida"
-
 
 def verify_user(nombre, password):
     conn = sqlite3.connect(DB_PATH)

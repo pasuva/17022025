@@ -34,29 +34,24 @@ def log_trazabilidad(usuario, accion, detalles):
         st.error(f"Error al escribir en la base de datos de trazabilidad: {e}")
 
 def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
-    """Guarda la oferta en SQLite y almacena la imagen si es necesario."""
     try:
         conn = sqlite3.connect("data/usuarios.db")
         cursor = conn.cursor()
 
-        # Verificar si ya existe un registro con el mismo apartment_id
         cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
         if cursor.fetchone()[0] > 0:
             st.error("❌ Ya existe una oferta registrada con este Apartment ID.")
             conn.close()
             return
 
-        # Guardar la imagen si hay incidencia
         imagen_path = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
-            # Extraemos la extensión del archivo subido
             extension = os.path.splitext(imagen_incidencia.name)[1]
             imagen_path = f"data/incidencias/{oferta_data['Apartment ID']}{extension}"
             os.makedirs(os.path.dirname(imagen_path), exist_ok=True)
             with open(imagen_path, "wb") as f:
                 f.write(imagen_incidencia.getbuffer())
 
-        # Insertar datos en la base de datos
         cursor.execute('''INSERT INTO ofertas_comercial (
                             apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
                             nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
@@ -90,11 +85,16 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
         conn.commit()
         conn.close()
         st.success("✅ ¡Oferta enviada y guardada en la base de datos con éxito!")
-        # Registrar trazabilidad del guardado de la oferta
+
+        # 📌 Guardar última ubicación en session_state
+        st.session_state["ultima_lat"] = oferta_data["Latitud"]
+        st.session_state["ultima_lon"] = oferta_data["Longitud"]
+
         log_trazabilidad(st.session_state["username"], "Guardar Oferta",
                          f"Oferta guardada para Apartment ID: {oferta_data['Apartment ID']}")
     except Exception as e:
         st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
+
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
@@ -210,7 +210,12 @@ def comercial_dashboard():
             st.session_state.clicks = []
 
         location = get_user_location()
-        if location is None:
+
+        if "ultima_lat" in st.session_state and "ultima_lon" in st.session_state:
+            # 📍 Usar la última ubicación de la oferta guardada
+            lat, lon = st.session_state["ultima_lat"], st.session_state["ultima_lon"]
+        elif location is None:
+            # ❌ Si no hay ubicación ni última oferta, usar la predeterminada
             st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
             lat, lon = 43.463444, -3.790476
         else:
@@ -336,26 +341,41 @@ def comercial_dashboard():
 
             # Consulta SQL con filtro por comercial logueado (primera tabla: ofertas_comercial)
             query_ofertas = """
-            SELECT oc.apartment_id, oc.provincia, oc.municipio, oc.poblacion, 
-                   oc.vial, oc.numero, oc.letra, oc.cp, oc.nombre_cliente, 
-                   oc.telefono, oc.direccion_alternativa, du.site_operational_state
-            FROM ofertas_comercial oc
-            LEFT JOIN datos_uis du ON oc.apartment_id = du.apartment_id
-            WHERE LOWER(oc.Contrato) = 'sí' 
-            AND LOWER(du.comercial) = LOWER(?)
-            """
+                SELECT oc.apartment_id, oc.provincia, oc.municipio, oc.poblacion, 
+                       oc.vial, oc.numero, oc.letra, oc.cp, oc.latitud, oc.longitud, oc.nombre_cliente, 
+                       oc.telefono, oc.direccion_alternativa, oc.observaciones, oc.serviciable, oc.motivo_serviciable, oc.incidencia, oc.motivo_incidencia,
+                       oc.fichero_imagen, oc.fecha, oc.Tipo_Vivienda, oc.Contrato,  du.site_operational_state
+                FROM ofertas_comercial oc
+                LEFT JOIN datos_uis du ON oc.apartment_id = du.apartment_id
+                WHERE LOWER(oc.Contrato) = 'sí' 
+                AND LOWER(du.comercial) = LOWER(?)
+                """
 
             df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
 
             # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """
-            SELECT v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
-                   v.serviciable, v.coste, v.comentarios_comercial
-            FROM viabilidades v
-            WHERE LOWER(v.usuario) = LOWER(?)
-            """
+                SELECT v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
+                       v.serviciable, v.coste, v.comentarios_comercial
+                FROM viabilidades v
+                WHERE LOWER(v.usuario) = LOWER(?)
+                """
 
             df_viabilidades = pd.read_sql(query_viabilidades, conn, params=(comercial_usuario,))
+
+            # Consulta SQL para ofertas con "No Interesado"
+            query_no_interesado = """
+                SELECT oc.apartment_id, oc.provincia, oc.municipio, oc.poblacion, 
+                       oc.vial, oc.numero, oc.letra, oc.cp, oc.latitud, oc.longitud, oc.nombre_cliente, 
+                       oc.telefono, oc.direccion_alternativa, oc.observaciones, oc.serviciable, oc.motivo_serviciable, oc.incidencia, oc.motivo_incidencia,
+                       oc.fichero_imagen, oc.fecha, oc.Tipo_Vivienda, oc.Contrato,  du.site_operational_state
+                FROM ofertas_comercial oc
+                LEFT JOIN datos_uis du ON oc.apartment_id = du.apartment_id
+                WHERE LOWER(oc.Contrato) = 'no interesado' 
+                AND LOWER(du.comercial) = LOWER(?)
+                """
+
+            df_no_interesado = pd.read_sql(query_no_interesado, conn, params=(comercial_usuario,))
 
             conn.close()
 
@@ -372,6 +392,13 @@ def comercial_dashboard():
             else:
                 st.subheader("📋 Tabla de Viabilidades")
                 st.dataframe(df_viabilidades, use_container_width=True)
+
+            # Verificar si hay datos para mostrar en la tercera tabla (No Interesado)
+            if df_no_interesado.empty:
+                st.warning(f"⚠️ No hay ofertas marcadas como 'No Interesado' para el comercial '{comercial_usuario}'.")
+            else:
+                st.subheader("📋 Tabla de Ofertas No Interesadas")
+                st.dataframe(df_no_interesado, use_container_width=True)
 
         except Exception as e:
             st.error(f"❌ Error al cargar los datos: {e}")
@@ -450,41 +477,42 @@ def guardar_viabilidad(datos):
     """, datos)
     conn.commit()
 
-    # Obtener el email del admin
-    cursor.execute("SELECT email FROM usuarios WHERE username = 'rebe' LIMIT 1")
-    resultado = cursor.fetchone()
-    email_admin = resultado[0] if resultado else None  # Extraer email correctamente
-
+    # Obtener los emails de todos los administradores
+    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+    resultados = cursor.fetchall()  # Obtiene una lista de tuplas con cada email
+    emails_admin = [fila[0] for fila in resultados]
     conn.close()
 
     # Información de la viabilidad
     ticket_id = datos[10]  # Asumiendo que 'ticket' está en la posición 10
     nombre_comercial = st.session_state.get("username")
     descripcion_viabilidad = (
-        f"📢 Viabilidad para el ticket {ticket_id}:<br><br>"
-        f"👤 Comercial: {nombre_comercial}<br><br>"  # Nombre del comercial (usuario logueado)
+        f"📝 Viabilidad para el ticket {ticket_id}:<br><br>"
+        f"🧑‍💼 Comercial: {nombre_comercial}<br><br>"  # Nombre del comercial (usuario logueado)
         f"📍 Latitud: {datos[0]}<br>"
         f"📍 Longitud: {datos[1]}<br>"
-        f"📍 Provincia: {datos[2]}<br>"
-        f"📍 Municipio: {datos[3]}<br>"
-        f"📍 Población: {datos[4]}<br>"
-        f"📍 Vial: {datos[5]}<br>"
-        f"📍 Número: {datos[6]}<br>"
-        f"📍 Letra: {datos[7]}<br>"
-        f"📍 Código Postal (CP): {datos[8]}<br>"
-        f"📋 Comentario: {datos[9]}<br>"
-        f"👤 Nombre Cliente: {datos[11]}<br>"
+        f"🏞️ Provincia: {datos[2]}<br>"
+        f"🏙️ Municipio: {datos[3]}<br>"
+        f"🏘️ Población: {datos[4]}<br>"
+        f"🛣️ Vial: {datos[5]}<br>"
+        f"🔢 Número: {datos[6]}<br>"
+        f"🔤 Letra: {datos[7]}<br>"
+        f"🏷️ Código Postal (CP): {datos[8]}<br>"
+        f"💬 Comentario: {datos[9]}<br>"
+        f"👥 Nombre Cliente: {datos[11]}<br>"
         f"📞 Teléfono: {datos[12]}<br><br>"
         f"ℹ️ Por favor, revise todos los detalles de la viabilidad para asegurar que toda la información esté correcta. "
         f"Si tiene alguna pregunta o necesita más detalles, no dude en ponerse en contacto con el comercial {nombre_comercial} o con el equipo responsable."
     )
 
-    # Enviar la notificación por correo al administrador si existe
-    if email_admin:
-        correo_viabilidad_comercial(email_admin, ticket_id, descripcion_viabilidad)
-        st.info(f"📧 Se ha enviado una notificación a {email_admin} sobre la viabilidad completada.")
+    # Enviar la notificación por correo a cada administrador si existen emails
+    if emails_admin:
+        for email in emails_admin:
+            correo_viabilidad_comercial(email, ticket_id, descripcion_viabilidad)
+        st.info(
+            f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada.")
     else:
-        st.warning("⚠ No se encontró el email del administrador, no se pudo enviar la notificación.")
+        st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
 
     # Mostrar mensaje de éxito en Streamlit
     st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
@@ -571,18 +599,18 @@ def viabilidades_section():
 
         st.subheader("Completa los datos del punto de viabilidad")
         with st.form("viabilidad_form"):
-            st.text_input("Latitud", value=str(lat), disabled=True)
-            st.text_input("Longitud", value=str(lon), disabled=True)
-            provincia = st.text_input("Provincia")
-            municipio = st.text_input("Municipio")
-            poblacion = st.text_input("Población")
-            vial = st.text_input("Vial")
-            numero = st.text_input("Número")
-            letra = st.text_input("Letra")
-            cp = st.text_input("Código Postal")
-            nombre_cliente = st.text_input("Nombre Cliente")
-            telefono = st.text_input("Telefono")
-            comentario = st.text_area("Comentario")
+            st.text_input("📍 Latitud", value=str(lat), disabled=True)
+            st.text_input("📍 Longitud", value=str(lon), disabled=True)
+            provincia = st.text_input("🏞️ Provincia")
+            municipio = st.text_input("🏘️ Municipio")
+            poblacion = st.text_input("👥 Población")
+            vial = st.text_input("🛣️ Vial")
+            numero = st.text_input("🔢 Número")
+            letra = st.text_input("🔤 Letra")
+            cp = st.text_input("📮 Código Postal")
+            nombre_cliente = st.text_input("👤 Nombre Cliente")
+            telefono = st.text_input("📞 Teléfono")
+            comentario = st.text_area("📝 Comentario")
             submit = st.form_submit_button("Enviar Formulario")
 
             if submit:
@@ -803,18 +831,17 @@ def mostrar_formulario(click_data):
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia)
 
-            # Obtener el email del admin
+            # Obtener los emails de todos los usuarios con rol admin
             conn = sqlite3.connect("data/usuarios.db")
             cursor = conn.cursor()
-            cursor.execute("SELECT email FROM usuarios WHERE username = 'rebe' LIMIT 1")
-            resultado = cursor.fetchone()
-            email_admin = resultado[0] if resultado else None
+            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+            resultados = cursor.fetchall()  # Devuelve una lista de tuplas con cada email
+            emails_admin = [fila[0] for fila in resultados]
             conn.close()
 
-            # Verificar si el correo existe antes de enviarlo
             nombre_comercial = st.session_state["username"]
 
-            if email_admin:
+            if emails_admin:
                 descripcion_oferta = (
                     f"📢 Se ha añadido una nueva oferta para el apartamento con ID {apartment_id}.<br><br>"
                     f"📝 Detalles de la oferta realizada por el comercial {nombre_comercial}:<br>"
@@ -836,12 +863,14 @@ def mostrar_formulario(click_data):
                     f"Si necesita realizar alguna modificación o tiene preguntas adicionales, no dude en ponerse en contacto con el comercial responsable o el equipo de administración."
                 )
 
-                correo_oferta_comercial(email_admin, apartment_id, descripcion_oferta)
+                # Enviar el correo a cada administrador
+                for email in emails_admin:
+                    correo_oferta_comercial(email, apartment_id, descripcion_oferta)
 
                 st.success("✅ Oferta enviada con éxito")
-                st.info(f"📧 Se ha enviado una notificación a {email_admin} sobre la oferta completada.")
+                st.info(f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)}")
             else:
-                st.warning("⚠️ No se encontró el email del administrador, no se pudo enviar la notificación.")
+                st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
 
 
 if __name__ == "__main__":

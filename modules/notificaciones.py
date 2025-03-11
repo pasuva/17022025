@@ -75,6 +75,15 @@ def correo_asignacion_administracion(destinatario, municipio_sel, poblacion_sel,
     }
     enviar_notificacion(destinatario, asunto, contenido)
 
+def correo_asignacion_administracion2(destinatario, municipio_sel, poblacion_sel, descripcion_asignacion):
+    asunto = f"Asignación realizada para {municipio_sel} - {poblacion_sel}"
+    descripcion_asignacion = limpiar_texto(descripcion_asignacion)
+    contenido = {
+        "mensaje": f"El gestor asignó la zona <strong>{municipio_sel} - {poblacion_sel}</strong>.",
+        "Descripción de la asignación": descripcion_asignacion
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+
 # 5. Correo de desasignacion de zona a comercial
 def correo_desasignacion_administracion(destinatario, municipio_sel, poblacion_sel, descripcion_desasignacion):
     asunto = f"Desasignación realizada para {municipio_sel} - {poblacion_sel}"
@@ -82,6 +91,15 @@ def correo_desasignacion_administracion(destinatario, municipio_sel, poblacion_s
     contenido = {
         "mensaje": f"Se le ha desasignado la zona por errores de asignación u otros motivos <strong>{municipio_sel} - {poblacion_sel}</strong>. "
                    f"Entre en su panel de usuario para ver mas detalles.",
+        "Descripción de la desasignación": descripcion_desasignacion
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+
+def correo_desasignacion_administracion2(destinatario, municipio_sel, poblacion_sel, descripcion_desasignacion):
+    asunto = f"Desasignación realizada para {municipio_sel} - {poblacion_sel}"
+    descripcion_desasignacion = limpiar_texto(descripcion_desasignacion)
+    contenido = {
+        "mensaje": f"El gestor desasignó la zona <strong>{municipio_sel} - {poblacion_sel}</strong>. ",
         "Descripción de la desasignación": descripcion_desasignacion
     }
     enviar_notificacion(destinatario, asunto, contenido)

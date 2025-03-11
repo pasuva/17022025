@@ -5,7 +5,7 @@ import folium
 from streamlit_folium import st_folium
 from datetime import datetime
 import io
-from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion
+from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion, correo_asignacion_administracion2, correo_desasignacion_administracion2
 from folium.plugins import MarkerCluster
 
 from modules.cookie_instance import controller  # <-- Importa la instancia central
@@ -49,7 +49,6 @@ def cargar_datos():
 def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
     st.sidebar.title("📍 Mapa de Ubicaciones")
-
     # Descripción de los íconos
     st.markdown("""
         **Iconos:**
@@ -153,6 +152,7 @@ def mapa_dashboard():
                 poblaciones = sorted(datos_uis[datos_uis['municipio'] == municipio_sel]['poblacion'].dropna().unique())
                 poblacion_sel = st.selectbox("Seleccione Población", poblaciones, key="poblacion_sel")
             comercial_elegido = st.radio("Asignar a:", ["comercial_rafa1", "comercial_rafa2"], key="comercial_elegido")
+
             if municipio_sel and poblacion_sel:
                 conn = sqlite3.connect("data/usuarios.db")
                 cursor = conn.cursor()
@@ -160,6 +160,7 @@ def mapa_dashboard():
                                (municipio_sel, poblacion_sel))
                 count_assigned = cursor.fetchone()[0]
                 conn.close()
+
                 if count_assigned > 0:
                     st.warning("🚫 Esta zona ya ha sido asignada.")
                 else:
@@ -173,53 +174,64 @@ def mapa_dashboard():
                             WHERE municipio = ? AND poblacion = ?
                         """, (comercial_elegido, municipio_sel, poblacion_sel))
                         conn.commit()
-                        conn.close()
 
                         try:
-                            # Conectar a la base de datos (usuarios.db)
-                            conn = sqlite3.connect("data/usuarios.db")
-                            cursor = conn.cursor()
-
-                            # Consultar el correo del comercial asignado desde la tabla "usuarios"
-                            # usando el nombre (comercial_elegido) obtenido de la tabla "comercial_rafa"
-                            cursor.execute("""
-                                SELECT email
-                                FROM usuarios
-                                WHERE username = ?
-                            """, (comercial_elegido,))
+                            # Obtener email del comercial asignado
+                            cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_elegido,))
                             email_comercial = cursor.fetchone()
 
-                            # Verificar si se encontró el correo
-                            if email_comercial:
-                                destinatario_comercial = email_comercial[0]
-                            else:
-                                st.error("❌ No se encontró el correo del comercial asignado.")
-                                destinatario_comercial = "psvpasuva@gmail.com"  # Correo predeterminado
+                            destinatario_comercial = email_comercial[0] if email_comercial else "patricia@redytelcomputer.com"
 
-                            # Preparar el mensaje de notificación con un lenguaje amigable para el usuario
+                            # Obtener emails de administradores
+                            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                            emails_admins = [fila[0] for fila in cursor.fetchall()]
+
+                            conn.close()
+
+                            # **Mensaje para el comercial asignado**
                             descripcion_asignacion = (
-                                f"📍 Le informamos que se le ha asignado la zona {municipio_sel} - {poblacion_sel} como parte de sus responsabilidades.<br><br>"
-                                f"💼 Ya puede comenzar a realizar ofertas en dicha área y gestionar las tareas correspondientes de manera inmediata. <br>"
-                                f"🔑 Esta asignación implica que ahora estará a cargo de todas las actividades y tareas relacionadas con esta zona. <br>"
-                                f"ℹ️ Le recomendamos revisar detenidamente la asignación a través de su panel de usuario para conocer los detalles específicos de la zona y las tareas relacionadas. <br>"
-                                f"🚨 Si tiene alguna duda o necesita información adicional, no dude en ponerse en contacto con el equipo de administración para recibir asistencia personalizada.<br><br>"
-                                f"🔧 Estamos aquí para ayudarle en todo lo que necesite y asegurar que su trabajo en esta nueva zona sea exitoso. <br>"
+                                f"📍 Le informamos que se le ha asignado la zona {municipio_sel} - {poblacion_sel}.<br><br>"
+                                f"💼 Ya puede comenzar a gestionar las tareas correspondientes en esta zona.<br>"
+                                f"🔑 Esta asignación implica que ahora estará a cargo de todas las actividades y gestiones.<br>"
+                                f"ℹ️ Revise su panel de usuario para conocer más detalles.<br><br>"
+                                f"🚨 Si tiene alguna duda, contacte con administración.<br>"
                                 f"¡Gracias!"
                             )
 
-                            # Enviar el correo al comercial asignado
+                            # **Mensaje para los administradores**
+                            descripcion_admin = (
+                                f"📢 Se ha realizado una nueva asignación de zona.<br><br>"
+                                f"📌 <strong>Zona Asignada:</strong> {municipio_sel} - {poblacion_sel}<br>"
+                                f"👤 <strong>Asignado a:</strong> {comercial_elegido}<br>"
+                                f"🕵️ <strong>Asignado por:</strong> {st.session_state['username']}<br><br>"
+                                f"ℹ️ Revise los detalles en la plataforma.<br>"
+                                f"⚡ Si necesita realizar algún cambio, puede hacerlo desde administración.<br>"
+                                f"📞 Contacte con el equipo si hay dudas.<br>"
+                                f"🔧 Gracias por su gestión."
+                            )
+
+                            # **Enviar correos**
                             correo_asignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel,
                                                              descripcion_asignacion)
 
-                            st.success("✅ Zona asignada correctamente y notificación enviada al responsable.")
+                            for email_admin in emails_admins:
+                                correo_asignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
+                                                                 descripcion_admin)
+
+                            # **Mensajes en Streamlit**
+                            st.success("✅ Zona asignada correctamente y notificaciones enviadas.")
+                            st.info(
+                                f"📧 Se ha notificado a {comercial_elegido} y a los administradores sobre la asignación.")
+
+                            # **Registrar trazabilidad**
                             log_trazabilidad(st.session_state["username"], "Asignación",
                                              f"Asignó zona {municipio_sel} - {poblacion_sel} a {comercial_elegido}")
 
-                            conn.commit()
-                            conn.close()
-
                         except Exception as e:
                             st.error(f"❌ Error al enviar la notificación: {e}")
+                        finally:
+                            conn.close()
+
         elif accion == "Desasignar Zona":
             conn = sqlite3.connect("data/usuarios.db")
             assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
@@ -254,45 +266,58 @@ def mapa_dashboard():
                             conn = sqlite3.connect("data/usuarios.db")
                             cursor = conn.cursor()
 
-                            # Consultar el correo del comercial desasignado desde la tabla "usuarios"
-                            # usando el nombre que se encuentra en la variable 'comercial_elegido'
-                            cursor.execute("""
-                                SELECT email
-                                FROM usuarios
-                                WHERE username = ?
-                            """, (comercial_asignado,))
+                            # Obtener email del comercial desasignado
+                            cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_asignado,))
                             email_comercial = cursor.fetchone()
+                            destinatario_comercial = email_comercial[0] if email_comercial else "patricia@redytelcomputer.com"
 
-                            # Verificar si se encontró el correo
-                            if email_comercial:
-                                destinatario_comercial = email_comercial[0]
-                            else:
-                                st.error("❌ No se encontró el correo del comercial desasignado.")
-                                destinatario_comercial = "psvpasuva@gmail.com"  # Correo predeterminado
+                            # Obtener emails de los administradores
+                            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                            emails_admins = [fila[0] for fila in cursor.fetchall()]
 
-                            # Preparar el contenido del correo con un lenguaje amigable para el usuario
+                            conn.close()
+
+                            # **Mensaje para el comercial desasignado**
                             descripcion_desasignacion = (
-                                f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel} de su responsabilidad. <br>"
-                                f"🔄 Este cambio puede deberse a una reestructuración o a un ajuste en las zonas asignadas. <br>"
-                                f"⚠️ Esto significa que ya no estará a cargo de las actividades y tareas correspondientes a esta zona. <br>"
-                                f"ℹ️ Le sugerimos revisar su asignación actualizada en el sistema para obtener detalles sobre las nuevas zonas o responsabilidades que tiene asignadas. <br>"
-                                f"📞 Si tiene alguna pregunta sobre este cambio o requiere asistencia adicional, no dude en contactar con el equipo de administración. <br>"
-                                f"💬 Estamos a su disposición para cualquier consulta o aclaración que pueda necesitar, y para ayudarle con la transición a sus nuevas responsabilidades."
+                                f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel}.<br>"
+                                f"🔄 Este cambio puede deberse a una reestructuración o ajuste en las zonas asignadas.<br>"
+                                f"⚠️ Ya no estará a cargo de las actividades y tareas correspondientes a esta zona.<br>"
+                                f"ℹ️ Revise su asignación actualizada en el sistema.<br><br>"
+                                f"📞 Si tiene dudas, contacte con administración.<br>"
+                                f"💬 Estamos aquí para ayudarle con la transición."
                             )
 
-                            # Enviar el correo al comercial desasignado
+                            # **Mensaje para los administradores**
+                            descripcion_admin = (
+                                f"📢 Se ha realizado una desasignación de zona.<br><br>"
+                                f"📌 <strong>Zona Desasignada:</strong> {municipio_sel} - {poblacion_sel}<br>"
+                                f"👤 <strong>Comercial afectado:</strong> {comercial_asignado}<br>"
+                                f"🕵️ <strong>Desasignado por:</strong> {st.session_state['username']}<br><br>"
+                                f"ℹ️ Revise los detalles en la plataforma.<br>"
+                                f"⚡ Si necesita realizar algún ajuste, puede hacerlo desde administración.<br>"
+                                f"🔧 Gracias por su gestión."
+                            )
+
+                            # **Enviar correos**
                             correo_desasignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel,
                                                                 descripcion_desasignacion)
 
-                            st.success("✅ Zona desasignada correctamente y notificación enviada al responsable.")
+                            for email_admin in emails_admins:
+                                correo_desasignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
+                                                                    descripcion_admin)
+
+                            # **Mensajes en Streamlit**
+                            st.success("✅ Zona desasignada correctamente y notificaciones enviadas.")
+                            st.info(
+                                f"📧 Se ha notificado a {comercial_asignado} y a los administradores sobre la desasignación.")
+
+                            # **Registrar trazabilidad**
                             log_trazabilidad(st.session_state["username"], "Desasignación",
                                              f"Desasignó zona {municipio_sel} - {poblacion_sel}")
 
-                            conn.commit()
-                            conn.close()
-
                         except Exception as e:
                             st.error(f"❌ Error al enviar la notificación: {e}")
+
         # Mostrar la tabla de zonas asignadas (dentro del panel de asignación)
         conn = sqlite3.connect("data/usuarios.db")
         assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
@@ -321,7 +346,7 @@ def mapa_dashboard():
                 m = folium.Map(
                     location=center,
                     zoom_start=zoom_start,
-                    tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                    tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
                     attr="Google"
                 )
 
@@ -387,13 +412,13 @@ def mapa_dashboard():
     total_ofertas = pd.read_sql("SELECT DISTINCT * FROM comercial_rafa", conn)
     conn.close()
     if not assigned_zones.empty:
-        st.write("Zonas ya asignadas:")
+        st.info("ℹ️ Zonas ya asignadas:")
         st.dataframe(assigned_zones, use_container_width=True)
 
     # Registro de trazabilidad para la visualización del mapa
     log_trazabilidad(st.session_state["username"], "Visualización de mapa", "Usuario visualizó el mapa de Rafa Sanz.")
 
-    st.write("Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
+    st.info("ℹ️ Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
     st.dataframe(total_ofertas, use_container_width=True)
 
     # Sección de descarga de datos

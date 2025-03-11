@@ -298,7 +298,7 @@ def viabilidades_seccion():
         # Crear y mostrar el mapa con Folium
         with st.spinner("⏳ Cargando mapa..."):
             m = folium.Map(location=[43.463444, -3.790476], zoom_start=12,
-                           tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                           tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
                            attr="Google")
             marker_cluster = MarkerCluster().add_to(m)
 
@@ -491,7 +491,7 @@ def mostrar_formulario(click_data):
                 destinatario_comercial = email_comercial[0]
             else:
                 st.error("❌ No se encontró el correo del comercial correspondiente.")
-                destinatario_comercial = "psvpasuva@gmail.com"  # Correo predeterminado
+                destinatario_comercial = "patricia@redytelcomputer.com"  # Correo predeterminado
 
             # Preparar el contenido del correo
             descripcion_viabilidad = (
