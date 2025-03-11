@@ -8,7 +8,6 @@ from streamlit_cookies_controller import CookieController  # Se importa localmen
 
 cookie_name = "my_app"
 
-
 def log_trazabilidad(usuario, accion, detalles):
     conn = sqlite3.connect("data/usuarios.db")
     cursor = conn.cursor()
@@ -83,19 +82,19 @@ def supervisor_dashboard():
             detalles = f"El supervisor {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
-            # Eliminar las cookies del session_id, username y role para esta sesión
-            if controller.get(f'{cookie_name}_session_id'):
-                controller.set(f'{cookie_name}_session_id', '', max_age=0, path='/')
-            if controller.get(f'{cookie_name}_username'):
-                controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
-            if controller.get(f'{cookie_name}_role'):
-                controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
+            # Establecer la expiración de las cookies en el pasado para forzar su eliminación
+            controller.set(f'{cookie_name}_session_id', '', max_age=0, expires=datetime(1970, 1, 1))
+            controller.set(f'{cookie_name}_username', '', max_age=0, expires=datetime(1970, 1, 1))
+            controller.set(f'{cookie_name}_role', '', max_age=0, expires=datetime(1970, 1, 1))
 
             # Reiniciar el estado de sesión
             st.session_state["login_ok"] = False
             st.session_state["username"] = ""
             st.session_state["role"] = ""
             st.session_state["session_id"] = ""
+
+            # Limpiar parámetros de la URL
+            st.experimental_set_query_params()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
 
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()

@@ -4,10 +4,8 @@ import os
 import sqlite3
 import bcrypt
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 from streamlit_cookies_controller import CookieController  # Se importa de forma local
-
-controller = CookieController(key="cookie_controller")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "../data/usuarios.db")
@@ -21,13 +19,14 @@ if "login_ok" not in st.session_state:
 
 def get_latest_version():
     try:
-        with open(VERSION_FILE, "r", encoding="utf-8") as f:  # Especificar codificación UTF-8
+        with open(VERSION_FILE, "r", encoding="utf-8") as f:
             versions = f.readlines()
             if versions:
                 return versions[-1].strip()
     except FileNotFoundError:
         return "Desconocida"
     return "Desconocida"
+
 
 def verify_user(nombre, password):
     conn = sqlite3.connect(DB_PATH)
@@ -57,6 +56,7 @@ def log_trazabilidad(usuario, accion, detalles):
 
 def login():
     # Se instancia localmente el controlador de cookies para que cada navegador administre sus propias cookies.
+    controller = CookieController(key="cookies")
 
     # Verificar si el usuario ya está autenticado usando cookies
     if "login_ok" not in st.session_state:
@@ -134,11 +134,10 @@ def login():
                 st.success(f"Bienvenido, {nombre} ({rol})")
 
                 # Guardar las credenciales en cookies con un session_id único y persistente
-                controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/', same_site='None',
-                               secure=True)
-                controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/', same_site='None',
-                               secure=True)
-                controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/', same_site='None', secure=True)
+                if st.session_state.get("login_ok"):
+                    controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/', same_site='Lax', secure=True)
+                    controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/', same_site='Lax', secure=True )
+                    controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/', same_site='Lax', secure=True)
 
                 detalles = f"Usuario '{nombre}' inició sesión en el sistema."
                 log_trazabilidad(nombre, "Inicio sesión", detalles)

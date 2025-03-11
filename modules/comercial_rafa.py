@@ -13,7 +13,7 @@ from modules import login
 from folium.plugins import Geocoder
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
 from streamlit_option_menu import option_menu
-
+from streamlit_cookies_controller import CookieController  # Se importa localmente
 from modules.cookie_instance import controller  # <-- Importa la instancia central
 
 cookie_name = "my_app"
@@ -123,6 +123,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
+    controller = CookieController(key="cookies")
     st.sidebar.title("📍 Mapa de Ubicaciones")
     with st.sidebar:
         st.sidebar.markdown("""

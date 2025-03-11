@@ -7,8 +7,7 @@ from datetime import datetime
 import io
 from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion, correo_asignacion_administracion2, correo_desasignacion_administracion2
 from folium.plugins import MarkerCluster
-
-from modules.cookie_instance import controller  # <-- Importa la instancia central
+from streamlit_cookies_controller import CookieController  # Se importa localmente
 
 cookie_name = "my_app"
 
@@ -48,6 +47,7 @@ def cargar_datos():
 
 def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
+    controller = CookieController(key="cookies")
     st.sidebar.title("📍 Mapa de Ubicaciones")
     # Descripción de los íconos
     st.markdown("""

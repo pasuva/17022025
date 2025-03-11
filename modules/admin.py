@@ -16,8 +16,8 @@ from modules.notificaciones import correo_viabilidad_administracion, correo_usua
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_folium import st_folium
 from streamlit_option_menu import option_menu
-
-from modules.cookie_instance import controller  # <-- Importa la instancia central
+from datetime import datetime
+from streamlit_cookies_controller import CookieController  # Se importa localmente
 
 cookie_name = "my_app"
 
@@ -527,7 +527,7 @@ def obtener_apartment_ids_existentes(cursor):
 # Función principal de la app (Dashboard de administración)
 def admin_dashboard():
     """Panel del administrador."""
-
+    controller = CookieController(key="cookies")
     # Personalizar la barra lateral
     st.sidebar.title("📊 Panel de Administración")
 
@@ -588,13 +588,10 @@ def admin_dashboard():
                 detalles = f"El administrador {st.session_state.get('username', 'N/A')} cerró sesión."
                 log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
 
-                # Eliminar las cookies del session_id, username y role para esta sesión
-                if controller.get(f'{cookie_name}_session_id'):
-                    controller.set(f'{cookie_name}_session_id', '', max_age=0, path='/')
-                if controller.get(f'{cookie_name}_username'):
-                    controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
-                if controller.get(f'{cookie_name}_role'):
-                    controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
+                # Establecer la expiración de las cookies en el pasado para forzar su eliminación
+                controller.set(f'{cookie_name}_session_id', '', max_age=0, expires=datetime(1970, 1, 1))
+                controller.set(f'{cookie_name}_username', '', max_age=0, expires=datetime(1970, 1, 1))
+                controller.set(f'{cookie_name}_role', '', max_age=0, expires=datetime(1970, 1, 1))
 
                 # Reiniciar el estado de sesión
                 st.session_state["login_ok"] = False
@@ -603,6 +600,8 @@ def admin_dashboard():
                 st.session_state["session_id"] = ""
 
                 st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+                # Limpiar parámetros de la URL
+                st.experimental_set_query_params()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
                 st.rerun()
 
     # Opción: Visualizar datos de la tabla datos_uis
