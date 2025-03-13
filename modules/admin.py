@@ -6,7 +6,6 @@ import datetime
 import bcrypt
 import pandas as pd
 import plotly.express as px
-from folium.plugins import MarkerCluster
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import os  # Para trabajar con archivos en el sistema
@@ -14,10 +13,12 @@ import base64  # Para codificar la imagen en base64
 import streamlit as st
 from modules.notificaciones import correo_viabilidad_administracion, correo_usuario
 from datetime import datetime as dt  # Para evitar conflicto con datetime
-from streamlit_folium import st_folium
 from streamlit_option_menu import option_menu
 from datetime import datetime
 from streamlit_cookies_controller import CookieController  # Se importa localmente
+from folium.plugins import MarkerCluster
+from streamlit_folium import st_folium
+from folium.plugins import Geocoder
 
 cookie_name = "my_app"
 
@@ -255,6 +256,272 @@ def get_download_link_icon(img_path):
     # Usamos un emoji de flecha abajo (⬇️) como icono
     html = f'<a href="data:{mime};base64,{b64}" download="{file_name}" style="text-decoration: none; font-size:20px;">⬇️</a>'
     return html
+
+
+@st.cache_data
+def cargar_datos_uis():
+    """Carga y cachea los datos de las tablas 'datos_uis' y 'ofertas_comercial'."""
+    conn = sqlite3.connect("data/usuarios.db")
+    query_datos_uis = """
+        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, poblacion, cto_con_proyecto, serviciable 
+        FROM datos_uis
+    """
+    datos_uis = pd.read_sql(query_datos_uis, conn)
+
+    query_ofertas = """
+        SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion 
+        FROM ofertas_comercial
+    """
+    ofertas_df = pd.read_sql(query_ofertas, conn)
+    conn.close()
+    return datos_uis, ofertas_df
+
+
+@st.cache_data
+def cargar_datos_uis():
+    """Carga y cachea los datos de las tablas 'datos_uis' y 'ofertas_comercial'."""
+    conn = sqlite3.connect("data/usuarios.db")
+    query_datos_uis = """
+        SELECT apartment_id, latitud, longitud, provincia, municipio, poblacion, cto_con_proyecto, serviciable 
+        FROM datos_uis
+    """
+    datos_uis = pd.read_sql(query_datos_uis, conn)
+
+    query_ofertas = """
+        SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion 
+        FROM ofertas_comercial
+    """
+    ofertas_df = pd.read_sql(query_ofertas, conn)
+    conn.close()
+    return datos_uis, ofertas_df
+
+def limpiar_mapa():
+    """Evita errores de re-inicialización del mapa"""
+    st.write("### Mapa actualizado")  # Esto forzará un refresh
+
+def cargar_provincias():
+    conn = sqlite3.connect("data/usuarios.db")
+    query = "SELECT DISTINCT provincia FROM datos_uis"
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return sorted(df['provincia'].dropna().unique())
+
+
+@st.cache_data
+def cargar_datos_por_provincia(provincia):
+    conn = sqlite3.connect("data/usuarios.db")
+    query_datos_uis = """
+        SELECT * 
+        FROM datos_uis
+        WHERE provincia = ?
+    """
+    datos_uis = pd.read_sql(query_datos_uis, conn, params=(provincia,))
+
+    query_ofertas = """
+        SELECT * 
+        FROM ofertas_comercial
+        WHERE provincia = ?
+    """
+    ofertas_df = pd.read_sql(query_ofertas, conn, params=(provincia,))
+    conn.close()
+    return datos_uis, ofertas_df
+
+
+def mapa_seccion():
+    # 🔹 LEYENDA DE COLORES
+    st.markdown("""
+           🟢 **Serviciable** 
+           🟠 **Oferta (Contrato: Sí)** 
+           ⚫ **Oferta (No Interesado)** 
+           🔵 **Sin Oferta** 
+           🔴 **No Serviciable** 
+           🟣 **Incidencia reportada** 
+       """)
+    col1, col2, col3 = st.columns(3)
+
+    provincias = cargar_provincias()
+    provincia_sel = col1.selectbox("Provincia", ["Selecciona una provincia"] + provincias)
+
+    if provincia_sel == "Selecciona una provincia":
+        st.warning("Selecciona una provincia para cargar los datos.")
+        return
+
+    with st.spinner("⏳ Cargando datos..."):
+        datos_uis, ofertas_df = cargar_datos_por_provincia(provincia_sel)
+        if datos_uis.empty:
+            st.error("❌ No se encontraron datos para la provincia seleccionada.")
+            return
+
+    municipios = sorted(datos_uis['municipio'].dropna().unique())
+    municipio_sel = col2.selectbox("Municipio", ["Todas"] + municipios)
+
+    if municipio_sel != "Todas":
+        datos_filtrados = datos_uis[datos_uis["municipio"] == municipio_sel].copy()
+        ofertas_filtradas = ofertas_df[ofertas_df["municipio"] == municipio_sel].copy()
+    else:
+        datos_filtrados = datos_uis.copy()
+        ofertas_filtradas = ofertas_df.copy()
+
+    poblaciones = sorted(datos_filtrados['poblacion'].dropna().unique())
+    poblacion_sel = col3.selectbox("Población", ["Todas"] + poblaciones)
+
+    if poblacion_sel != "Todas":
+        datos_filtrados = datos_filtrados[datos_filtrados["poblacion"] == poblacion_sel]
+        ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["poblacion"] == poblacion_sel]
+
+    datos_filtrados = datos_filtrados.dropna(subset=['latitud', 'longitud'])
+    datos_filtrados['latitud'] = datos_filtrados['latitud'].astype(float)
+    datos_filtrados['longitud'] = datos_filtrados['longitud'].astype(float)
+
+    if datos_filtrados.empty:
+        st.warning("⚠️ No hay datos que cumplan los filtros seleccionados.")
+        return
+
+    serviciable_dict = dict(zip(ofertas_filtradas["apartment_id"], ofertas_filtradas["serviciable"].str.strip().str.lower()))
+    contrato_dict = dict(zip(ofertas_filtradas["apartment_id"], ofertas_filtradas["Contrato"].str.strip().str.lower()))
+    incidencia_dict = dict(zip(ofertas_filtradas["apartment_id"], ofertas_filtradas["incidencia"].str.strip().str.lower()))
+
+    center_lat = datos_filtrados['latitud'].mean()
+    center_lon = datos_filtrados['longitud'].mean()
+
+    limpiar_mapa()  # 🔹 Evita la sobrecarga de mapas
+    with st.spinner("⏳ Cargando mapa..."):
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=12, max_zoom=21,
+                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+        cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
+
+        coord_counts = datos_filtrados.groupby(['latitud', 'longitud']).size().to_dict()
+
+        for _, row in datos_filtrados.iterrows():
+            apt_id = row['apartment_id']
+            lat_val = row['latitud']
+            lon_val = row['longitud']
+            popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
+
+            # Obtener valores de serviciable, contrato e incidencia
+            serviciable_ofertas = serviciable_dict.get(apt_id, "").lower()  # De ofertas_comercial
+            contrato_val = contrato_dict.get(apt_id, "").lower()  # De ofertas_comercial
+            incidencia_val = incidencia_dict.get(apt_id, "").lower()  # De ofertas_comercial
+            serviciable_uis = str(row["serviciable"]).strip().lower()  # De datos_uis
+
+            # Determinar color según las reglas
+            if incidencia_val == "sí":
+                marker_color = 'purple'  # 🟣 Incidencia
+            elif serviciable_ofertas == "no":
+                marker_color = 'red'  # 🔴 No Serviciable
+            elif serviciable_uis == "sí":
+                marker_color = 'green'  # 🟢 Serviciable
+            elif contrato_val == "sí":
+                marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
+            elif contrato_val == "no interesado":
+                marker_color = 'gray'  # ⚫ Oferta (No Interesado)
+            else:
+                marker_color = 'blue'  # 🔵 Sin Oferta
+
+            # Ajuste de coordenadas para evitar solapamiento
+            count = coord_counts.get((lat_val, lon_val), 1)
+            lat_offset = count * 0.00003 if count > 1 else 0
+            lon_offset = count * -0.00003 if count > 1 else 0
+            new_lat = lat_val + lat_offset
+            new_lon = lon_val + lon_offset
+            coord_counts[(lat_val, lon_val)] = count - 1
+
+            folium.Marker(
+                location=[new_lat, new_lon],
+                popup=popup_text,
+                icon=folium.Icon(color=marker_color, icon="map-marker"),
+                tooltip=apt_id  # Usamos el ID como tooltip
+            ).add_to(cluster_layer)
+
+        map_data = st_folium(m, height=500, use_container_width=True)
+
+        # Extraer el apartment_id clickeado
+        selected_apartment = map_data.get("last_object_clicked_tooltip")
+
+        if selected_apartment:
+            mostrar_info_apartamento(selected_apartment, datos_filtrados, ofertas_filtradas)
+
+
+def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df):
+    """ Muestra la información del apartamento clickeado de forma bonita y estructurada en tablas """
+
+    st.subheader("🏠 **Información del Apartamento Seleccionado**")
+
+    # Obtener datos de los dos DataFrames usando el apartment_id
+    datos_info = datos_df[datos_df["apartment_id"] == apartment_id]
+    ofertas_info = ofertas_df[ofertas_df["apartment_id"] == apartment_id]
+
+    # Layout con dos columnas para mostrar las tablas
+    col1, col2 = st.columns(2)
+
+    # Tabla de Datos Generales (datos_uis)
+    if not datos_info.empty:
+        with col1:
+            st.markdown("### 🔹 **Datos Generales**")
+            # Creamos un DataFrame con los datos y lo mostramos en formato tabla
+            data_uis = {
+                "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Calle/Vial", "Número", "Letra",
+                          "Código Postal", "Estado del Sitio", "Estado del Apartamento", "Proyecto de CTO", "Zona"],
+                "Valor": [
+                    datos_info.iloc[0]['apartment_id'],
+                    datos_info.iloc[0]['provincia'],
+                    datos_info.iloc[0]['municipio'],
+                    datos_info.iloc[0]['poblacion'],
+                    datos_info.iloc[0]['vial'],
+                    datos_info.iloc[0]['numero'],
+                    datos_info.iloc[0]['letra'],
+                    datos_info.iloc[0]['cp'],
+                    datos_info.iloc[0]['site_operational_state'],
+                    datos_info.iloc[0]['apartment_operational_state'],
+                    datos_info.iloc[0]['cto_con_proyecto'],
+                    datos_info.iloc[0]['zona']
+                ]
+            }
+            df_uis = pd.DataFrame(data_uis)
+
+            # Mostrar la tabla con un estilo agradable
+            st.dataframe(df_uis.style.set_table_styles([
+                {'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},
+                {'selector': 'tbody td', 'props': [('padding', '10px')]},
+            ]))
+    else:
+        with col1:
+            st.warning("❌ **No se encontraron datos para el apartamento en `datos_uis`.**")
+
+    # Tabla de Datos Comerciales (ofertas_comercial)
+    if not ofertas_info.empty:
+        with col2:
+            st.markdown("### 🔹 **Datos Comerciales**")
+            # Creamos un DataFrame con los datos y lo mostramos en formato tabla
+            data_comercial = {
+                "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Serviciable", "Motivo Serviciable",
+                          "Incidencia", "Motivo de Incidencia", "Nombre Cliente", "Teléfono", "Dirección Alternativa",
+                          "Observaciones"],
+                "Valor": [
+                    ofertas_info.iloc[0]['apartment_id'],
+                    ofertas_info.iloc[0]['provincia'],
+                    ofertas_info.iloc[0]['municipio'],
+                    ofertas_info.iloc[0]['poblacion'],
+                    ofertas_info.iloc[0]['serviciable'],
+                    ofertas_info.iloc[0].get('motivo_serviciable', 'No disponible'),
+                    ofertas_info.iloc[0]['incidencia'],
+                    ofertas_info.iloc[0].get('motivo_incidencia', 'No disponible'),
+                    ofertas_info.iloc[0].get('nombre_cliente', 'No disponible'),
+                    ofertas_info.iloc[0].get('telefono', 'No disponible'),
+                    ofertas_info.iloc[0].get('direccion_alternativa', 'No disponible'),
+                    ofertas_info.iloc[0].get('observaciones', 'No hay observaciones.')
+                ]
+            }
+            df_comercial = pd.DataFrame(data_comercial)
+
+            # Mostrar la tabla con un estilo agradable
+            st.dataframe(df_comercial.style.set_table_styles([
+                {'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},
+                {'selector': 'tbody td', 'props': [('padding', '10px')]},
+            ]))
+    else:
+        with col2:
+            st.warning("❌ **No se encontraron datos para el apartamento en `ofertas_comercial`.**")
 
 def viabilidades_seccion():
     log_trazabilidad("Administrador", "Visualización de Viabilidades",
@@ -560,10 +827,10 @@ def admin_dashboard():
 
         opcion = option_menu(
             menu_title=None,  # Título del menú oculto
-            options=["Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades", "Cargar Nuevos Datos",
+            options=["Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades", "Mapa UUIIs", "Cargar Nuevos Datos",
                      "Generador de informes", "Trazabilidad y logs", "Gestionar Usuarios",
                      "Control de versiones"],
-            icons=["house", "graph-up", "bar-chart", "check-circle", "upload",
+            icons=["house", "graph-up", "bar-chart", "check-circle", "globe", "upload",
                    "file-earmark-text", "journal-text", "people", "arrow-clockwise"],  # Íconos de Bootstrap
             menu_icon="list",
             default_index=0,
@@ -824,6 +1091,13 @@ def admin_dashboard():
             "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
             " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos.")
         viabilidades_seccion()
+
+        # Opción: Viabilidades (En construcción)
+    elif opcion == "Mapa UUIIs":
+        st.header("🌍 Mapa UUIIs")
+        st.info(
+            "ℹ️ En esta sección puedes ver todos los datos cruzados entre ams y las ofertas de los comerciales, así como su estado actual.")
+        mapa_seccion()
 
     # Opción: Generar Informes
     elif opcion == "Generador de informes":
@@ -1288,29 +1562,42 @@ def mostrar_control_versiones():
 
 #HOME Y GRAFICOS ASOCIADOS
 # Función para crear el gráfico interactivo de Serviciabilidad
-def create_serviciable_graph(cursor):
-    cursor.execute("""
-        SELECT serviciable, COUNT(*) 
-        FROM datos_uis 
-        GROUP BY serviciable
-    """)
+def create_serviciable_graph():
+    conn = sqlite3.connect("data/usuarios.db")
+    cursor = conn.cursor()
+
+    query = """
+        SELECT 'Sí' AS serviciable, COUNT(*) AS count
+        FROM datos_uis
+        WHERE serviciable = 'Sí'
+        UNION ALL
+        SELECT 'No' AS serviciable, COUNT(*) AS count
+        FROM ofertas_comercial
+        WHERE serviciable = 'No';
+    """
+
+    cursor.execute(query)
     data = cursor.fetchall()
+    conn.close()
+
+    # Convertir en DataFrame
     df = pd.DataFrame(data, columns=["serviciable", "count"])
 
-    # Crear gráfico interactivo de barras con Plotly
+    # Crear gráfico de barras con Plotly
     fig = px.bar(df, x="serviciable", y="count", title="Distribución de Serviciabilidad",
                  labels={"serviciable": "Serviciable", "count": "Cantidad"},
-                 color="serviciable", color_discrete_sequence=px.colors.qualitative.Set2)
-    fig.update_layout(barmode='group', height=300)
+                 color="serviciable", color_discrete_sequence=["green", "red"])
+    fig.update_layout(barmode='group', height=400)
+
     return fig
 
 # Función para crear el gráfico interactivo de Incidencias por Provincia
 def create_incidencias_graph(cursor):
     cursor.execute("""
-        SELECT provincia, COUNT(*) 
+        SELECT provincia, COUNT(*) AS total_incidencias
         FROM ofertas_comercial
-        WHERE incidencia IS NOT NULL
-        GROUP BY provincia
+        WHERE incidencia = 'Sí'
+        GROUP BY provincia;
     """)
     data = cursor.fetchall()
     df = pd.DataFrame(data, columns=["provincia", "count"])
@@ -1319,141 +1606,41 @@ def create_incidencias_graph(cursor):
     fig = px.bar(df, x="provincia", y="count", title="Incidencias por Provincia",
                  labels={"provincia": "Provincia", "count": "Cantidad"},
                  color="provincia", color_discrete_sequence=px.colors.qualitative.Pastel)
-    fig.update_layout(barmode='group', height=300)
+    fig.update_layout(barmode='group', height=400)
     fig.update_xaxes(tickangle=45)  # Rotar las etiquetas de los ejes X
-    return fig
-
-# Función para crear el gráfico interactivo de Motivos de Serviciabilidad
-def create_motivos_serviciabilidad_graph(cursor):
-    cursor.execute("""
-        SELECT motivo_serviciable, COUNT(*) 
-        FROM ofertas_comercial
-        GROUP BY motivo_serviciable
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["motivo_serviciable", "count"])
-
-    # Crear gráfico interactivo de barras con Plotly
-    fig = px.bar(df, x="motivo_serviciable", y="count", title="Motivos de Serviciabilidad",
-                 labels={"motivo_serviciable": "Motivo", "count": "Cantidad"},
-                 color="motivo_serviciable", color_discrete_sequence=px.colors.qualitative.Dark24)
-    fig.update_layout(barmode='group', height=300)
-    fig.update_xaxes(tickangle=45)  # Rotar las etiquetas de los ejes X
-    return fig
-
-# Gráfico de la distribución geográfica de los apartamentos (basado en latitud y longitud)
-def create_geographic_distribution_graph(cursor):
-    cursor.execute("""
-        SELECT latitud, longitud 
-        FROM datos_uis
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["latitud", "longitud"])
-
-    # Crear gráfico interactivo de dispersión en el mapa con Plotly
-    fig = px.scatter_geo(df, lat="latitud", lon="longitud", title="Distribución Geográfica de los Apartamentos",
-                         scope="world", height=400)
-    return fig
-
-# Gráfico de Incidencias por Mes
-def create_incidencias_by_month_graph(cursor):
-    cursor.execute("""
-        SELECT strftime('%Y-%m', fecha), COUNT(*) 
-        FROM ofertas_comercial
-        WHERE incidencia IS NOT NULL
-        GROUP BY strftime('%Y-%m', fecha)
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["Mes", "Cantidad"])
-
-    # Crear gráfico interactivo de líneas con Plotly
-    fig = px.line(df, x="Mes", y="Cantidad", title="Incidencias por Mes",
-                  labels={"Mes": "Mes", "Cantidad": "Número de Incidencias"})
-    fig.update_layout(height=300)
-    return fig
-
-# Gráfico de Costes de Viabilidades
-def create_coste_viabilidad_graph(cursor):
-    cursor.execute("""
-        SELECT coste 
-        FROM viabilidades
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["coste"])
-
-    # Crear gráfico interactivo de histograma con Plotly
-    fig = px.histogram(df, x="coste", title="Distribución de Costes de Viabilidad",
-                        labels={"coste": "Coste"}, nbins=20)
-    fig.update_layout(height=300)
-    return fig
-
-# Gráfico Promedio de Coste de Viabilidad por Provincia
-def create_avg_cost_by_province_graph(cursor):
-    cursor.execute("""
-        SELECT provincia, AVG(coste) 
-        FROM viabilidades
-        GROUP BY provincia
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["provincia", "avg_cost"])
-
-    # Crear gráfico interactivo de barras con Plotly
-    fig = px.bar(df, x="provincia", y="avg_cost", title="Promedio de Coste de Viabilidad por Provincia",
-                 labels={"provincia": "Provincia", "avg_cost": "Promedio de Coste"})
-    fig.update_layout(height=300)
-    return fig
-
-# Gráfico Número de Incidencias por Cliente
-def create_incidencias_by_cliente_graph(cursor):
-    cursor.execute("""
-        SELECT nombre_cliente, COUNT(*) 
-        FROM ofertas_comercial
-        WHERE incidencia IS NOT NULL
-        GROUP BY nombre_cliente
-        ORDER BY COUNT(*) DESC
-        LIMIT 10
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["nombre_cliente", "incidencias_count"])
-
-    # Crear gráfico interactivo de barras con Plotly
-    fig = px.bar(df, x="nombre_cliente", y="incidencias_count", title="Top 10 Clientes con Más Incidencias",
-                 labels={"nombre_cliente": "Cliente", "incidencias_count": "Número de Incidencias"})
-    fig.update_layout(height=300)
-    fig.update_xaxes(tickangle=45)  # Rotar etiquetas de ejes X
     return fig
 
 # Gráfico Distribución de Tipos de Vivienda
-def create_tipo_vivienda_distribution_graph(cursor):
-    cursor.execute("""
-        SELECT Tipo_Vivienda, COUNT(*) 
-        FROM comercial_rafa
+def create_tipo_vivienda_distribution_graph():
+    conn = sqlite3.connect("data/usuarios.db")
+    cursor = conn.cursor()
+
+    query = """
+        SELECT Tipo_Vivienda, COUNT(*) AS count
+        FROM ofertas_comercial
+        WHERE Tipo_Vivienda IS NOT NULL
         GROUP BY Tipo_Vivienda
-    """)
+        UNION ALL
+        SELECT Tipo_Vivienda, COUNT(*) AS count
+        FROM comercial_rafa
+        WHERE Tipo_Vivienda IS NOT NULL
+        GROUP BY Tipo_Vivienda;
+    """
+
+    cursor.execute(query)
     data = cursor.fetchall()
+    conn.close()
+
+    # Convertir en DataFrame
     df = pd.DataFrame(data, columns=["Tipo_Vivienda", "count"])
 
-    # Crear gráfico interactivo de barras con Plotly
+    # Crear gráfico con Plotly
     fig = px.bar(df, x="Tipo_Vivienda", y="count", title="Distribución de Tipos de Vivienda",
-                 labels={"Tipo_Vivienda": "Tipo de Vivienda", "count": "Cantidad"})
-    fig.update_layout(height=300)
-    return fig
+                 labels={"Tipo_Vivienda": "Tipo de Vivienda", "count": "Cantidad"},
+                 color="Tipo_Vivienda", color_discrete_sequence=px.colors.qualitative.Set3)
 
-# Gráfico de Tendencia de Cambio de Estado Operacional por Provincia
-def create_operational_state_trend_graph(cursor):
-    cursor.execute("""
-        SELECT strftime('%Y-%m', fecha) AS month, provincia, COUNT(*) 
-        FROM datos_uis
-        WHERE apartment_operational_state IS NOT NULL
-        GROUP BY month, provincia
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["Mes", "Provincia", "Count"])
+    fig.update_layout(barmode='group', height=400)
 
-    # Crear gráfico interactivo de líneas con Plotly
-    fig = px.line(df, x="Mes", y="Count", color="Provincia", title="Tendencia de Cambio de Estado Operacional por Provincia",
-                  labels={"Mes": "Mes", "Count": "Cantidad de Cambios", "Provincia": "Provincia"})
-    fig.update_layout(height=300)
     return fig
 
 # Gráfico de Viabilidades por Municipio
@@ -1469,25 +1656,8 @@ def create_viabilities_by_municipio_graph(cursor):
     # Crear gráfico interactivo de barras con Plotly
     fig = px.bar(df, x="municipio", y="count", title="Viabilidades por Municipio",
                  labels={"municipio": "Municipio", "count": "Cantidad de Viabilidades"})
-    fig.update_layout(height=300)
+    fig.update_layout(height=400)
     fig.update_xaxes(tickangle=45)  # Rotar etiquetas de ejes X
-    return fig
-
-# Gráfico de Distribución de Incidencias por Tipo de Incidencia
-def create_incidencias_by_tipo_graph(cursor):
-    cursor.execute("""
-        SELECT incidencia, COUNT(*) 
-        FROM ofertas_comercial
-        WHERE incidencia IS NOT NULL
-        GROUP BY incidencia
-    """)
-    data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["incidencia", "count"])
-
-    # Crear gráfico interactivo de barras con Plotly
-    fig = px.bar(df, x="incidencia", y="count", title="Distribución de Incidencias por Tipo de Incidencia",
-                 labels={"incidencia": "Tipo de Incidencia", "count": "Cantidad"})
-    fig.update_layout(height=300)
     return fig
 
 # Función principal de la página
@@ -1504,54 +1674,23 @@ def home_page():
         st.header("Resumen de Datos")
 
         # Organizar los gráficos en columnas
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
 
         # Gráfico de Serviciabilidad
         with col1:
-            st.plotly_chart(create_serviciable_graph(cursor))
+            st.plotly_chart(create_serviciable_graph())
 
         # Gráfico de Incidencias por Provincia
         with col2:
             st.plotly_chart(create_incidencias_graph(cursor))
 
-        # Gráfico de Motivos de Serviciabilidad
-        with col3:
-            st.plotly_chart(create_motivos_serviciabilidad_graph(cursor))
-
-        # Gráfico de Incidencias por Mes
-        with col1:
-            st.plotly_chart(create_incidencias_by_month_graph(cursor))
-
-        # Gráfico de Costes de Viabilidad
-        with col2:
-            st.plotly_chart(create_coste_viabilidad_graph(cursor))
-
-        # Gráfico de Distribución Geográfica
-        with col3:
-            st.plotly_chart(create_geographic_distribution_graph(cursor))
-        # Gráfico Promedio de Coste de Viabilidad por Provincia
-        with col1:
-            st.plotly_chart(create_avg_cost_by_province_graph(cursor))
-
-        # Gráfico de Número de Incidencias por Cliente
-        with col2:
-            st.plotly_chart(create_incidencias_by_cliente_graph(cursor))
-
         # Gráfico de Distribución de Tipos de Vivienda
-        with col3:
-            st.plotly_chart(create_tipo_vivienda_distribution_graph(cursor))
-
-        # Gráfico de Tendencia de Cambio de Estado Operacional por Provincia
         with col1:
-            st.plotly_chart(create_operational_state_trend_graph(cursor))
+            st.plotly_chart(create_tipo_vivienda_distribution_graph())
 
         # Gráfico de Viabilidades por Municipio
         with col2:
             st.plotly_chart(create_viabilities_by_municipio_graph(cursor))
-
-        # Distribución de Incidencias por Tipo de Incidencia**
-        with col3:
-            st.plotly_chart(create_incidencias_by_tipo_graph(cursor))
 
     except Exception as e:
         st.error(f"Hubo un error al cargar los gráficos: {e}")

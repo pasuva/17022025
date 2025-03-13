@@ -109,10 +109,6 @@ def correo_usuario(destinatario, asunto, mensaje):
     """
     Función para enviar un correo a un usuario específico con un asunto y mensaje
     proporcionados. Utiliza el sistema de notificaciones del proyecto.
-
-    :param destinatario: Email del destinatario.
-    :param asunto: Asunto del correo.
-    :param mensaje: Cuerpo del correo en formato de texto.
     """
     # Limpiar el texto del mensaje para evitar errores en el HTML
     mensaje = limpiar_texto(mensaje)

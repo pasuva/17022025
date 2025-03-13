@@ -4,7 +4,7 @@ import os
 import sqlite3
 import bcrypt
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_cookies_controller import CookieController  # Se importa de forma local
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

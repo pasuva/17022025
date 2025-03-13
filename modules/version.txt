@@ -15,13 +15,15 @@ v1.1.4 - Se implementa la consulta para obtener dinámicamente el correo del com
 v1.1.5 - Se modifican los mensajes de las notificaciones de correo para que sean mas aclaratorios.
 v1.1.6 - Se ha implementado el envío de correos al usuario cuando se crea un nuevo usuario, se modifica un usuario o se elimina un usuario, con detalles de los cambios realizados, utilizando notificaciones más claras y amigables para los usuarios finales. Además, se ha introducido un formato HTML más organizado en los correos con iconos relevantes.
 v1.1.7 - Se ha añadido la funcionalidad de distinguir entre los campos modificados al editar un usuario para enviar notificaciones específicas indicando qué detalles del usuario han cambiado (nombre, rol, email, contraseña).
-v1.1.7 - Correccion de errores.
+v1.1.7 - Corrección de errores.
 v1.1.8 - Arreglado reseteo de IDs autoincrementales de la BBDD.
-v1.1.9 - Limpieza del codigo, generado correo de noreply especifico de verde para generar y enviar las notificaciones.
-v2.0.0 - Prototipo de "Home" solo para usuarios con rol de administrador. Visualizacion y estudio de datos en graficos. (ZONA EN CONSTRUCCION)
-v2.0.1 - Mejoras visuales, mejoras de informacion al usuario.
-v2.0.2 - Implementadas las sesiones de usuario persistentes. La sesion permanecera abierta y las credenciales del usuario guardadas en el navegador, durante las siguientes 24 horas. Por cuestiones de seguridad, tras esas 24 horas, se volveran a pedir las credenciales de usuario.
-v2.0.3 - Mejoras visuales de login, añadido icono empresarial, resuelto el problema de sesion permanente en navegadores de movil
-v2.0.4 - Mejoras visuales en mapa. Ahora es capa hibrida de Google Maps.
+v1.1.9 - Limpieza del código, generado correo de no-reply especifico de verde para generar y enviar las notificaciones.
+v2.0.0 - Prototipo de "Home" solo para usuarios con rol de administrador. Visualización y estudio de datos en gráficos. (ZONA EN CONSTRUCCIÓN)
+v2.0.1 - Mejoras visuales, mejoras de información al usuario.
+v2.0.2 - Implementadas las sesiones de usuario persistentes. La sesión permanecerá abierta y las credenciales del usuario guardadas en el navegador, durante las siguientes 24 horas. Por cuestiones de seguridad, tras esas 24 horas, se volveran a pedir las credenciales de usuario.
+v2.0.3 - Mejoras visuales de login, añadido icono empresarial, resuelto el problema de sesión permanente en navegadores de móvil
+v2.0.4 - Mejoras visuales en mapa. Ahora es capa híbrida de Google Maps.
 v2.0.5 - Mejoras en el envío de notificaciones. Corrección de errores en el gestor de comerciales. Corrección de tildes y caracteres con UTF-8. Corrección de errores por los cuales, no se encontraba el ID de algunas ofertas.
 v2.0.6 - Corrección de errores. Ahora mantiene la última ubicación gestionada por el comercial, en lugar de recargar la ubicación por defecto.
+v2.0.7 - Arreglado botón de Cerrar Sesión.
+v2.0.8 - Corrección de errores y mejoras.

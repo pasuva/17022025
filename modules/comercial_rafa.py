@@ -14,7 +14,6 @@ from folium.plugins import Geocoder
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
-from modules.cookie_instance import controller  # <-- Importa la instancia central
 
 cookie_name = "my_app"
 
@@ -275,8 +274,8 @@ def comercial_dashboard():
                 serviciable_no_set = set(serviciable_no_df["apartment_id"])  # Set de IDs no servicibles
 
                 # Consulta para obtener las ofertas
-                query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
-                ofertas_df = pd.read_sql(query_ofertas, conn)
+                #query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa" #######comprobar si se usa
+                #ofertas_df = pd.read_sql(query_ofertas, conn) #######comprobar si se usa
 
                 # Código para la ubicación y mapa
                 with st.spinner("⏳ Cargando mapa..."):
@@ -773,7 +772,6 @@ def mostrar_formulario(click_data):
             return
 
         oferta_data = {
-            #"Apartment ID": apartment_id,
             "Provincia": provincia,
             "Municipio": municipio,
             "Población": poblacion,

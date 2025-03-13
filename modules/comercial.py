@@ -672,9 +672,6 @@ def get_user_location():
 # Obtener la ubicación
 lat, lon = get_user_location()
 
-# Mostrar solo la latitud y longitud, sin mostrar el diccionario completo
-#st.write(f"Ubicación obtenida: Latitud = {lat}, Longitud = {lon}")
-
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
 
