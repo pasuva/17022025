@@ -6,8 +6,6 @@ import datetime
 import bcrypt
 import pandas as pd
 import plotly.express as px
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
 import os  # Para trabajar con archivos en el sistema
 import base64  # Para codificar la imagen en base64
 import streamlit as st
@@ -18,7 +16,7 @@ from datetime import datetime
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
-from folium.plugins import Geocoder
+import plotly.graph_objects as go
 
 cookie_name = "my_app"
 
@@ -159,10 +157,10 @@ def editar_usuario(id, username, rol, password, email):
             cambios.append("❗ No se realizaron cambios en tu cuenta.")
 
         # Asunto y cuerpo del correo
-        asunto = "🔄 ¡Detalles de tu cuenta actualizados!"
+        asunto = "¡Detalles de tu cuenta actualizados!"
         mensaje = (
             f"📢 Se han realizado cambios en tu cuenta con los siguientes detalles:<br><br>"
-            f"{''.join([f'🔄 <strong>{cambio}</strong><br>' for cambio in cambios])}"  # Unimos los cambios en un formato adecuado
+            f"{''.join([f'<strong>{cambio}</strong><br>' for cambio in cambios])}"  # Unimos los cambios en un formato adecuado
             f"<br>ℹ️ Si no realizaste estos cambios o tienes alguna duda, por favor contacta con el equipo de administración.<br><br>"
             f"⚠️ <strong>Por seguridad, te recordamos no compartir este correo con nadie. Si no reconoces los cambios, por favor contacta con el equipo de administración de inmediato.</strong><br><br>"
         )
@@ -202,44 +200,6 @@ def eliminar_usuario(id):
         correo_usuario(email_usuario, asunto, mensaje)  # Llamada a la función de correo
     else:
         st.error("Usuario no encontrado.")
-
-# Función para generar PDF con los datos del informe
-def generar_pdf(df, encabezado_titulo, mensaje_intro, fecha_generacion, pie_de_pagina):
-    # Crear un archivo PDF en memoria
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-
-    # Título del informe
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(30, 750, encabezado_titulo)
-
-    # Mensaje introductorio
-    c.setFont("Helvetica", 12)
-    c.drawString(30, 730, mensaje_intro)
-
-    # Fecha de generación
-    c.setFont("Helvetica", 10)
-    c.drawString(30, 710, f"Fecha de generación: {fecha_generacion}")
-
-    # Añadir datos del informe (limitado a la primera página)
-    y_position = 690
-    c.setFont("Helvetica", 8)
-    for index, row in df.iterrows():
-        y_position -= 10
-        if y_position < 40:
-            c.showPage()  # Crear nueva página si es necesario
-            c.setFont("Helvetica", 8)
-            y_position = 750
-
-        c.drawString(30, y_position, str(row.tolist()))
-
-    # Pie de página
-    c.setFont("Helvetica", 10)
-    c.drawString(30, 30, pie_de_pagina)
-
-    c.save()
-    buffer.seek(0)
-    return buffer
 
 # Función que genera un enlace de descarga en HTML (no se integra en la tabla)
 def get_download_link_icon(img_path):
@@ -1102,199 +1062,20 @@ def admin_dashboard():
     # Opción: Generar Informes
     elif opcion == "Generador de informes":
         st.header("📑 Generador de Informes")
-        st.info("🏗️ ZONA EN CONSTRUCCIÓN")
         st.info("ℹ️ Aquí puedes generar informes basados en los datos disponibles.")
         log_trazabilidad(st.session_state["username"], "Generar Informe", "El admin accedió al generador de informes.")
 
-        # Selección de tipo de informe
-        informe_tipo = st.selectbox("Selecciona el tipo de informe:",
-                                    ["Informe de Datos UIS", "Informe de Ofertas Comerciales",
-                                     "Informe de Viabilidades"])
+        # Selección del periodo de tiempo en columnas
+        col1, col2 = st.columns(2)
+        with col1:
+            fecha_inicio = st.date_input("Fecha de inicio")
+        with col2:
+            fecha_fin = st.date_input("Fecha de fin")
+        if st.button("Generar Informe"):
+            informe = generar_informe(str(fecha_inicio), str(fecha_fin))
+            st.dataframe(informe)
 
-        # Filtros comunes para todos los informes
-        st.sidebar.subheader("Filtros de Información")
 
-        df_filtrado = st.session_state.get("df", pd.DataFrame())
-        columnas_disponibles = df_filtrado.columns.tolist() if not df_filtrado.empty else []
-
-        filtro_columnas = st.multiselect("Selecciona las columnas para filtrar en Datos UIS:",
-                                         columnas_disponibles) if columnas_disponibles else []
-
-        # Informe de Datos UIS
-        if informe_tipo == "Informe de Datos UIS":
-            st.write("Generando informe para los datos UIS...")
-
-            if "provincia" in df_filtrado.columns:
-                provincias = st.selectbox("Selecciona la provincia:",
-                                          ["Todas"] + df_filtrado.provincia.unique().tolist())
-            if "fecha" in df_filtrado.columns:
-                df_filtrado['fecha'] = pd.to_datetime(df_filtrado['fecha'], errors='coerce', format='%d.%m.%Y')
-                fecha_inicio = st.date_input("Fecha de inicio:", pd.to_datetime("2022-01-01"))
-                fecha_fin = st.date_input("Fecha de fin:", pd.to_datetime("2025-12-31"))
-                fecha_inicio = pd.to_datetime(fecha_inicio)
-                fecha_fin = pd.to_datetime(fecha_fin)
-            if filtro_columnas:
-                for columna in filtro_columnas:
-                    valor_filtro = st.text_input(f"Filtra por {columna}:")
-                    if valor_filtro:
-                        df_filtrado = df_filtrado[
-                            df_filtrado[columna].astype(str).str.contains(valor_filtro, case=False)]
-            if "provincia" in df_filtrado.columns and provincias != "Todas":
-                df_filtrado = df_filtrado[df_filtrado["provincia"] == provincias]
-            if "fecha" in df_filtrado.columns:
-                df_filtrado = df_filtrado[df_filtrado["fecha"].between(fecha_inicio, fecha_fin)]
-
-        # Informe de Ofertas Comerciales
-        elif informe_tipo == "Informe de Ofertas Comerciales":
-            st.write("Generando informe para las ofertas comerciales...")
-            ofertas_filtradas = st.session_state.get("df", pd.DataFrame())
-            columnas_ofertas = ofertas_filtradas.columns.tolist() if not ofertas_filtradas.empty else []
-            filtro_columnas_ofertas = st.multiselect("Selecciona las columnas para filtrar en Ofertas Comerciales:",
-                                                     columnas_ofertas) if columnas_ofertas else []
-
-            if "provincia" in ofertas_filtradas.columns:
-                provincias_ofertas = st.selectbox("Selecciona la provincia para ofertas:",
-                                                  ["Todas"] + ofertas_filtradas.provincia.unique().tolist())
-            if "fecha" in ofertas_filtradas.columns:
-                ofertas_filtradas['fecha'] = pd.to_datetime(ofertas_filtradas['fecha'], errors='coerce')
-                fecha_inicio_oferta = st.date_input("Fecha de inicio para ofertas:", pd.to_datetime("2022-01-01"))
-                fecha_fin_oferta = st.date_input("Fecha de fin para ofertas:", pd.to_datetime("2025-12-31"))
-                fecha_inicio_oferta = pd.to_datetime(fecha_inicio_oferta)
-                fecha_fin_oferta = pd.to_datetime(fecha_fin_oferta)
-            if filtro_columnas_ofertas:
-                for columna in filtro_columnas_ofertas:
-                    valor_filtro_oferta = st.text_input(f"Filtra por {columna}:")
-                    if valor_filtro_oferta:
-                        ofertas_filtradas = ofertas_filtradas[
-                            ofertas_filtradas[columna].astype(str).str.contains(valor_filtro_oferta, case=False)]
-            if "provincia" in ofertas_filtradas.columns and provincias_ofertas != "Todas":
-                ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["provincia"] == provincias_ofertas]
-            if "fecha" in ofertas_filtradas.columns:
-                ofertas_filtradas = ofertas_filtradas[
-                    ofertas_filtradas["fecha"].between(fecha_inicio_oferta, fecha_fin_oferta)]
-
-        # Informe de Viabilidades
-        elif informe_tipo == "Informe de Viabilidades":
-            st.write("Generando informe para las viabilidades...")
-            viabilidades_df = st.session_state.get("viabilidades_df", pd.DataFrame())
-            columnas_viabilidades = viabilidades_df.columns.tolist() if not viabilidades_df.empty else []
-            filtro_columnas_viabilidades = st.multiselect("Selecciona las columnas para filtrar en Viabilidades:",
-                                                          columnas_viabilidades) if columnas_viabilidades else []
-
-            if filtro_columnas_viabilidades:
-                for columna in filtro_columnas_viabilidades:
-                    valor_filtro_viabilidad = st.text_input(f"Filtra por {columna}:")
-                    if valor_filtro_viabilidad:
-                        viabilidades_df = viabilidades_df[
-                            viabilidades_df[columna].astype(str).str.contains(valor_filtro_viabilidad, case=False)]
-
-            # Filtro por fechas en viabilidades
-            if "fecha_viabilidad" in viabilidades_df.columns:
-                fecha_inicio_viabilidad = st.date_input("Fecha de inicio de viabilidad:", pd.to_datetime("2022-01-01"))
-                fecha_fin_viabilidad = st.date_input("Fecha de fin de viabilidad:", pd.to_datetime("2025-12-31"))
-                viabilidades_df['fecha_viabilidad'] = pd.to_datetime(viabilidades_df['fecha_viabilidad'],
-                                                                     errors='coerce')
-                viabilidades_df = viabilidades_df[
-                    viabilidades_df['fecha_viabilidad'].between(fecha_inicio_viabilidad, fecha_fin_viabilidad)]
-
-        # Personalización del Informe
-        st.sidebar.subheader("Personalización del Informe")
-        encabezado_titulo = st.sidebar.text_input("Título del Informe:", "Informe de Datos")
-        mensaje_intro = st.sidebar.text_area("Mensaje Introductorio:",
-                                             "Este informe contiene datos filtrados según tus criterios.")
-        pie_de_pagina = st.sidebar.text_input("Pie de Página:", "Firma: Tu Empresa S.A.")
-        fecha_generacion = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        if st.button("Generar Informe", key="generar_informe"):
-            if informe_tipo == "Informe de Datos UIS":
-                if not df_filtrado.empty:
-                    towrite = io.BytesIO()
-                    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                        df_filtrado.to_excel(writer, index=False, sheet_name='Informe Datos UIS')
-                        worksheet = writer.sheets['Informe Datos UIS']
-                        worksheet.write('A1', encabezado_titulo)
-                        worksheet.write('A2', mensaje_intro)
-                        worksheet.write('A3', f"Fecha de generación: {fecha_generacion}")
-                        worksheet.write(len(df_filtrado) + 3, 0, pie_de_pagina)
-                    towrite.seek(0)
-                    st.download_button(
-                        label="📥 Descargar Informe de Datos UIS en Excel",
-                        data=towrite,
-                        file_name="informe_datos_uis.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    pdf_buffer = generar_pdf(df_filtrado, encabezado_titulo, mensaje_intro, fecha_generacion,
-                                             pie_de_pagina)
-                    st.download_button(
-                        label="📥 Descargar Informe de Datos UIS en PDF",
-                        data=pdf_buffer,
-                        file_name="informe_datos_uis.pdf",
-                        mime="application/pdf"
-                    )
-                    log_trazabilidad(st.session_state["username"], "Generar Informe",
-                                     "El admin generó un informe de Datos UIS.")
-                else:
-                    st.error("❌ No se han encontrado datos que coincidan con los filtros para generar el informe.")
-            elif informe_tipo == "Informe de Ofertas Comerciales":
-                if not ofertas_filtradas.empty:
-                    towrite = io.BytesIO()
-                    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                        ofertas_filtradas.to_excel(writer, index=False, sheet_name='Informe Ofertas Comerciales')
-                        worksheet = writer.sheets['Informe Ofertas Comerciales']
-                        worksheet.write('A1', encabezado_titulo)
-                        worksheet.write('A2', mensaje_intro)
-                        worksheet.write('A3', f"Fecha de generación: {fecha_generacion}")
-                        worksheet.write(len(ofertas_filtradas) + 3, 0, pie_de_pagina)
-                    towrite.seek(0)
-                    st.download_button(
-                        label="📥 Descargar Informe de Ofertas Comerciales en Excel",
-                        data=towrite,
-                        file_name="informe_ofertas_comerciales.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    pdf_buffer = generar_pdf(ofertas_filtradas, encabezado_titulo, mensaje_intro, fecha_generacion,
-                                             pie_de_pagina)
-                    st.download_button(
-                        label="📥 Descargar Informe de Ofertas Comerciales en PDF",
-                        data=pdf_buffer,
-                        file_name="informe_ofertas_comerciales.pdf",
-                        mime="application/pdf"
-                    )
-                    log_trazabilidad(st.session_state["username"], "Generar Informe",
-                                     "El admin generó un informe de Ofertas Comerciales.")
-                else:
-                    st.error(
-                        "❌ No se han encontrado ofertas comerciales que coincidan con los filtros para generar el informe.")
-            elif informe_tipo == "Informe de Viabilidades":
-                if not viabilidades_df.empty:
-                    towrite = io.BytesIO()
-                    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                        viabilidades_df.to_excel(writer, index=False, sheet_name='Informe Viabilidades')
-                        worksheet = writer.sheets['Informe Viabilidades']
-                        worksheet.write('A1', encabezado_titulo)
-                        worksheet.write('A2', mensaje_intro)
-                        worksheet.write('A3', f"Fecha de generación: {fecha_generacion}")
-                        worksheet.write(len(viabilidades_df) + 3, 0, pie_de_pagina)
-                    towrite.seek(0)
-                    st.download_button(
-                        label="📥 Descargar Informe de Viabilidades en Excel",
-                        data=towrite,
-                        file_name="informe_viabilidades.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    pdf_buffer = generar_pdf(viabilidades_df, encabezado_titulo, mensaje_intro, fecha_generacion,
-                                             pie_de_pagina)
-                    st.download_button(
-                        label="📥 Descargar Informe de Viabilidades en PDF",
-                        data=pdf_buffer,
-                        file_name="informe_viabilidades.pdf",
-                        mime="application/pdf"
-                    )
-                    log_trazabilidad(st.session_state["username"], "Generar Informe",
-                                     "El admin generó un informe de Viabilidades.")
-                else:
-                    st.error(
-                        "❌ No se han encontrado viabilidades que coincidan con los filtros para generar el informe.")
 
     # Opción: Gestionar Usuarios
     elif opcion == "Gestionar Usuarios":
@@ -1522,6 +1303,146 @@ def admin_dashboard():
     elif opcion == "Control de versiones":
         log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
         mostrar_control_versiones()
+
+
+def generar_informe(fecha_inicio, fecha_fin):
+    conn = sqlite3.connect('data/usuarios.db')
+    cursor = conn.cursor()
+
+    # 🔹 1️⃣ Total de asignaciones en el periodo T
+    query_total = """
+    SELECT COUNT(DISTINCT apartment_id) 
+    FROM datos_uis
+    WHERE DATE(fecha) BETWEEN ? AND ?
+    """
+    cursor.execute(query_total, (fecha_inicio, fecha_fin))
+    total_asignaciones = cursor.fetchone()[0]
+
+    # 🔹 2️⃣ Cantidad de visitas (apartment_id presente en ambas tablas, sin filtrar por fecha)
+    query_visitados = """
+    SELECT COUNT(DISTINCT d.apartment_id)
+    FROM datos_uis d
+    INNER JOIN ofertas_comercial o 
+        ON d.apartment_id = o.apartment_id
+    """
+    cursor.execute(query_visitados)
+    total_visitados = cursor.fetchone()[0]
+
+    # 🔹 3️⃣ Cantidad de ventas (visitados donde contrato = 'Sí')
+    query_ventas = """
+    SELECT COUNT(DISTINCT d.apartment_id)
+    FROM datos_uis d
+    INNER JOIN ofertas_comercial o 
+        ON d.apartment_id = o.apartment_id
+    WHERE LOWER(o.contrato) = 'sí'
+    """
+    cursor.execute(query_ventas)
+    total_ventas = cursor.fetchone()[0]
+
+    # 🔹 4️⃣ Cantidad de incidencias (donde incidencias = 'Sí')
+    query_incidencias = """
+    SELECT COUNT(DISTINCT d.apartment_id)
+    FROM datos_uis d
+    INNER JOIN ofertas_comercial o 
+        ON d.apartment_id = o.apartment_id
+    WHERE LOWER(o.incidencia) = 'sí'
+    """
+    cursor.execute(query_incidencias)
+    total_incidencias = cursor.fetchone()[0]
+
+    # 🔹 5️⃣ Cantidad de viviendas no serviciables (donde serviciable = 'No')
+    query_no_serviciables = """
+    SELECT COUNT(DISTINCT apartment_id)
+    FROM ofertas_comercial
+    WHERE LOWER(serviciable) = 'no'
+    """
+    cursor.execute(query_no_serviciables)
+    total_no_serviciables = cursor.fetchone()[0]
+
+    # 🔹 6️⃣ Cálculo de porcentajes
+    porcentaje_ventas = (total_ventas / total_visitados * 100) if total_visitados > 0 else 0
+    porcentaje_visitas = (total_visitados / total_asignaciones * 100) if total_asignaciones > 0 else 0
+    porcentaje_incidencias = (total_incidencias / total_visitados * 100) if total_asignaciones > 0 else 0
+    porcentaje_no_serviciables = (total_no_serviciables / total_visitados * 100) if total_asignaciones > 0 else 0
+
+    # 🔹 7️⃣ Crear DataFrame con los resultados
+    informe = pd.DataFrame({
+        'Total Asignaciones': [total_asignaciones],
+        'Visitados': [total_visitados],
+        'Ventas': [total_ventas],
+        'Incidencias': [total_incidencias],
+        'Viviendas No Serviciables': [total_no_serviciables],
+        '% Ventas': [porcentaje_ventas],
+        '% Visitas': [porcentaje_visitas],
+        '% Incidencias': [porcentaje_incidencias],
+        '% Viviendas No Serviciables': [porcentaje_no_serviciables]
+    })
+
+    # Crear tres columnas para los gráficos
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        labels = ['Ventas', 'Visitas']
+        values = [porcentaje_ventas, porcentaje_visitas]
+        fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=0.3,
+                                     textinfo='percent+label',
+                                     marker=dict(colors=['#66b3ff', '#ff9999']))])
+        fig.update_layout(title="Distribución de Visitas y Ventas", title_x=0, plot_bgcolor='white', showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        labels_incidencias = ['Incidencias', 'Visitas']
+        values_incidencias = [porcentaje_incidencias, porcentaje_visitas]
+        fig_incidencias = go.Figure(data=[go.Pie(labels=labels_incidencias, values=values_incidencias, hole=0.3,
+                                                 textinfo='percent+label',
+                                                 marker=dict(colors=['#ff6666', '#99cc99']))])
+        fig_incidencias.update_layout(title="Distribución de Visitas e Incidencias", title_x=0, plot_bgcolor='white',
+                                      showlegend=False)
+        st.plotly_chart(fig_incidencias, use_container_width=True)
+
+    with col3:
+        labels_serviciables = ['No Serviciables', 'Serviciables']
+        values_serviciables = [porcentaje_no_serviciables, 100 - porcentaje_no_serviciables]
+
+        # Crear gráfico de barras usando go con el mismo estilo de los otros gráficos
+        fig_serviciables = go.Figure(data=[go.Bar(
+            x=labels_serviciables,
+            y=values_serviciables,
+            text=values_serviciables,
+            textposition='outside',
+            marker=dict(color=['#ff6666', '#99cc99']),
+
+        )])
+
+        fig_serviciables.update_layout(
+            title="Distribución Viviendas visitadas Serviciables/No Serviciables",
+            title_x=0,
+            plot_bgcolor='rgba(0, 0, 0, 0)',  # Fondo transparente para el gráfico (similar al estilo anterior)
+            showlegend=False,
+            xaxis_title="Estado de Viviendas",
+            yaxis_title="Porcentaje",
+            xaxis=dict(tickangle=0),  # Asegura que las etiquetas en el eje X estén alineadas horizontalmente
+            height=450  # Ajuste de altura para que el gráfico no ocupe mucho espacio
+        )
+
+        st.plotly_chart(fig_serviciables, use_container_width=True)
+
+    # Resumen de los resultados
+    resumen = f"""
+    <div style="text-align: justify;">
+    Durante el periodo analizado, que abarca desde el <strong>{fecha_inicio}</strong> hasta el <strong>{fecha_fin}</strong>, se han registrado un total de <strong>{total_asignaciones}</strong> asignaciones realizadas, lo que indica la cantidad de propiedades consideradas para asignación en este intervalo. De estas asignaciones, <strong>{total_visitados}</strong> propiedades fueron visitadas, lo que representa un <strong>{porcentaje_visitas:.2f}%</strong> del total de asignaciones. Esto refleja el grado de éxito en la conversión de asignaciones a visitas, lo que es un indicador de la efectividad de la asignación de propiedades.
+    De las propiedades visitadas, <strong>{total_ventas}</strong> viviendas fueron finalmente vendidas, lo que constituye el <strong>{porcentaje_ventas:.2f}%</strong> de las propiedades visitadas. Este porcentaje es crucial, ya que nos muestra cuán efectivas han sido las visitas en convertir en ventas las oportunidades de negocio. A su vez, se han registrado <strong>{total_incidencias}</strong> incidencias durante las visitas, lo que equivale a un <strong>{porcentaje_incidencias:.2f}%</strong> de las asignaciones. Las incidencias indican problemas o dificultades encontradas en las propiedades, lo que podría afectar la decisión de los posibles compradores.
+    Por otro lado, en cuanto a la calidad del inventario, <strong>{total_no_serviciables}</strong> propiedades fueron catalogadas como no serviciables, lo que representa un <strong>{porcentaje_no_serviciables:.2f}%</strong> del total de asignaciones. Este dato refleja la cantidad de viviendas que no están en condiciones para ser ofrecidas o comercializadas debido a su estado o características. 
+    </div>
+    <br>
+    """
+
+    # Muestra el resumen en Streamlit
+    st.markdown(resumen, unsafe_allow_html=True)
+
+    conn.close()
+    return informe
+
 
 # Función para leer y mostrar el control de versiones
 def mostrar_control_versiones():
