@@ -155,6 +155,7 @@ def mapa_dashboard():
 
             if municipio_sel and poblacion_sel:
                 conn = sqlite3.connect("data/usuarios.db")
+                conn = sqlite3.connect("data/usuarios.db")
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
                                (municipio_sel, poblacion_sel))

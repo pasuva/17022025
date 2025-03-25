@@ -246,7 +246,6 @@ def comercial_dashboard():
             return
 
         for col in ['latitud', 'longitud', 'apartment_id']:
-
             if col not in df.columns:
                 st.error(f"❌ No se encuentra la columna '{col}'.")
                 return
@@ -255,12 +254,16 @@ def comercial_dashboard():
             st.session_state.clicks = []
 
         location = get_user_location()
-        if location is None:
+        if "ultima_lat" in st.session_state and "ultima_lon" in st.session_state:
+            # Usar la última ubicación guardada
+            lat, lon = st.session_state["ultima_lat"], st.session_state["ultima_lon"]
+        elif location is None:
             st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
             lat, lon = 43.463444, -3.790476
         else:
             lat, lon = location
 
+        # Construir conjuntos y diccionarios para el estado de cada apartamento
         serviciable_set = set(ams_df["apartment_id"])
         contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
 
@@ -273,21 +276,29 @@ def comercial_dashboard():
                 serviciable_no_df = pd.read_sql(query_serviciable, conn)
                 serviciable_no_set = set(serviciable_no_df["apartment_id"])  # Set de IDs no servicibles
 
-                # Consulta para obtener las ofertas
-                #query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa" #######comprobar si se usa
-                #ofertas_df = pd.read_sql(query_ofertas, conn) #######comprobar si se usa
-
-                # Código para la ubicación y mapa
                 with st.spinner("⏳ Cargando mapa..."):
-                    m = folium.Map(location=[lat, lon], zoom_start=12,
-                                   tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
-                    marker_cluster = MarkerCluster().add_to(m)
+                    m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
+                                   tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+                                   attr="Google")
 
+                    Geocoder().add_to(m)
+
+                    if m.options['zoom'] >= 15:  # Si el zoom es alto, desactivar clustering
+                        cluster_layer = m
+                    else:
+                        cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
+
+                    # Calcular cuántos apartamentos comparten las mismas coordenadas
+                    coord_counts = {}
                     for _, row in df.iterrows():
+                        coord = (row['latitud'], row['longitud'])
+                        coord_counts[coord] = coord_counts.get(coord, 0) + 1
+
+                    for index, row in df.iterrows():
                         popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
                         apartment_id = row['apartment_id']
 
-                        # Lógica de color para los apartamentos no servicibles (rojo)
+                        # Lógica para determinar el color del marcador
                         if apartment_id in serviciable_no_set:
                             marker_color = 'red'  # 🔴 No Serviciable
                         elif apartment_id in serviciable_set:
@@ -300,17 +311,31 @@ def comercial_dashboard():
                             else:
                                 marker_color = 'blue'  # 🔵 Sin oferta ni contrato
                         else:
-                            marker_color = 'blue'  # 🔵 Sin oferta ni contrato
+                            marker_color = 'blue'  # 🔵 Sin información
+
+                        # Aplicar desplazamiento si hay coordenadas duplicadas
+                        coord = (row['latitud'], row['longitud'])
+                        offset_factor = coord_counts[coord]
+                        if offset_factor > 1:
+                            lat_offset = offset_factor * 0.00003
+                            lon_offset = offset_factor * -0.00003
+                        else:
+                            lat_offset, lon_offset = 0, 0
+
+                        new_lat = row['latitud'] + lat_offset
+                        new_lon = row['longitud'] + lon_offset
+
+                        # Reducir el contador para el siguiente marcador con las mismas coordenadas
+                        coord_counts[coord] -= 1
 
                         folium.Marker(
-                            location=[row['latitud'], row['longitud']],
+                            location=[new_lat, new_lon],
                             popup=popup_text,
                             icon=folium.Icon(color=marker_color, icon=marker_icon_type)
-                        ).add_to(marker_cluster)
+                        ).add_to(cluster_layer)
 
                     map_data = st_folium(m, height=500, width=700)
                 conn.close()
-
             except Exception as e:
                 st.error(f"❌ Error al cargar los datos: {e}")
 
