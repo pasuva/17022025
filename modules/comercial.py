@@ -14,6 +14,7 @@ from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_co
 from streamlit_geolocation import streamlit_geolocation
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
+import sqlitecloud  # Importamos el cliente de SQLite Cloud
 
 cookie_name = "my_app"
 
@@ -21,8 +22,10 @@ def log_trazabilidad(usuario, accion, detalles):
     """Registra en la base de datos la trazabilidad de acciones del usuario."""
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        # Aumentamos el timeout y usamos un context manager para asegurar el cierre
-        with sqlite3.connect("data/usuarios.db", timeout=10) as conn:
+        # Usamos un context manager para asegurar el cierre
+        with sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+        ) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
@@ -32,16 +35,16 @@ def log_trazabilidad(usuario, accion, detalles):
     except sqlite3.OperationalError as e:
         st.error(f"Error al escribir en la base de datos de trazabilidad: {e}")
 
+
 def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
     try:
-        conn = sqlite3.connect("data/usuarios.db")
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+        )
         cursor = conn.cursor()
 
         cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
-        if cursor.fetchone()[0] > 0:
-            st.error("❌ Ya existe una oferta registrada con este Apartment ID.")
-            conn.close()
-            return
+        existe = cursor.fetchone()[0] > 0
 
         imagen_path = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
@@ -51,48 +54,80 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
             with open(imagen_path, "wb") as f:
                 f.write(imagen_incidencia.getbuffer())
 
-        cursor.execute('''INSERT INTO ofertas_comercial (
-                            apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
-                            nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
-                            motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                       (
-                           oferta_data["Apartment ID"],
-                           oferta_data["Provincia"],
-                           oferta_data["Municipio"],
-                           oferta_data["Población"],
-                           oferta_data["Vial"],
-                           oferta_data["Número"],
-                           oferta_data["Letra"],
-                           oferta_data["Código Postal"],
-                           oferta_data["Latitud"],
-                           oferta_data["Longitud"],
-                           oferta_data["Nombre Cliente"],
-                           oferta_data["Teléfono"],
-                           oferta_data["Dirección Alternativa"],
-                           oferta_data["Observaciones"],
-                           oferta_data["serviciable"],
-                           oferta_data["motivo_serviciable"],
-                           oferta_data["incidencia"],
-                           oferta_data["motivo_incidencia"],
-                           imagen_path,
-                           oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
-                           oferta_data["Tipo_Vivienda"],
-                           oferta_data["Contrato"]
-                       ))
+        if existe:
+            cursor.execute('''UPDATE ofertas_comercial SET
+                                provincia=?, municipio=?, poblacion=?, vial=?, numero=?, letra=?, cp=?, latitud=?, longitud=?,
+                                nombre_cliente=?, telefono=?, direccion_alternativa=?, observaciones=?, serviciable=?,
+                                motivo_serviciable=?, incidencia=?, motivo_incidencia=?, fichero_imagen=?, fecha=?, Tipo_Vivienda=?, Contrato=?
+                              WHERE apartment_id=?''',
+                           (
+                               oferta_data["Provincia"],
+                               oferta_data["Municipio"],
+                               oferta_data["Población"],
+                               oferta_data["Vial"],
+                               oferta_data["Número"],
+                               oferta_data["Letra"],
+                               oferta_data["Código Postal"],
+                               oferta_data["Latitud"],
+                               oferta_data["Longitud"],
+                               oferta_data["Nombre Cliente"],
+                               oferta_data["Teléfono"],
+                               oferta_data["Dirección Alternativa"],
+                               oferta_data["Observaciones"],
+                               oferta_data["serviciable"],
+                               oferta_data["motivo_serviciable"],
+                               oferta_data["incidencia"],
+                               oferta_data["motivo_incidencia"],
+                               imagen_path,
+                               oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
+                               oferta_data["Tipo_Vivienda"],
+                               oferta_data["Contrato"],
+                               oferta_data["Apartment ID"]
+                           ))
+            mensaje = "✅ ¡Oferta modificada con éxito!"
+        else:
+            cursor.execute('''INSERT INTO ofertas_comercial (
+                                apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
+                                nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
+                                motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                           (
+                               oferta_data["Apartment ID"],
+                               oferta_data["Provincia"],
+                               oferta_data["Municipio"],
+                               oferta_data["Población"],
+                               oferta_data["Vial"],
+                               oferta_data["Número"],
+                               oferta_data["Letra"],
+                               oferta_data["Código Postal"],
+                               oferta_data["Latitud"],
+                               oferta_data["Longitud"],
+                               oferta_data["Nombre Cliente"],
+                               oferta_data["Teléfono"],
+                               oferta_data["Dirección Alternativa"],
+                               oferta_data["Observaciones"],
+                               oferta_data["serviciable"],
+                               oferta_data["motivo_serviciable"],
+                               oferta_data["incidencia"],
+                               oferta_data["motivo_incidencia"],
+                               imagen_path,
+                               oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
+                               oferta_data["Tipo_Vivienda"],
+                               oferta_data["Contrato"]
+                           ))
+            mensaje = "✅ ¡Oferta enviada y guardada en la base de datos con éxito!"
 
         conn.commit()
         conn.close()
-        st.success("✅ ¡Oferta enviada y guardada en la base de datos con éxito!")
+        st.success(mensaje)
 
-        # 📌 Guardar última ubicación en session_state
         st.session_state["ultima_lat"] = oferta_data["Latitud"]
         st.session_state["ultima_lon"] = oferta_data["Longitud"]
 
         log_trazabilidad(st.session_state["username"], "Guardar Oferta",
-                         f"Oferta guardada para Apartment ID: {oferta_data['Apartment ID']}")
+                         f"Oferta guardada/modificada para Apartment ID: {oferta_data['Apartment ID']}")
     except Exception as e:
-        st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
+        st.error(f"❌ Error al guardar/modificar la oferta en la base de datos: {e}")
 
 
 def comercial_dashboard():
@@ -167,7 +202,9 @@ def comercial_dashboard():
 
         with st.spinner("⏳ Cargando los datos del comercial..."):
             try:
-                conn = sqlite3.connect("data/usuarios.db")
+                #conn = sqlite3.connect("data/usuarios.db")
+                conn = sqlitecloud.connect(
+                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                 query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
                 tables = pd.read_sql(query_tables, conn)
 
@@ -337,7 +374,9 @@ def comercial_dashboard():
         comercial_usuario = st.session_state["username"]  # Obtener el comercial logueado
 
         try:
-            conn = sqlite3.connect("data/usuarios.db")
+            #conn = sqlite3.connect("data/usuarios.db")
+            conn = sqlitecloud.connect(
+                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
 
             # Consulta SQL con filtro por comercial logueado (primera tabla: ofertas_comercial)
             query_ofertas = """
@@ -429,7 +468,9 @@ def comercial_dashboard():
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
-    conn = sqlite3.connect("data/usuarios.db")
+    #conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     cursor = conn.cursor()
     fecha_actual = datetime.now().strftime("%Y%m%d")
 
@@ -454,7 +495,9 @@ def guardar_viabilidad(datos):
     (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
     """
     # Guardar los datos en la base de datos
-    conn = sqlite3.connect("data/usuarios.db")
+    #conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO viabilidades (
@@ -521,7 +564,9 @@ def guardar_viabilidad(datos):
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
     """Recupera las viabilidades asociadas al usuario logueado."""
-    conn = sqlite3.connect("data/usuarios.db")
+    #conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     cursor = conn.cursor()
     # Se asume que el usuario logueado está guardado en st.session_state["username"]
     cursor.execute("SELECT latitud, longitud, ticket FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
@@ -687,7 +732,9 @@ def mostrar_formulario(click_data):
     form_key = f"{lat_value}_{lng_value}"
 
     try:
-        conn = sqlite3.connect("data/usuarios.db")
+        #conn = sqlite3.connect("data/usuarios.db")
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
         query = """
             SELECT * FROM datos_uis 
             WHERE latitud = ? AND longitud = ?
@@ -829,7 +876,9 @@ def mostrar_formulario(click_data):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia)
 
             # Obtener los emails de todos los usuarios con rol admin
-            conn = sqlite3.connect("data/usuarios.db")
+            #conn = sqlite3.connect("data/usuarios.db")
+            conn = sqlitecloud.connect(
+                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
             cursor = conn.cursor()
             cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
             resultados = cursor.fetchall()  # Devuelve una lista de tuplas con cada email

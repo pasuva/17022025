@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+import sqlitecloud  # Importamos el cliente de SQLite Cloud
 import io
 from datetime import datetime
 from streamlit_option_menu import option_menu
@@ -8,24 +8,114 @@ from streamlit_cookies_controller import CookieController  # Se importa localmen
 
 cookie_name = "my_app"
 
+
+# Función para registrar trazabilidad
 def log_trazabilidad(usuario, accion, detalles):
-    conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     cursor = conn.cursor()
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
         VALUES (?, ?, ?, ?)
-    """, (usuario, accion, detalles, fecha))
+        """,
+        (usuario, accion, detalles, fecha)
+    )
     conn.commit()
     conn.close()
 
 
+# Función para crear índice si no existe en una tabla para la columna apartment_id
+def create_index_if_not_exists(conn, table, index_name, column):
+    cursor = conn.cursor()
+    sql = f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column});"
+    cursor.execute(sql)
+    conn.commit()
+
+# Función para cargar datos de la tabla datos_uis
+def load_datos_uis():
+    try:
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+        )
+        # Crear índice en datos_uis para apartment_id si no existe
+        create_index_if_not_exists(conn, "datos_uis", "idx_datosuis_apartment_id", "apartment_id")
+
+        query = "SELECT * FROM datos_uis"
+        datos_uis_data = pd.read_sql(query, conn)
+
+        conn.close()
+        if datos_uis_data.empty:
+            st.warning(f"⚠ No hay datos disponibles.")
+        return datos_uis_data
+    except Exception as e:
+        st.error(f"❌ Error al cargar Datos UIS: {e}")
+        return None
+
+
+# Función para cargar datos de Ofertas Comerciales (combinando dos tablas)
+def load_ofertas_comercial():
+    try:
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+        )
+        # Crear índice en ofertas_comercial para apartment_id si no existe
+        create_index_if_not_exists(conn, "ofertas_comercial", "idx_ofertas_apartment_id", "apartment_id")
+        # También, si es relevante, en comercial_rafa
+        create_index_if_not_exists(conn, "comercial_rafa", "idx_comercial_rafa_apartment_id", "apartment_id")
+
+        query_ofertas_comercial = "SELECT * FROM ofertas_comercial"
+        query_comercial_rafa = "SELECT * FROM comercial_rafa"
+
+        ofertas_comercial_data = pd.read_sql(query_ofertas_comercial, conn)
+        comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
+
+        conn.close()
+
+        # Comprobar si ambas tablas tienen datos y unirlos
+        if ofertas_comercial_data.empty and comercial_rafa_data.empty:
+            st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
+            return None
+
+        comercial_rafa_data_filtrada = comercial_rafa_data[comercial_rafa_data['serviciable'].notna()]
+        if not comercial_rafa_data_filtrada.empty:
+            combined_data = pd.concat([ofertas_comercial_data, comercial_rafa_data_filtrada], ignore_index=True)
+        else:
+            combined_data = ofertas_comercial_data
+
+        return combined_data
+    except Exception as e:
+        st.error(f"❌ Error al cargar Ofertas Comerciales: {e}")
+        return None
+
+
+# Función para cargar datos de Viabilidades
+def load_viabilidades():
+    try:
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+        )
+        # Crear índice en viabilidades para apartment_id si no existe
+        create_index_if_not_exists(conn, "viabilidades", "idx_viabilidades_apartment_id", "apartment_id")
+
+        query = "SELECT * FROM viabilidades"
+        viabilidades_data = pd.read_sql(query, conn)
+
+        conn.close()
+        if viabilidades_data.empty:
+            st.warning(f"⚠ No hay datos disponibles.")
+        return viabilidades_data
+    except Exception as e:
+        st.error(f"❌ Error al cargar Viabilidades: {e}")
+        return None
+
+
+# Función principal del dashboard
 def supervisor_dashboard():
-    # Instanciar el CookieController de forma local para este navegador
     controller = CookieController(key="cookies")
 
     st.sidebar.title("📁 Panel del Supervisor")
-
     with st.sidebar:
         st.sidebar.markdown(""" 
             <style> 
@@ -51,6 +141,7 @@ def supervisor_dashboard():
 
         st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
         st.sidebar.markdown("---")
+        # Menú lateral con las tres opciones
         menu_opcion = option_menu(
             menu_title=None,
             options=["Datos UIS", "Ofertas Comerciales", "Viabilidades"],
@@ -71,11 +162,10 @@ def supervisor_dashboard():
 
     detalles = f"El supervisor seleccionó la vista '{menu_opcion}'."
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
+
     st.info(
-        "ℹ️ En este panel puedes visualizar tanto los datos de ams tanto las ofertas de los comerciales"
-        "así como las viabilidades, filtrar por etiquetas, columnas, buscar (lupa de la tabla)"
-        "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
-        "como prefieras visualizar el contenido de la tabla.")
+        "ℹ️ En este panel puedes visualizar los datos de Datos UIS, Ofertas Comerciales o Viabilidades, filtrar columnas, buscar elementos concretos y descargar los datos en CSV o Excel."
+    )
 
     with st.sidebar:
         if st.button("Cerrar sesión"):
@@ -94,50 +184,30 @@ def supervisor_dashboard():
             st.session_state["session_id"] = ""
 
             # Limpiar parámetros de la URL
-            st.experimental_set_query_params()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
-
+            st.experimental_set_query_params()
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
 
     if "data" in st.session_state:
         del st.session_state["data"]
 
-    with st.spinner("Cargando datos... Esto puede tomar unos segundos."):
-        try:
-            conn = sqlite3.connect("data/usuarios.db")
-            query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
-            tables = pd.read_sql(query_tables, conn)
+    # Dependiendo de la opción seleccionada se carga la vista correspondiente
+    if menu_opcion == "Datos UIS":
+        with st.spinner("⏳ Cargando Datos UIS..."):
+            data = load_datos_uis()
+    elif menu_opcion == "Ofertas Comerciales":
+        with st.spinner("⏳ Cargando Ofertas Comerciales..."):
+            data = load_ofertas_comercial()
+    elif menu_opcion == "Viabilidades":
+        with st.spinner("⏳ Cargando Viabilidades..."):
+            data = load_viabilidades()
+    else:
+        data = None
 
-            if menu_opcion == "Datos UIS":
-                if 'datos_uis' not in tables['name'].values:
-                    st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
-                    conn.close()
-                    return
-                query = "SELECT * FROM datos_uis"
-            elif menu_opcion == "Ofertas Comerciales":
-                if 'ofertas_comercial' not in tables['name'].values:
-                    st.error("❌ La tabla 'ofertas_comercial' no se encuentra en la base de datos.")
-                    conn.close()
-                    return
-                query = "SELECT * FROM ofertas_comercial"
-            elif menu_opcion == "Viabilidades":
-                if 'viabilidades' not in tables['name'].values:
-                    st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
-                    conn.close()
-                    return
-                query = "SELECT * FROM viabilidades"
+    if data is None:
+        return
 
-            data = pd.read_sql(query, conn)
-            conn.close()
-
-            if data.empty:
-                st.error("❌ No se encontraron datos en la base de datos.")
-                return
-
-        except Exception as e:
-            st.error(f"❌ Error al cargar datos de la base de datos: {e}")
-            return
-
+    # Eliminar columnas duplicadas si existen
     if data.columns.duplicated().any():
         st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
         data = data.loc[:, ~data.columns.duplicated()]
@@ -159,7 +229,7 @@ def supervisor_dashboard():
         st.download_button(
             label="Descargar como CSV",
             data=data[columnas].to_csv(index=False).encode(),
-            file_name="viabilidades.csv",
+            file_name="datos_descargados.csv",
             mime="text/csv"
         )
     elif descarga_opcion == "Excel":
@@ -168,12 +238,12 @@ def supervisor_dashboard():
         with st.spinner("Generando archivo Excel... Esto puede tardar unos segundos."):
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data[columnas].to_excel(writer, index=False, sheet_name="Viabilidades")
+                data[columnas].to_excel(writer, index=False, sheet_name="Datos")
             towrite.seek(0)
             st.download_button(
                 label="Descargar como Excel",
                 data=towrite,
-                file_name="viabilidades.xlsx",
+                file_name="datos_descargados.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 

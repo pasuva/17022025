@@ -17,13 +17,15 @@ from streamlit_cookies_controller import CookieController  # Se importa localmen
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
+import sqlitecloud  # Importamos el cliente de SQLite Cloud
 
 cookie_name = "my_app"
 
 def log_trazabilidad(usuario, accion, detalles):
     """Inserta un registro en la tabla de trazabilidad."""
     try:
-        conn = sqlite3.connect("data/usuarios.db")
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
         cursor = conn.cursor()
         fecha = dt.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute("""
@@ -41,7 +43,8 @@ def log_trazabilidad(usuario, accion, detalles):
 def obtener_conexion():
     """Retorna una nueva conexión a la base de datos."""
     try:
-        conn = sqlite3.connect("data/usuarios.db")
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
         return conn
     except sqlite3.Error as e:
         print(f"Error al conectar con la base de datos: {e}")
@@ -217,30 +220,11 @@ def get_download_link_icon(img_path):
     html = f'<a href="data:{mime};base64,{b64}" download="{file_name}" style="text-decoration: none; font-size:20px;">⬇️</a>'
     return html
 
-
 @st.cache_data
 def cargar_datos_uis():
     """Carga y cachea los datos de las tablas 'datos_uis' y 'ofertas_comercial'."""
-    conn = sqlite3.connect("data/usuarios.db")
-    query_datos_uis = """
-        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, poblacion, cto_con_proyecto, serviciable 
-        FROM datos_uis
-    """
-    datos_uis = pd.read_sql(query_datos_uis, conn)
-
-    query_ofertas = """
-        SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion 
-        FROM ofertas_comercial
-    """
-    ofertas_df = pd.read_sql(query_ofertas, conn)
-    conn.close()
-    return datos_uis, ofertas_df
-
-
-@st.cache_data
-def cargar_datos_uis():
-    """Carga y cachea los datos de las tablas 'datos_uis' y 'ofertas_comercial'."""
-    conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     query_datos_uis = """
         SELECT apartment_id, latitud, longitud, provincia, municipio, poblacion, cto_con_proyecto, serviciable 
         FROM datos_uis
@@ -260,7 +244,8 @@ def limpiar_mapa():
     st.write("### Mapa actualizado")  # Esto forzará un refresh
 
 def cargar_provincias():
-    conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     query = "SELECT DISTINCT provincia FROM datos_uis"
     df = pd.read_sql(query, conn)
     conn.close()
@@ -269,7 +254,8 @@ def cargar_provincias():
 
 @st.cache_data
 def cargar_datos_por_provincia(provincia):
-    conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     query_datos_uis = """
         SELECT * 
         FROM datos_uis
@@ -359,10 +345,10 @@ def mapa_seccion():
             popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
 
             # Obtener valores de serviciable, contrato e incidencia
-            serviciable_ofertas = serviciable_dict.get(apt_id, "").lower()  # De ofertas_comercial
-            contrato_val = contrato_dict.get(apt_id, "").lower()  # De ofertas_comercial
-            incidencia_val = incidencia_dict.get(apt_id, "").lower()  # De ofertas_comercial
-            serviciable_uis = str(row["serviciable"]).strip().lower()  # De datos_uis
+            serviciable_ofertas = serviciable_dict.get(apt_id, "")  # De ofertas_comercial
+            contrato_val = contrato_dict.get(apt_id, "")  # De ofertas_comercial
+            incidencia_val = incidencia_dict.get(apt_id, "") # De ofertas_comercial
+            serviciable_uis = str(row["serviciable"]).strip()  # De datos_uis
 
             # Determinar color según las reglas
             if incidencia_val == "sí":
@@ -490,7 +476,8 @@ def viabilidades_seccion():
     # Cargar los datos de la base de datos
     with st.spinner("⏳ Cargando los datos de viabilidades..."):
         try:
-            conn = sqlite3.connect("data/usuarios.db")
+            conn = sqlitecloud.connect(
+                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
             query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = pd.read_sql(query_tables, conn)
 
@@ -689,7 +676,8 @@ def mostrar_formulario(click_data):
     if st.button(f"💾 Guardar cambios para el Ticket {ticket}"):
         try:
             # Conectar a la base de datos (usuarios.db)
-            conn = sqlite3.connect("data/usuarios.db")
+            conn = sqlitecloud.connect(
+                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
             cursor = conn.cursor()
 
             # Sentencia UPDATE para guardar los cambios basados en el ticket
@@ -845,7 +833,8 @@ def admin_dashboard():
 
         with st.spinner("Cargando datos..."):
             try:
-                conn = sqlite3.connect("data/usuarios.db")
+                conn = sqlitecloud.connect(
+                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                 query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
                 tables = pd.read_sql(query_tables, conn)
                 if 'datos_uis' not in tables['name'].values:
@@ -911,8 +900,8 @@ def admin_dashboard():
 
         with st.spinner("⏳ Cargando ofertas comerciales..."):
             try:
-                conn = sqlite3.connect("data/usuarios.db")  # Conexión a la base de datos correcta
-
+                conn = sqlitecloud.connect(
+                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                 # Consultar ambas tablas
                 query_ofertas_comercial = "SELECT * FROM ofertas_comercial"
                 query_comercial_rafa = "SELECT * FROM comercial_rafa"  # Cambiar si tienes un nombre diferente en esta tabla
@@ -987,6 +976,45 @@ def admin_dashboard():
                     file_name="ofertas_comerciales.csv",
                     mime="text/csv"
                 )
+
+            # Ver los Apartment IDs disponibles
+        st.markdown("### Eliminar Oferta Comercial")
+
+        # Desplegable para seleccionar el Apartment ID de la oferta a eliminar
+        apartment_ids = combined_data['apartment_id'].tolist()
+
+        selected_apartment_id = st.selectbox(
+            "Selecciona el Apartment ID de la oferta a eliminar:",
+            ["-- Seleccione --"] + apartment_ids
+        )
+
+        # Verificar la selección
+        st.write(f"Apartment ID seleccionado: {selected_apartment_id}")  # Verificación de la selección
+
+        # Mostrar botón de eliminar solo si un Apartment ID ha sido seleccionado
+        if selected_apartment_id != "-- Seleccione --":
+            if st.button("Eliminar Oferta"):
+                try:
+                    # Conexión a la base de datos
+                    conn = sqlitecloud.connect(
+                        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+
+                    # Ejecutar la eliminación en ambas tablas (ofertas_comercial y comercial_rafa)
+                    query_delete_oferta = f"DELETE FROM ofertas_comercial WHERE apartment_id = '{selected_apartment_id}'"
+                    query_delete_comercial = f"DELETE FROM comercial_rafa WHERE apartment_id = '{selected_apartment_id}'"
+
+                    # Ejecutar las consultas
+                    conn.execute(query_delete_oferta)
+                    conn.execute(query_delete_comercial)
+
+                    # Confirmar eliminación
+                    conn.commit()
+                    conn.close()
+
+                    st.success(f"✅ La oferta con Apartment ID {selected_apartment_id} ha sido eliminada exitosamente.")
+
+                except Exception as e:
+                    st.error(f"❌ Error al eliminar la oferta: {e}")
 
         # Desplegable para ofertas con imagen
         offers_with_image = []
@@ -1252,14 +1280,35 @@ def admin_dashboard():
     # Opción: Trazabilidad y logs
     elif opcion == "Trazabilidad y logs":
         st.header("📜 Trazabilidad y logs")
-        st.info("ℹ️ Aquí se pueden visualizar los logs y la trazabilidad de las acciones realizadas. Puedes utilizar las etiquetas rojas para filtrar la tabla y "
-                "descargar los datos relevantes en formato excel y csv.")
+        st.info(
+            "ℹ️ Aquí se pueden visualizar los logs y la trazabilidad de las acciones realizadas. Puedes utilizar las etiquetas rojas para filtrar la tabla y "
+            "descargar los datos relevantes en formato excel y csv.")
         log_trazabilidad(st.session_state["username"], "Visualización de Trazabilidad",
                          "El admin visualizó la sección de trazabilidad y logs.")
 
+        # Botón para vaciar la tabla
+        if st.button("🗑️ Vaciar tabla y resetear IDs"):
+            with st.spinner("Eliminando registros..."):
+                try:
+                    # Conectar a la base de datos
+                    conn = sqlitecloud.connect(
+                        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                    cursor = conn.cursor()
+
+                    # Eliminar todos los registros de la tabla
+                    cursor.execute("DELETE FROM trazabilidad")
+                    # Resetear los IDs de la tabla
+                    cursor.execute("VACUUM")  # Esto optimiza la base de datos y resetea los IDs autoincrementables
+                    conn.commit()
+                    conn.close()
+                    st.success("✔️ Tabla vaciada y IDs reseteados con éxito.")
+                except Exception as e:
+                    st.error(f"❌ Error al vaciar la tabla: {e}")
+
         with st.spinner("Cargando trazabilidad..."):
             try:
-                conn = sqlite3.connect("data/usuarios.db")
+                conn = sqlitecloud.connect(
+                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                 query = "SELECT usuario_id, accion, detalles, fecha FROM trazabilidad"
                 trazabilidad_data = pd.read_sql(query, conn)
                 conn.close()
@@ -1300,70 +1349,75 @@ def admin_dashboard():
             except Exception as e:
                 st.error(f"❌ Error al cargar la trazabilidad: {e}")
 
+
     elif opcion == "Control de versiones":
         log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
         mostrar_control_versiones()
 
 
 def generar_informe(fecha_inicio, fecha_fin):
-    conn = sqlite3.connect('data/usuarios.db')
-    cursor = conn.cursor()
+    # Conectar a la base de datos y realizar cada consulta
+    def ejecutar_consulta(query, params=None):
+        # Abrir la conexión para cada consulta
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+        cursor = conn.cursor()
+
+        cursor.execute(query, params if params else ())
+        result = cursor.fetchone()
+        conn.close()  # Cerrar la conexión inmediatamente después de ejecutar la consulta
+        return result[0] if result else 0
 
     # 🔹 1️⃣ Total de asignaciones en el periodo T
     query_total = """
-    SELECT COUNT(DISTINCT apartment_id) 
-    FROM datos_uis
-    WHERE DATE(fecha) BETWEEN ? AND ?
-    """
-    cursor.execute(query_total, (fecha_inicio, fecha_fin))
-    total_asignaciones = cursor.fetchone()[0]
+        SELECT COUNT(DISTINCT apartment_id) 
+        FROM datos_uis
+        WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
+        """
+    total_asignaciones = ejecutar_consulta(query_total, (fecha_inicio, fecha_fin))
 
     # 🔹 2️⃣ Cantidad de visitas (apartment_id presente en ambas tablas, sin filtrar por fecha)
     query_visitados = """
-    SELECT COUNT(DISTINCT d.apartment_id)
-    FROM datos_uis d
-    INNER JOIN ofertas_comercial o 
-        ON d.apartment_id = o.apartment_id
-    """
-    cursor.execute(query_visitados)
-    total_visitados = cursor.fetchone()[0]
+        SELECT COUNT(DISTINCT d.apartment_id)
+        FROM datos_uis d
+        INNER JOIN ofertas_comercial o 
+            ON d.apartment_id = o.apartment_id
+        """
+    total_visitados = ejecutar_consulta(query_visitados)
 
     # 🔹 3️⃣ Cantidad de ventas (visitados donde contrato = 'Sí')
     query_ventas = """
-    SELECT COUNT(DISTINCT d.apartment_id)
-    FROM datos_uis d
-    INNER JOIN ofertas_comercial o 
-        ON d.apartment_id = o.apartment_id
-    WHERE LOWER(o.contrato) = 'sí'
-    """
-    cursor.execute(query_ventas)
-    total_ventas = cursor.fetchone()[0]
+        SELECT COUNT(DISTINCT d.apartment_id)
+        FROM datos_uis d
+        INNER JOIN ofertas_comercial o 
+            ON d.apartment_id = o.apartment_id
+        WHERE LOWER(o.contrato) = 'sí'
+        """
+    total_ventas = ejecutar_consulta(query_ventas)
 
     # 🔹 4️⃣ Cantidad de incidencias (donde incidencias = 'Sí')
     query_incidencias = """
-    SELECT COUNT(DISTINCT d.apartment_id)
-    FROM datos_uis d
-    INNER JOIN ofertas_comercial o 
-        ON d.apartment_id = o.apartment_id
-    WHERE LOWER(o.incidencia) = 'sí'
-    """
-    cursor.execute(query_incidencias)
-    total_incidencias = cursor.fetchone()[0]
+        SELECT COUNT(DISTINCT d.apartment_id)
+        FROM datos_uis d
+        INNER JOIN ofertas_comercial o 
+            ON d.apartment_id = o.apartment_id
+        WHERE LOWER(o.incidencia) = 'sí'
+        """
+    total_incidencias = ejecutar_consulta(query_incidencias)
 
     # 🔹 5️⃣ Cantidad de viviendas no serviciables (donde serviciable = 'No')
     query_no_serviciables = """
-    SELECT COUNT(DISTINCT apartment_id)
-    FROM ofertas_comercial
-    WHERE LOWER(serviciable) = 'no'
-    """
-    cursor.execute(query_no_serviciables)
-    total_no_serviciables = cursor.fetchone()[0]
+        SELECT COUNT(DISTINCT apartment_id)
+        FROM ofertas_comercial
+        WHERE LOWER(serviciable) = 'no'
+        """
+    total_no_serviciables = ejecutar_consulta(query_no_serviciables)
 
     # 🔹 6️⃣ Cálculo de porcentajes
     porcentaje_ventas = (total_ventas / total_visitados * 100) if total_visitados > 0 else 0
     porcentaje_visitas = (total_visitados / total_asignaciones * 100) if total_asignaciones > 0 else 0
-    porcentaje_incidencias = (total_incidencias / total_visitados * 100) if total_asignaciones > 0 else 0
-    porcentaje_no_serviciables = (total_no_serviciables / total_visitados * 100) if total_asignaciones > 0 else 0
+    porcentaje_incidencias = (total_incidencias / total_visitados * 100) if total_visitados > 0 else 0
+    porcentaje_no_serviciables = (total_no_serviciables / total_visitados * 100) if total_visitados > 0 else 0
 
     # 🔹 7️⃣ Crear DataFrame con los resultados
     informe = pd.DataFrame({
@@ -1410,9 +1464,9 @@ def generar_informe(fecha_inicio, fecha_fin):
             y=values_serviciables,
             text=values_serviciables,
             textposition='outside',
-            marker=dict(color=['#ff6666', '#99cc99']),
+            marker=dict(color=['#ff6666', '#99cc99']), )
 
-        )])
+        ])
 
         fig_serviciables.update_layout(
             title="Distribución Viviendas visitadas Serviciables/No Serviciables",
@@ -1440,7 +1494,6 @@ def generar_informe(fecha_inicio, fecha_fin):
     # Muestra el resumen en Streamlit
     st.markdown(resumen, unsafe_allow_html=True)
 
-    conn.close()
     return informe
 
 
@@ -1484,25 +1537,30 @@ def mostrar_control_versiones():
 #HOME Y GRAFICOS ASOCIADOS
 # Función para crear el gráfico interactivo de Serviciabilidad
 def create_serviciable_graph():
-    conn = sqlite3.connect("data/usuarios.db")
+    # Conectar y obtener datos de la primera tabla
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     cursor = conn.cursor()
 
-    query = """
-        SELECT 'Sí' AS serviciable, COUNT(*) AS count
-        FROM datos_uis
-        WHERE serviciable = 'Sí'
-        UNION ALL
-        SELECT 'No' AS serviciable, COUNT(*) AS count
-        FROM ofertas_comercial
-        WHERE serviciable = 'No';
-    """
-
-    cursor.execute(query)
-    data = cursor.fetchall()
+    cursor.execute("SELECT COUNT(*) FROM datos_uis WHERE serviciable = 'Sí';")
+    datos_uis_count = cursor.fetchone()[0]  # Obtener el valor numérico
     conn.close()
 
-    # Convertir en DataFrame
-    df = pd.DataFrame(data, columns=["serviciable", "count"])
+    # Conectar y obtener datos de la segunda tabla
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE serviciable = 'No';")
+    ofertas_comercial_count = cursor.fetchone()[0]  # Obtener el valor numérico
+    conn.close()
+
+    # Crear DataFrame manualmente
+    data = [
+        {"serviciable": "Sí", "count": datos_uis_count},
+        {"serviciable": "No", "count": ofertas_comercial_count}
+    ]
+    df = pd.DataFrame(data)
 
     # Crear gráfico de barras con Plotly
     fig = px.bar(df, x="serviciable", y="count", title="Distribución de Serviciabilidad",
@@ -1533,32 +1591,36 @@ def create_incidencias_graph(cursor):
 
 # Gráfico Distribución de Tipos de Vivienda
 def create_tipo_vivienda_distribution_graph():
-    conn = sqlite3.connect("data/usuarios.db")
+    # Conectar y obtener datos de la tabla ofertas_comercial
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     cursor = conn.cursor()
 
-    query = """
-        SELECT Tipo_Vivienda, COUNT(*) AS count
-        FROM ofertas_comercial
-        WHERE Tipo_Vivienda IS NOT NULL
-        GROUP BY Tipo_Vivienda
-        UNION ALL
-        SELECT Tipo_Vivienda, COUNT(*) AS count
-        FROM comercial_rafa
-        WHERE Tipo_Vivienda IS NOT NULL
-        GROUP BY Tipo_Vivienda;
-    """
-
-    cursor.execute(query)
-    data = cursor.fetchall()
+    cursor.execute("SELECT Tipo_Vivienda, COUNT(*) FROM ofertas_comercial GROUP BY Tipo_Vivienda;")
+    ofertas_comercial_data = cursor.fetchall()  # Obtener todos los resultados
     conn.close()
 
-    # Convertir en DataFrame
-    df = pd.DataFrame(data, columns=["Tipo_Vivienda", "count"])
+    # Conectar y obtener datos de la tabla comercial_rafa
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    cursor = conn.cursor()
 
-    # Crear gráfico con Plotly
-    fig = px.bar(df, x="Tipo_Vivienda", y="count", title="Distribución de Tipos de Vivienda",
-                 labels={"Tipo_Vivienda": "Tipo de Vivienda", "count": "Cantidad"},
-                 color="Tipo_Vivienda", color_discrete_sequence=px.colors.qualitative.Set3)
+    cursor.execute("SELECT Tipo_Vivienda, COUNT(*) FROM comercial_rafa GROUP BY Tipo_Vivienda;")
+    comercial_rafa_data = cursor.fetchall()  # Obtener todos los resultados
+    conn.close()
+
+    # Convertir los datos de ambas tablas en DataFrames
+    df_ofertas_comercial = pd.DataFrame(ofertas_comercial_data, columns=["Tipo_Vivienda", "Count_ofertas_comercial"])
+    df_comercial_rafa = pd.DataFrame(comercial_rafa_data, columns=["Tipo_Vivienda", "Count_comercial_rafa"])
+
+    # Fusionar los DataFrames por la columna 'Tipo_Vivienda'
+    df = pd.merge(df_ofertas_comercial, df_comercial_rafa, on="Tipo_Vivienda", how="outer").fillna(0)
+
+    # Crear gráfico de barras con Plotly
+    fig = px.bar(df, x="Tipo_Vivienda", y=["Count_ofertas_comercial", "Count_comercial_rafa"],
+                 title="Distribución de Tipo de Vivienda",
+                 labels={"Tipo_Vivienda": "Tipo de Vivienda", "value": "Cantidad"},
+                 color="Tipo_Vivienda", barmode="group", height=400)
 
     fig.update_layout(barmode='group', height=400)
 

@@ -8,12 +8,15 @@ import io
 from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion, correo_asignacion_administracion2, correo_desasignacion_administracion2
 from folium.plugins import MarkerCluster
 from streamlit_cookies_controller import CookieController  # Se importa localmente
+import sqlitecloud  # Importamos el cliente de SQLite Cloud
 
 cookie_name = "my_app"
 
 def log_trazabilidad(usuario, accion, detalles):
     """ Inserta un registro en la tabla de trazabilidad """
-    conn = sqlite3.connect("data/usuarios.db")
+    #conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     cursor = conn.cursor()
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute("""
@@ -27,7 +30,9 @@ def log_trazabilidad(usuario, accion, detalles):
 @st.cache_data
 def cargar_datos():
     """Carga los datos de las tablas de base de datos con caché"""
-    conn = sqlite3.connect("data/usuarios.db")
+    #conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     # Cargar datos de la tabla datos_uis (incluimos municipio y población)
     query_datos_uis = """
         SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, cto_con_proyecto, serviciable 
@@ -154,8 +159,10 @@ def mapa_dashboard():
             comercial_elegido = st.radio("Asignar a:", ["comercial_rafa1", "comercial_rafa2"], key="comercial_elegido")
 
             if municipio_sel and poblacion_sel:
-                conn = sqlite3.connect("data/usuarios.db")
-                conn = sqlite3.connect("data/usuarios.db")
+                #conn = sqlite3.connect("data/usuarios.db")
+                #conn = sqlite3.connect("data/usuarios.db")
+                conn = sqlitecloud.connect(
+                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
                                (municipio_sel, poblacion_sel))
@@ -166,7 +173,9 @@ def mapa_dashboard():
                     st.warning("🚫 Esta zona ya ha sido asignada.")
                 else:
                     if st.button("Asignar Zona"):
-                        conn = sqlite3.connect("data/usuarios.db")
+                        #conn = sqlite3.connect("data/usuarios.db")
+                        conn = sqlitecloud.connect(
+                            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                         cursor = conn.cursor()
                         cursor.execute("""
                             INSERT INTO comercial_rafa (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
@@ -234,7 +243,9 @@ def mapa_dashboard():
                             conn.close()
 
         elif accion == "Desasignar Zona":
-            conn = sqlite3.connect("data/usuarios.db")
+            #conn = sqlite3.connect("data/usuarios.db")
+            conn = sqlitecloud.connect(
+                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
             assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
             conn.close()
             if assigned_zones.empty:
@@ -247,7 +258,9 @@ def mapa_dashboard():
                     municipio_sel, poblacion_sel = zona_seleccionada.split(" - ")
                     if st.button("Desasignar Zona"):
                         # Obtener el comercial asignado a la zona
-                        conn = sqlite3.connect("data/usuarios.db")
+                        #conn = sqlite3.connect("data/usuarios.db")
+                        conn = sqlitecloud.connect(
+                            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                         cursor = conn.cursor()
                         cursor.execute("SELECT comercial FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
                                        (municipio_sel, poblacion_sel))
@@ -255,7 +268,9 @@ def mapa_dashboard():
                         conn.close()
 
                         # Desasignar la zona
-                        conn = sqlite3.connect("data/usuarios.db")
+                        #conn = sqlite3.connect("data/usuarios.db")
+                        conn = sqlitecloud.connect(
+                            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
                                        (municipio_sel, poblacion_sel))
@@ -264,7 +279,9 @@ def mapa_dashboard():
 
                         try:
                             # Conectar a la base de datos (usuarios.db)
-                            conn = sqlite3.connect("data/usuarios.db")
+                            #conn = sqlite3.connect("data/usuarios.db")
+                            conn = sqlitecloud.connect(
+                                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
                             cursor = conn.cursor()
 
                             # Obtener email del comercial desasignado
@@ -320,7 +337,9 @@ def mapa_dashboard():
                             st.error(f"❌ Error al enviar la notificación: {e}")
 
         # Mostrar la tabla de zonas asignadas (dentro del panel de asignación)
-        conn = sqlite3.connect("data/usuarios.db")
+        #conn = sqlite3.connect("data/usuarios.db")
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
         assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
         conn.close()
 
@@ -408,7 +427,9 @@ def mapa_dashboard():
                 st_folium(m, height=500, width=700)
 
     # Mostrar la tabla de zonas asignadas ocupando el ancho completo, justo debajo de las columnas
-    conn = sqlite3.connect("data/usuarios.db")
+    #conn = sqlite3.connect("data/usuarios.db")
+    conn = sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
     assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
     total_ofertas = pd.read_sql("SELECT DISTINCT * FROM comercial_rafa", conn)
     conn.close()

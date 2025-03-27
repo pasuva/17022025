@@ -1,14 +1,17 @@
 import uuid
 import base64
 import os
-import sqlite3
 import bcrypt
 import streamlit as st
 from datetime import datetime
 from streamlit_cookies_controller import CookieController  # Se importa de forma local
 
+# Conexión a SQLite Cloud
+import sqlitecloud
+
+# URL de conexión a SQLite Cloud
+DB_URL = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "../data/usuarios.db")
 VERSION_FILE = os.path.join(BASE_DIR, "version.txt")
 
 cookie_name = "my_app"
@@ -29,9 +32,9 @@ def get_latest_version():
 
 
 def verify_user(nombre, password):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT password, role FROM usuarios WHERE username = ?", (nombre,))
+    # Conexión a SQLite Cloud
+    conn = sqlitecloud.connect(DB_URL)
+    cursor = conn.execute("SELECT password, role FROM usuarios WHERE username = ?", (nombre,))
     result = cursor.fetchone()
     conn.close()
 
@@ -41,18 +44,15 @@ def verify_user(nombre, password):
             return rol
     return None
 
-
 def log_trazabilidad(usuario, accion, detalles):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute("""
+    # Conexión a SQLite Cloud
+    conn = sqlitecloud.connect(DB_URL)
+    cursor = conn.execute(""" 
         INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
         VALUES (?, ?, ?, ?)
-    """, (usuario, accion, detalles, fecha))
+    """, (usuario, accion, detalles, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
-
 
 def login():
     # Se instancia localmente el controlador de cookies para que cada navegador administre sus propias cookies.

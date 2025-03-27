@@ -27,3 +27,4 @@ v2.0.5 - Mejoras en el envío de notificaciones. Corrección de errores en el ge
 v2.0.6 - Corrección de errores. Ahora mantiene la última ubicación gestionada por el comercial, en lugar de recargar la ubicación por defecto.
 v2.0.7 - Arreglado botón de Cerrar Sesión.
 v2.0.8 - Corrección de errores y mejoras.
+v2.0.9 - Actualizada base de datos. Mejorada trazabilidad de la aplicación. Añadida la opción de modificar datos ya visitados por los comerciales. Añadida persistencia de datos.
