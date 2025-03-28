@@ -15,6 +15,7 @@ from streamlit_geolocation import streamlit_geolocation
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 import sqlitecloud  # Importamos el cliente de SQLite Cloud
+from modules.cloudinary import upload_image_to_cloudinary
 
 cookie_name = "my_app"
 
@@ -46,13 +47,12 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
         cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
         existe = cursor.fetchone()[0] > 0
 
-        imagen_path = None
+        imagen_url = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
             extension = os.path.splitext(imagen_incidencia.name)[1]
-            imagen_path = f"data/incidencias/{oferta_data['Apartment ID']}{extension}"
-            os.makedirs(os.path.dirname(imagen_path), exist_ok=True)
-            with open(imagen_path, "wb") as f:
-                f.write(imagen_incidencia.getbuffer())
+            # Puedes definir un nombre basado en el apartment_id, por ejemplo
+            filename = f"{oferta_data['Apartment ID']}{extension}"
+            imagen_url = upload_image_to_cloudinary(imagen_incidencia)
 
         if existe:
             cursor.execute('''UPDATE ofertas_comercial SET
@@ -78,7 +78,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                                oferta_data["motivo_serviciable"],
                                oferta_data["incidencia"],
                                oferta_data["motivo_incidencia"],
-                               imagen_path,
+                               imagen_url,  # Aquí se guarda la URL obtenida de Cloudinary
                                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                                oferta_data["Tipo_Vivienda"],
                                oferta_data["Contrato"],
@@ -110,7 +110,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                                oferta_data["motivo_serviciable"],
                                oferta_data["incidencia"],
                                oferta_data["motivo_incidencia"],
-                               imagen_path,
+                               imagen_url,
                                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                                oferta_data["Tipo_Vivienda"],
                                oferta_data["Contrato"]

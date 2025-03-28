@@ -891,9 +891,9 @@ def admin_dashboard():
     elif opcion == "Ofertas Comerciales":
         st.header("📊 Visualizar Ofertas Comerciales")
         st.info(
-            "ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
-            "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
-            "como prefieras visualizar el contenido de la tabla.")
+            "ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales, filtrar los datos por etiquetas, "
+            "columnas, buscar elementos concretos y descargar los datos en Excel o CSV."
+        )
 
         if "df" in st.session_state:
             del st.session_state["df"]
@@ -901,41 +901,35 @@ def admin_dashboard():
         with st.spinner("⏳ Cargando ofertas comerciales..."):
             try:
                 conn = sqlitecloud.connect(
-                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+                )
                 # Consultar ambas tablas
                 query_ofertas_comercial = "SELECT * FROM ofertas_comercial"
-                query_comercial_rafa = "SELECT * FROM comercial_rafa"  # Cambiar si tienes un nombre diferente en esta tabla
+                query_comercial_rafa = "SELECT * FROM comercial_rafa"
 
-                # Cargar los datos de ambas tablas
                 ofertas_comercial_data = pd.read_sql(query_ofertas_comercial, conn)
                 comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
-
-                # Cerrar conexión
                 conn.close()
 
-                # Comprobar si ambas tablas contienen datos
                 if ofertas_comercial_data.empty and comercial_rafa_data.empty:
                     st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
                     return
 
-                # Filtrar comercial_rafa para solo mostrar registros con datos en la columna 'serviciable'
+                # Filtrar comercial_rafa para mostrar registros con datos en 'serviciable'
                 comercial_rafa_data_filtrada = comercial_rafa_data[comercial_rafa_data['serviciable'].notna()]
 
-                # Unir ambos DataFrames si hay datos en la tabla 'comercial_rafa' filtrados
+                # Unir ambas tablas en un solo DataFrame
                 if not comercial_rafa_data_filtrada.empty:
                     combined_data = pd.concat([ofertas_comercial_data, comercial_rafa_data_filtrada], ignore_index=True)
                 else:
-                    # Si no hay datos en la tabla 'comercial_rafa' para mostrar, solo usamos ofertas_comercial_data
                     combined_data = ofertas_comercial_data
 
             except Exception as e:
                 st.error(f"❌ Error al cargar datos de la base de datos: {e}")
                 return
 
-        # Si la tabla combinada está vacía, mostrar un mensaje
         if combined_data.empty:
-            st.warning(
-                "⚠️ No se encontraron ofertas comerciales finalizadas.")
+            st.warning("⚠️ No se encontraron ofertas comerciales finalizadas.")
             return
 
         # Eliminar columnas duplicadas si las hay
@@ -943,16 +937,31 @@ def admin_dashboard():
             st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
             combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
 
-        # Guardar en sesión de Streamlit para mostrar en la tabla
+        # Guardar en sesión de Streamlit
         st.session_state["df"] = combined_data
 
-        columnas = st.multiselect("Filtra las columnas a mostrar", combined_data.columns.tolist(),
+        columnas = st.multiselect("🔎 Filtra las columnas a mostrar:", combined_data.columns.tolist(),
                                   default=combined_data.columns.tolist())
+
         st.dataframe(combined_data[columnas], use_container_width=True)
 
+        seleccion_id = st.selectbox("🖼️ Selecciona un Apartment ID para ver su imagen:",
+                                    combined_data["apartment_id"].unique())
+
+        # Filtrar la oferta seleccionada
+        oferta_seleccionada = combined_data[combined_data["apartment_id"] == seleccion_id]
+
+        if not oferta_seleccionada.empty:
+            imagen_url = oferta_seleccionada.iloc[0]["fichero_imagen"]
+
+            if pd.notna(imagen_url) and imagen_url.strip() != "":
+                st.image(imagen_url, caption=f"Imagen de la oferta {seleccion_id}", use_column_width=True)
+            else:
+                st.warning("❌ Esta oferta no tiene una imagen asociada.")
+
+        st.subheader("📥 Descargar datos")
         download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"], key="oferta_download")
 
-        # Opción de descarga en Excel
         if download_format == "Excel":
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
@@ -966,7 +975,6 @@ def admin_dashboard():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-        # Opción de descarga en CSV
         elif download_format == "CSV":
             csv = combined_data[columnas].to_csv(index=False).encode()
             with st.spinner("Preparando archivo CSV..."):
@@ -1534,7 +1542,6 @@ def mostrar_control_versiones():
     except Exception as e:
         st.error(f"Ha ocurrido un error al cargar el control de versiones: {e}")
 
-#HOME Y GRAFICOS ASOCIADOS
 # Función para crear el gráfico interactivo de Serviciabilidad
 def create_serviciable_graph():
     # Conectar y obtener datos de la primera tabla
@@ -1646,16 +1653,12 @@ def create_viabilities_by_municipio_graph(cursor):
 # Función principal de la página
 def home_page():
     st.title("Resumen de datos relevantes")
-    st.info("🏗️ ZONA EN CONSTRUCCIÓN")
 
     # Obtener la conexión y el cursor
     conn = obtener_conexion()
     cursor = conn.cursor()
 
     try:
-        # Mostrar resúmenes y gráficos
-        st.header("Resumen de Datos")
-
         # Organizar los gráficos en columnas
         col1, col2 = st.columns(2)
 
@@ -1680,7 +1683,6 @@ def home_page():
         print(f"Error al generar los gráficos: {e}")
     finally:
         conn.close()  # No olvides cerrar la conexión al final
-#######
 
 if __name__ == "__main__":
     admin_dashboard()

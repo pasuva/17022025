@@ -11,6 +11,8 @@ import time
 from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
+
+from modules.cloudinary import upload_image_to_cloudinary
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
@@ -37,37 +39,33 @@ def log_trazabilidad(usuario, accion, detalles):
 
 
 def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
-    """Guarda o actualiza la oferta en SQLite y almacena la imagen si es necesario."""
+    """Guarda o actualiza la oferta en SQLite y almacena la imagen en Cloudinary si es necesario."""
     try:
-        #conn = sqlite3.connect("data/usuarios.db")
         conn = sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+        )
         cursor = conn.cursor()
 
         # Verificar si el apartment_id existe en la base de datos
         cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE apartment_id = ?", (apartment_id,))
         if cursor.fetchone()[0] == 0:
-            # Si no existe, mostrar error y detener el proceso
             st.error("❌ El Apartment ID no existe en la base de datos. No se puede guardar ni actualizar la oferta.")
             conn.close()
             return
 
-        # Si el apartment_id existe, se procede a actualizar
         st.info(f"⚠️ El Apartment ID {apartment_id} está asignado, se actualizarán los datos.")
 
-        # Guardar la imagen si hay incidencia
-        imagen_path = None
+        # Subir la imagen a Cloudinary si hay incidencia
+        imagen_url = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
-            # Extraemos la extensión del archivo subido
+            # Extraer la extensión del archivo para formar un nombre adecuado
             extension = os.path.splitext(imagen_incidencia.name)[1]
-            imagen_path = f"data/incidencias/{apartment_id}{extension}"
-            os.makedirs(os.path.dirname(imagen_path), exist_ok=True)
-            with open(imagen_path, "wb") as f:
-                f.write(imagen_incidencia.getbuffer())
+            filename = f"{apartment_id}{extension}"
+            imagen_url = upload_image_to_cloudinary(imagen_incidencia, filename)
 
         comercial_logueado = st.session_state.get("username", None)
 
-        # Actualizar los datos en la base de datos
+        # Actualizar los datos en la base de datos, usando imagen_url en lugar de imagen_path
         cursor.execute('''UPDATE comercial_rafa SET 
                             provincia = ?, municipio = ?, poblacion = ?, vial = ?, numero = ?, letra = ?, 
                             cp = ?, latitud = ?, longitud = ?, nombre_cliente = ?, telefono = ?, 
@@ -93,29 +91,27 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
                            oferta_data["motivo_serviciable"],
                            oferta_data["incidencia"],
                            oferta_data["motivo_incidencia"],
-                           imagen_path,
+                           imagen_url,
                            oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                            oferta_data["Tipo_Vivienda"],
                            oferta_data["Contrato"],
                            comercial_logueado,
-                           apartment_id  # Utilizamos el apartment_id para identificar la fila
+                           apartment_id
                        ))
 
         conn.commit()
         conn.close()
         st.success("✅ ¡Oferta actualizada con éxito en la base de datos!")
 
-        # Llamar a la notificación (notificación tipo 1)
+        # Enviar notificación al administrador
         destinatario_admin = "rebeca.sanchru@gmail.com"  # Dirección del administrador
         descripcion_oferta = f"Se ha actualizado una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
-
-        # Enviar el correo de oferta
         correo_oferta_comercial(destinatario_admin, apartment_id, descripcion_oferta)
 
         st.success("✅ Oferta actualizada con éxito")
         st.info(f"📧 Se ha enviado una notificación al administrador sobre la oferta actualizada.")
 
-        # Registrar trazabilidad del guardado de la oferta
+        # Registrar trazabilidad
         log_trazabilidad(st.session_state["username"], "Actualizar Oferta",
                          f"Oferta actualizada para Apartment ID: {apartment_id}")
 
