@@ -1,13 +1,6 @@
-import zipfile
-import folium
-import io  # Necesario para trabajar con flujos de bytes
-import sqlite3
-import datetime
-import bcrypt
+import zipfile, folium, io, sqlite3, datetime, bcrypt, os, base64, sqlitecloud
 import pandas as pd
 import plotly.express as px
-import os  # Para trabajar con archivos en el sistema
-import base64  # Para codificar la imagen en base64
 import streamlit as st
 from modules.notificaciones import correo_viabilidad_administracion, correo_usuario
 from datetime import datetime as dt  # Para evitar conflicto con datetime
@@ -17,27 +10,8 @@ from streamlit_cookies_controller import CookieController  # Se importa localmen
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
-import sqlitecloud  # Importamos el cliente de SQLite Cloud
 
 cookie_name = "my_app"
-
-def log_trazabilidad(usuario, accion, detalles):
-    """Inserta un registro en la tabla de trazabilidad."""
-    try:
-        conn = sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
-        cursor = conn.cursor()
-        fecha = dt.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("""
-            INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
-            VALUES (?, ?, ?, ?)
-        """, (usuario, accion, detalles, fecha))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        # En caso de error en la trazabilidad, se imprime en consola (no se interrumpe la app)
-        print(f"Error registrando trazabilidad: {e}")
-
 
 # Función para obtener conexión a la base de datos
 def obtener_conexion():
@@ -50,6 +24,21 @@ def obtener_conexion():
         print(f"Error al conectar con la base de datos: {e}")
         return None
 
+def log_trazabilidad(usuario, accion, detalles):
+    """Inserta un registro en la tabla de trazabilidad."""
+    try:
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+        fecha = dt.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("""
+            INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
+            VALUES (?, ?, ?, ?)
+        """, (usuario, accion, detalles, fecha))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        # En caso de error en la trazabilidad, se imprime en consola (no se interrumpe la app)
+        print(f"Error registrando trazabilidad: {e}")
 
 # Función para convertir a numérico y manejar excepciones
 def safe_convert_to_numeric(col):
@@ -58,24 +47,18 @@ def safe_convert_to_numeric(col):
     except ValueError:
         return col  # Si ocurre un error, regresamos la columna original sin cambios
 
-
 def cargar_usuarios():
     """Carga los usuarios desde la base de datos."""
-    conn = obtener_conexion()  # Abre la conexión
-    if conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT id, username, role, email FROM usuarios")
-            usuarios = cursor.fetchall()
-            return usuarios
-        except sqlite3.Error as e:
-            print(f"Error al cargar los usuarios: {e}")
-            return []
-        finally:
-            conn.close()  # Cierra la conexión
-    else:
-        return []  # Retorna una lista vacía si no pudo conectarse
+    conn = obtener_conexion()
+    if not conn:
+        return []  # Salida temprana si la conexión falla
 
+    try:
+        with conn:  # `with` cierra automáticamente
+            return conn.execute("SELECT id, username, role, email FROM usuarios").fetchall()
+    except sqlite3.Error as e:
+        print(f"Error al cargar los usuarios: {e}")
+        return []
 
 # Función para agregar un nuevo usuario
 def agregar_usuario(username, rol, password, email):
@@ -105,14 +88,12 @@ def agregar_usuario(username, rol, password, email):
             f"Si has recibido este correo por error, te recomendamos solicitar el cambio de tu contraseña tan pronto como puedas para garantizar la seguridad de tu cuenta.<br><br>"
             f"Gracias por ser parte de nuestro sistema.<br><br>"
         )
-
         correo_usuario(email, asunto, mensaje)  # Llamada a la función de correo
 
     except sqlite3.IntegrityError:
         st.error(f"El usuario '{username}' ya existe.")
     finally:
         conn.close()
-
 
 def editar_usuario(id, username, rol, password, email):
     conn = obtener_conexion()
@@ -204,27 +185,10 @@ def eliminar_usuario(id):
     else:
         st.error("Usuario no encontrado.")
 
-# Función que genera un enlace de descarga en HTML (no se integra en la tabla)
-def get_download_link_icon(img_path):
-    # Determinar el MIME type según la extensión
-    mime = "image/jpeg"
-    if img_path.lower().endswith(".png"):
-        mime = "image/png"
-    elif img_path.lower().endswith((".jpg", ".jpeg")):
-        mime = "image/jpeg"
-    with open(img_path, "rb") as f:
-        data = f.read()
-    b64 = base64.b64encode(data).decode()
-    file_name = os.path.basename(img_path)
-    # Usamos un emoji de flecha abajo (⬇️) como icono
-    html = f'<a href="data:{mime};base64,{b64}" download="{file_name}" style="text-decoration: none; font-size:20px;">⬇️</a>'
-    return html
-
 @st.cache_data
 def cargar_datos_uis():
     """Carga y cachea los datos de las tablas 'datos_uis' y 'ofertas_comercial'."""
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = obtener_conexion()
     query_datos_uis = """
         SELECT apartment_id, latitud, longitud, provincia, municipio, poblacion, cto_con_proyecto, serviciable 
         FROM datos_uis
@@ -244,8 +208,7 @@ def limpiar_mapa():
     st.write("### Mapa actualizado")  # Esto forzará un refresh
 
 def cargar_provincias():
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = obtener_conexion()
     query = "SELECT DISTINCT provincia FROM datos_uis"
     df = pd.read_sql(query, conn)
     conn.close()
@@ -254,8 +217,7 @@ def cargar_provincias():
 
 @st.cache_data
 def cargar_datos_por_provincia(provincia):
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = obtener_conexion()
     query_datos_uis = """
         SELECT * 
         FROM datos_uis
@@ -274,15 +236,18 @@ def cargar_datos_por_provincia(provincia):
 
 
 def mapa_seccion():
+    """Muestra un mapa interactivo con los datos de serviciabilidad y ofertas."""
+
     # 🔹 LEYENDA DE COLORES
     st.markdown("""
-           🟢 **Serviciable** 
-           🟠 **Oferta (Contrato: Sí)** 
-           ⚫ **Oferta (No Interesado)** 
-           🔵 **Sin Oferta** 
-           🔴 **No Serviciable** 
-           🟣 **Incidencia reportada** 
-       """)
+       🟢 **Serviciable** 
+       🟠 **Oferta (Contrato: Sí)** 
+       ⚫ **Oferta (No Interesado)** 
+       🔵 **Sin Oferta** 
+       🔴 **No Serviciable** 
+       🟣 **Incidencia reportada** 
+    """)
+
     col1, col2, col3 = st.columns(3)
 
     provincias = cargar_provincias()
@@ -294,19 +259,17 @@ def mapa_seccion():
 
     with st.spinner("⏳ Cargando datos..."):
         datos_uis, ofertas_df = cargar_datos_por_provincia(provincia_sel)
-        if datos_uis.empty:
-            st.error("❌ No se encontraron datos para la provincia seleccionada.")
-            return
 
+    if datos_uis.empty:
+        st.error("❌ No se encontraron datos para la provincia seleccionada.")
+        return
+
+    # 🔹 Filtros de Municipio y Población
     municipios = sorted(datos_uis['municipio'].dropna().unique())
     municipio_sel = col2.selectbox("Municipio", ["Todas"] + municipios)
 
-    if municipio_sel != "Todas":
-        datos_filtrados = datos_uis[datos_uis["municipio"] == municipio_sel].copy()
-        ofertas_filtradas = ofertas_df[ofertas_df["municipio"] == municipio_sel].copy()
-    else:
-        datos_filtrados = datos_uis.copy()
-        ofertas_filtradas = ofertas_df.copy()
+    datos_filtrados = datos_uis if municipio_sel == "Todas" else datos_uis[datos_uis["municipio"] == municipio_sel]
+    ofertas_filtradas = ofertas_df if municipio_sel == "Todas" else ofertas_df[ofertas_df["municipio"] == municipio_sel]
 
     poblaciones = sorted(datos_filtrados['poblacion'].dropna().unique())
     poblacion_sel = col3.selectbox("Población", ["Todas"] + poblaciones)
@@ -315,65 +278,61 @@ def mapa_seccion():
         datos_filtrados = datos_filtrados[datos_filtrados["poblacion"] == poblacion_sel]
         ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["poblacion"] == poblacion_sel]
 
+    # 🔹 Filtramos datos sin coordenadas
     datos_filtrados = datos_filtrados.dropna(subset=['latitud', 'longitud'])
-    datos_filtrados['latitud'] = datos_filtrados['latitud'].astype(float)
-    datos_filtrados['longitud'] = datos_filtrados['longitud'].astype(float)
+    datos_filtrados[['latitud', 'longitud']] = datos_filtrados[['latitud', 'longitud']].astype(float)
 
     if datos_filtrados.empty:
         st.warning("⚠️ No hay datos que cumplan los filtros seleccionados.")
         return
 
-    serviciable_dict = dict(zip(ofertas_filtradas["apartment_id"], ofertas_filtradas["serviciable"].str.strip().str.lower()))
-    contrato_dict = dict(zip(ofertas_filtradas["apartment_id"], ofertas_filtradas["Contrato"].str.strip().str.lower()))
-    incidencia_dict = dict(zip(ofertas_filtradas["apartment_id"], ofertas_filtradas["incidencia"].str.strip().str.lower()))
+    # 🔹 Diccionarios para rápida búsqueda
+    serviciable_dict = ofertas_filtradas.set_index("apartment_id")["serviciable"].str.strip().str.lower().to_dict()
+    contrato_dict = ofertas_filtradas.set_index("apartment_id")["Contrato"].str.strip().str.lower().to_dict()
+    incidencia_dict = ofertas_filtradas.set_index("apartment_id")["incidencia"].str.strip().str.lower().to_dict()
 
-    center_lat = datos_filtrados['latitud'].mean()
-    center_lon = datos_filtrados['longitud'].mean()
+    center_lat, center_lon = datos_filtrados[['latitud', 'longitud']].mean()
 
     limpiar_mapa()  # 🔹 Evita la sobrecarga de mapas
+
     with st.spinner("⏳ Cargando mapa..."):
-        m = folium.Map(location=[center_lat, center_lon], zoom_start=12, max_zoom=21,
-                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+        m = folium.Map(
+            location=[center_lat, center_lon], zoom_start=12, max_zoom=21,
+            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google"
+        )
         cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
 
+        # 🔹 Agrupamos coordenadas para evitar solapamientos
         coord_counts = datos_filtrados.groupby(['latitud', 'longitud']).size().to_dict()
 
         for _, row in datos_filtrados.iterrows():
             apt_id = row['apartment_id']
-            lat_val = row['latitud']
-            lon_val = row['longitud']
+            lat_val, lon_val = row['latitud'], row['longitud']
             popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
 
-            # Obtener valores de serviciable, contrato e incidencia
-            serviciable_ofertas = serviciable_dict.get(apt_id, "")  # De ofertas_comercial
-            contrato_val = contrato_dict.get(apt_id, "")  # De ofertas_comercial
-            incidencia_val = incidencia_dict.get(apt_id, "") # De ofertas_comercial
-            serviciable_uis = str(row["serviciable"]).strip()  # De datos_uis
-
-            # Determinar color según las reglas
-            if incidencia_val == "sí":
+            # 🔹 Determinamos color del marcador
+            if incidencia_dict.get(apt_id, "") == "sí":
                 marker_color = 'purple'  # 🟣 Incidencia
-            elif serviciable_ofertas == "no":
+            elif serviciable_dict.get(apt_id, "") == "no":
                 marker_color = 'red'  # 🔴 No Serviciable
-            elif serviciable_uis == "sí":
+            elif str(row["serviciable"]).strip().lower() == "sí":
                 marker_color = 'green'  # 🟢 Serviciable
-            elif contrato_val == "sí":
+            elif contrato_dict.get(apt_id, "") == "sí":
                 marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
-            elif contrato_val == "no interesado":
+            elif contrato_dict.get(apt_id, "") == "no interesado":
                 marker_color = 'gray'  # ⚫ Oferta (No Interesado)
             else:
                 marker_color = 'blue'  # 🔵 Sin Oferta
 
-            # Ajuste de coordenadas para evitar solapamiento
+            # 🔹 Ajuste de coordenadas solo si hay solapamiento
             count = coord_counts.get((lat_val, lon_val), 1)
-            lat_offset = count * 0.00003 if count > 1 else 0
-            lon_offset = count * -0.00003 if count > 1 else 0
-            new_lat = lat_val + lat_offset
-            new_lon = lon_val + lon_offset
-            coord_counts[(lat_val, lon_val)] = count - 1
+            if count > 1:
+                lat_val += count * 0.00003
+                lon_val -= count * 0.00003
+                coord_counts[(lat_val, lon_val)] = count - 1
 
             folium.Marker(
-                location=[new_lat, new_lon],
+                location=[lat_val, lon_val],
                 popup=popup_text,
                 icon=folium.Icon(color=marker_color, icon="map-marker"),
                 tooltip=apt_id  # Usamos el ID como tooltip
@@ -381,12 +340,11 @@ def mapa_seccion():
 
         map_data = st_folium(m, height=500, use_container_width=True)
 
-        # Extraer el apartment_id clickeado
+        # 🔹 Extraer el apartment_id clickeado
         selected_apartment = map_data.get("last_object_clicked_tooltip")
 
         if selected_apartment:
             mostrar_info_apartamento(selected_apartment, datos_filtrados, ofertas_filtradas)
-
 
 def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df):
     """ Muestra la información del apartamento clickeado de forma bonita y estructurada en tablas """
@@ -476,8 +434,7 @@ def viabilidades_seccion():
     # Cargar los datos de la base de datos
     with st.spinner("⏳ Cargando los datos de viabilidades..."):
         try:
-            conn = sqlitecloud.connect(
-                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+            conn = obtener_conexion()
             query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = pd.read_sql(query_tables, conn)
 
@@ -578,7 +535,6 @@ def viabilidades_seccion():
         else:
             st.error("❌ No se encontraron coordenadas en el clic.")
 
-
 def mostrar_formulario(click_data):
     """Muestra el formulario para editar los datos de la viabilidad y guarda los cambios en la base de datos."""
 
@@ -676,8 +632,7 @@ def mostrar_formulario(click_data):
     if st.button(f"💾 Guardar cambios para el Ticket {ticket}"):
         try:
             # Conectar a la base de datos (usuarios.db)
-            conn = sqlitecloud.connect(
-                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+            conn = obtener_conexion()
             cursor = conn.cursor()
 
             # Sentencia UPDATE para guardar los cambios basados en el ticket
@@ -745,7 +700,6 @@ def admin_dashboard():
     controller = CookieController(key="cookies")
     # Personalizar la barra lateral
     st.sidebar.title("📊 Panel de Administración")
-
 
     # Sidebar con opción de menú más moderno
     with st.sidebar:
@@ -833,8 +787,7 @@ def admin_dashboard():
 
         with st.spinner("Cargando datos..."):
             try:
-                conn = sqlitecloud.connect(
-                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                conn = obtener_conexion()
                 query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
                 tables = pd.read_sql(query_tables, conn)
                 if 'datos_uis' not in tables['name'].values:
@@ -900,9 +853,7 @@ def admin_dashboard():
 
         with st.spinner("⏳ Cargando ofertas comerciales..."):
             try:
-                conn = sqlitecloud.connect(
-                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-                )
+                conn = obtener_conexion()
                 # Consultar ambas tablas
                 query_ofertas_comercial = "SELECT * FROM ofertas_comercial"
                 query_comercial_rafa = "SELECT * FROM comercial_rafa"
@@ -1004,8 +955,7 @@ def admin_dashboard():
             if st.button("Eliminar Oferta"):
                 try:
                     # Conexión a la base de datos
-                    conn = sqlitecloud.connect(
-                        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                    conn = obtener_conexion()
 
                     # Ejecutar la eliminación en ambas tablas (ofertas_comercial y comercial_rafa)
                     query_delete_oferta = f"DELETE FROM ofertas_comercial WHERE apartment_id = '{selected_apartment_id}'"
@@ -1181,107 +1131,154 @@ def admin_dashboard():
                     eliminar_usuario(eliminar_id)
 
 
-    # Opción: Cargar Nuevos Datos
+
     elif opcion == "Cargar Nuevos Datos":
+
         st.header("📤 Cargar Nuevos Datos")
+
         st.info(
-            "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión mas moderna. ¡ATENCIÓN! ¡Se eliminarán todos los datos actuales!")
+
+            "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión más moderna. "
+
+            "¡ATENCIÓN! ¡Se eliminarán todos los datos actuales!"
+
+        )
+
         log_trazabilidad(
+
             st.session_state["username"],
+
             "Cargar Nuevos Datos",
+
             "El admin accedió a la sección de carga de nuevos datos y se procederá a reemplazar el contenido de la tabla."
+
         )
 
         uploaded_file = st.file_uploader("Selecciona un archivo Excel o CSV", type=["xlsx", "csv"])
 
         if uploaded_file is not None:
+
             try:
-                with st.spinner("Cargando archivo..."):
+
+                with st.spinner("⏳ Cargando archivo..."):
+
                     if uploaded_file.name.endswith(".xlsx"):
+
                         data = pd.read_excel(uploaded_file)
+
                     elif uploaded_file.name.endswith(".csv"):
+
                         data = pd.read_csv(uploaded_file)
 
                 columnas_requeridas = [
+
                     "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
+
                     "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
+
                     "apartment_operational_state", "cto_id", "olt", "cto", "LATITUD", "LONGITUD",
+
                     "cto_con_proyecto", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
+
                 ]
 
                 columnas_faltantes = [col for col in columnas_requeridas if col not in data.columns]
 
                 if columnas_faltantes:
+
                     st.error(
+
                         f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}"
+
                     )
+
                 else:
+
                     data_filtrada = data[columnas_requeridas].copy()
-                    # Convertir LATITUD y LONGITUD a float, reemplazando comas por puntos
+
+                    # Convertimos LATITUD y LONGITUD a float, reemplazando comas por puntos
+
                     data_filtrada["LATITUD"] = data_filtrada["LATITUD"].astype(str).str.replace(",", ".").astype(float)
+
                     data_filtrada["LONGITUD"] = data_filtrada["LONGITUD"].astype(str).str.replace(",", ".").astype(
                         float)
 
-                    st.write("Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
+                    st.write(
+                        "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
+
                     conn = obtener_conexion()
+
                     cursor = conn.cursor()
 
-                    # Borramos todos los registros de la tabla
+                    # Eliminamos todos los registros de la tabla y reiniciamos el ID autoincremental
+
                     cursor.execute("DELETE FROM datos_uis")
-                    # Reiniciamos el ID autoincremental
+
                     cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
+
                     conn.commit()
 
-                    # Preparamos los datos para la inserción
-                    insert_values = []
-                    for index, row in data_filtrada.iterrows():
-                        insert_values.append((
-                            row["id_ams"],
-                            row["apartment_id"],
-                            row["address_id"],
-                            row["provincia"],
-                            row["municipio"],
-                            row["poblacion"],
-                            row["vial"],
-                            row["numero"],
-                            row["parcela_catastral"],
-                            row["letra"],
-                            row["cp"],
-                            row["site_operational_state"],
-                            row["apartment_operational_state"],
-                            row["cto_id"],
-                            row["olt"],
-                            row["cto"],
-                            row["LATITUD"],
-                            row["LONGITUD"],
-                            row["cto_con_proyecto"],
-                            row["COMERCIAL"],
-                            row["ZONA"],
-                            row["FECHA"],
-                            row["SERVICIABLE"],
-                            row["MOTIVO"],
-                            row["contrato_uis"]
-                        ))
+                    total_registros = len(data_filtrada)
 
-                    # Insertamos todos los registros en un solo lote
-                    cursor.executemany("""
+                    # Extraemos los valores de forma vectorizada
+
+                    insert_values = data_filtrada.values.tolist()
+
+                    # Barra de progreso y chunked insertion para mejorar el rendimiento
+
+                    progress_bar = st.progress(0)
+
+                    chunk_size = 500  # Puedes ajustar el tamaño del chunk según tu dataset
+
+                    num_chunks = (total_registros + chunk_size - 1) // chunk_size
+
+                    query = """
+
                         INSERT INTO datos_uis (
-                            id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
-                            parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, 
-                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, 
-                            SERVICIABLE, MOTIVO, contrato_uis
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, insert_values)
 
-                    conn.commit()
+                            id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
+
+                            parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, 
+
+                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, 
+
+                            SERVICIABLE, MOTIVO, contrato_uis
+
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+
+                    """
+
+                    for i in range(num_chunks):
+                        chunk = insert_values[i * chunk_size: (i + 1) * chunk_size]
+
+                        cursor.executemany(query, chunk)
+
+                        conn.commit()
+
+                        progress_bar.progress(min((i + 1) / num_chunks, 1.0))
+
                     conn.close()
 
-                    st.success(f"Datos reemplazados exitosamente. Total registros cargados: {len(insert_values)}")
+                    progress_bar.progress(1.0)
+
+                    st.success(f"🎉 Datos reemplazados exitosamente. Total registros cargados: {total_registros}")
+
+                    progress_bar.empty()
+
                     log_trazabilidad(
+
                         st.session_state["username"],
+
                         "Cargar Nuevos Datos",
-                        f"El admin reemplazó los datos existentes con {len(insert_values)} nuevos registros."
+
+                        f"El admin reemplazó los datos existentes con {total_registros} nuevos registros."
+
                     )
+
+            except Exception as e:
+
+                st.error(f"❌ Error al cargar el archivo: {e}")
+
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
 
@@ -1299,8 +1296,7 @@ def admin_dashboard():
             with st.spinner("Eliminando registros..."):
                 try:
                     # Conectar a la base de datos
-                    conn = sqlitecloud.connect(
-                        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                    conn = obtener_conexion()
                     cursor = conn.cursor()
 
                     # Eliminar todos los registros de la tabla
@@ -1315,8 +1311,7 @@ def admin_dashboard():
 
         with st.spinner("Cargando trazabilidad..."):
             try:
-                conn = sqlitecloud.connect(
-                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                conn = obtener_conexion()
                 query = "SELECT usuario_id, accion, detalles, fecha FROM trazabilidad"
                 trazabilidad_data = pd.read_sql(query, conn)
                 conn.close()
@@ -1367,8 +1362,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     # Conectar a la base de datos y realizar cada consulta
     def ejecutar_consulta(query, params=None):
         # Abrir la conexión para cada consulta
-        conn = sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+        conn = obtener_conexion()
         cursor = conn.cursor()
 
         cursor.execute(query, params if params else ())
@@ -1545,8 +1539,7 @@ def mostrar_control_versiones():
 # Función para crear el gráfico interactivo de Serviciabilidad
 def create_serviciable_graph():
     # Conectar y obtener datos de la primera tabla
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = obtener_conexion()
     cursor = conn.cursor()
 
     cursor.execute("SELECT COUNT(*) FROM datos_uis WHERE serviciable = 'Sí';")
@@ -1554,8 +1547,7 @@ def create_serviciable_graph():
     conn.close()
 
     # Conectar y obtener datos de la segunda tabla
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = obtener_conexion()
     cursor = conn.cursor()
 
     cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE serviciable = 'No';")
@@ -1599,8 +1591,7 @@ def create_incidencias_graph(cursor):
 # Gráfico Distribución de Tipos de Vivienda
 def create_tipo_vivienda_distribution_graph():
     # Conectar y obtener datos de la tabla ofertas_comercial
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = obtener_conexion()
     cursor = conn.cursor()
 
     cursor.execute("SELECT Tipo_Vivienda, COUNT(*) FROM ofertas_comercial GROUP BY Tipo_Vivienda;")
@@ -1608,8 +1599,7 @@ def create_tipo_vivienda_distribution_graph():
     conn.close()
 
     # Conectar y obtener datos de la tabla comercial_rafa
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = obtener_conexion()
     cursor = conn.cursor()
 
     cursor.execute("SELECT Tipo_Vivienda, COUNT(*) FROM comercial_rafa GROUP BY Tipo_Vivienda;")
@@ -1680,7 +1670,6 @@ def home_page():
 
     except Exception as e:
         st.error(f"Hubo un error al cargar los gráficos: {e}")
-        print(f"Error al generar los gráficos: {e}")
     finally:
         conn.close()  # No olvides cerrar la conexión al final
 

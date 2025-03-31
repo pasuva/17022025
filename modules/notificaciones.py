@@ -3,7 +3,6 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.header import Header
-
 from modules import plantilla_email
 
 # Función para limpiar las cadenas y eliminar saltos de línea problemáticos

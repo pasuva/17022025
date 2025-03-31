@@ -1,12 +1,8 @@
 import streamlit as st
-import folium
+import folium, sqlite3, os, re, time, sqlitecloud
 from folium.plugins import MarkerCluster
 import pandas as pd
-import sqlite3
-import os
-import re
 from streamlit_folium import st_folium
-import time
 from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
@@ -14,7 +10,6 @@ from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_co
 from streamlit_geolocation import streamlit_geolocation
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
-import sqlitecloud  # Importamos el cliente de SQLite Cloud
 from modules.cloudinary import upload_image_to_cloudinary
 
 cookie_name = "my_app"

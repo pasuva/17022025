@@ -1,13 +1,7 @@
-import uuid
-import base64
-import os
-import bcrypt
+import uuid, os, base64, bcrypt, sqlitecloud
 import streamlit as st
 from datetime import datetime
 from streamlit_cookies_controller import CookieController  # Se importa de forma local
-
-# Conexión a SQLite Cloud
-import sqlitecloud
 
 # URL de conexión a SQLite Cloud
 DB_URL = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
