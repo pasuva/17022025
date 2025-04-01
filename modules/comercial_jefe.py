@@ -150,7 +150,7 @@ def mapa_dashboard():
             if municipio_sel:
                 poblaciones = sorted(datos_uis[datos_uis['municipio'] == municipio_sel]['poblacion'].dropna().unique())
                 poblacion_sel = st.selectbox("Seleccione Población", poblaciones, key="poblacion_sel")
-            comercial_elegido = st.radio("Asignar a:", ["comercial_rafa1", "comercial_rafa2"], key="comercial_elegido")
+            comercial_elegido = st.radio("Asignar a:", ["jose", "rafaela"], key="comercial_elegido")
 
             if municipio_sel and poblacion_sel:
                 # Verificar asignación previa

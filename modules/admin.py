@@ -1125,160 +1125,85 @@ def admin_dashboard():
 
             st.subheader("Eliminar Usuario")
             eliminar_id = st.number_input("ID del Usuario a Eliminar", min_value=1, step=1)
-
             if eliminar_id:
                 if st.button("Eliminar Usuario"):
                     eliminar_usuario(eliminar_id)
 
-
-
     elif opcion == "Cargar Nuevos Datos":
-
         st.header("📤 Cargar Nuevos Datos")
-
         st.info(
-
             "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión más moderna. "
-
             "¡ATENCIÓN! ¡Se eliminarán todos los datos actuales!"
-
         )
-
         log_trazabilidad(
-
             st.session_state["username"],
-
             "Cargar Nuevos Datos",
-
             "El admin accedió a la sección de carga de nuevos datos y se procederá a reemplazar el contenido de la tabla."
-
         )
-
         uploaded_file = st.file_uploader("Selecciona un archivo Excel o CSV", type=["xlsx", "csv"])
-
         if uploaded_file is not None:
-
             try:
-
                 with st.spinner("⏳ Cargando archivo..."):
-
                     if uploaded_file.name.endswith(".xlsx"):
-
                         data = pd.read_excel(uploaded_file)
-
                     elif uploaded_file.name.endswith(".csv"):
-
                         data = pd.read_csv(uploaded_file)
-
                 columnas_requeridas = [
-
                     "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
-
                     "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
-
                     "apartment_operational_state", "cto_id", "olt", "cto", "LATITUD", "LONGITUD",
-
                     "cto_con_proyecto", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
-
                 ]
-
                 columnas_faltantes = [col for col in columnas_requeridas if col not in data.columns]
-
                 if columnas_faltantes:
-
                     st.error(
-
                         f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}"
-
                     )
-
                 else:
-
                     data_filtrada = data[columnas_requeridas].copy()
-
                     # Convertimos LATITUD y LONGITUD a float, reemplazando comas por puntos
-
                     data_filtrada["LATITUD"] = data_filtrada["LATITUD"].astype(str).str.replace(",", ".").astype(float)
-
                     data_filtrada["LONGITUD"] = data_filtrada["LONGITUD"].astype(str).str.replace(",", ".").astype(
                         float)
-
                     st.write(
                         "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
-
                     conn = obtener_conexion()
-
                     cursor = conn.cursor()
-
                     # Eliminamos todos los registros de la tabla y reiniciamos el ID autoincremental
-
                     cursor.execute("DELETE FROM datos_uis")
-
                     cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
-
                     conn.commit()
-
                     total_registros = len(data_filtrada)
-
                     # Extraemos los valores de forma vectorizada
-
                     insert_values = data_filtrada.values.tolist()
-
                     # Barra de progreso y chunked insertion para mejorar el rendimiento
-
                     progress_bar = st.progress(0)
-
                     chunk_size = 500  # Puedes ajustar el tamaño del chunk según tu dataset
-
                     num_chunks = (total_registros + chunk_size - 1) // chunk_size
-
                     query = """
-
                         INSERT INTO datos_uis (
-
                             id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
-
                             parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, 
-
                             cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, 
-
                             SERVICIABLE, MOTIVO, contrato_uis
-
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-
                     """
-
                     for i in range(num_chunks):
                         chunk = insert_values[i * chunk_size: (i + 1) * chunk_size]
-
                         cursor.executemany(query, chunk)
-
                         conn.commit()
-
                         progress_bar.progress(min((i + 1) / num_chunks, 1.0))
-
                     conn.close()
-
                     progress_bar.progress(1.0)
-
                     st.success(f"🎉 Datos reemplazados exitosamente. Total registros cargados: {total_registros}")
-
                     progress_bar.empty()
-
                     log_trazabilidad(
-
                         st.session_state["username"],
-
                         "Cargar Nuevos Datos",
-
                         f"El admin reemplazó los datos existentes con {total_registros} nuevos registros."
-
                     )
-
             except Exception as e:
-
                 st.error(f"❌ Error al cargar el archivo: {e}")
-
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
 
