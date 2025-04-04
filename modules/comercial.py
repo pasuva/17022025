@@ -14,29 +14,31 @@ from modules.cloudinary import upload_image_to_cloudinary
 
 cookie_name = "my_app"
 
+# Función para obtener conexión a la base de datos (SQLite Cloud)
+def get_db_connection():
+    return sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+    )
+
+# Función para registrar trazabilidad
 def log_trazabilidad(usuario, accion, detalles):
-    """Registra en la base de datos la trazabilidad de acciones del usuario."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        # Usamos un context manager para asegurar el cierre
-        with sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-        ) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
-                VALUES (?, ?, ?, ?)
-            """, (usuario, accion, detalles, fecha))
-            conn.commit()
-    except sqlite3.OperationalError as e:
-        st.error(f"Error al escribir en la base de datos de trazabilidad: {e}")
+    cursor.execute(
+        """
+        INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
+        VALUES (?, ?, ?, ?)
+        """,
+        (usuario, accion, detalles, fecha)
+    )
+    conn.commit()
+    conn.close()
 
 
 def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
     try:
-        conn = sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-        )
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         cursor.execute("SELECT COUNT(*) FROM ofertas_comercial WHERE apartment_id = ?", (oferta_data["Apartment ID"],))
@@ -197,9 +199,7 @@ def comercial_dashboard():
 
         with st.spinner("⏳ Cargando los datos del comercial..."):
             try:
-                #conn = sqlite3.connect("data/usuarios.db")
-                conn = sqlitecloud.connect(
-                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                conn = get_db_connection()
                 query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
                 tables = pd.read_sql(query_tables, conn)
 
@@ -369,10 +369,7 @@ def comercial_dashboard():
         comercial_usuario = st.session_state["username"]  # Obtener el comercial logueado
 
         try:
-            #conn = sqlite3.connect("data/usuarios.db")
-            conn = sqlitecloud.connect(
-                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
-
+            conn = get_db_connection()
             # Consulta SQL con filtro por comercial logueado (primera tabla: ofertas_comercial)
             query_ofertas = """
                 SELECT oc.apartment_id, oc.provincia, oc.municipio, oc.poblacion, 
@@ -463,9 +460,7 @@ def comercial_dashboard():
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
-    #conn = sqlite3.connect("data/usuarios.db")
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = get_db_connection()
     cursor = conn.cursor()
     fecha_actual = datetime.now().strftime("%Y%m%d")
 
@@ -490,9 +485,7 @@ def guardar_viabilidad(datos):
     (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
     """
     # Guardar los datos en la base de datos
-    #conn = sqlite3.connect("data/usuarios.db")
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO viabilidades (
@@ -559,9 +552,7 @@ def guardar_viabilidad(datos):
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
     """Recupera las viabilidades asociadas al usuario logueado."""
-    #conn = sqlite3.connect("data/usuarios.db")
-    conn = sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+    conn = get_db_connection()
     cursor = conn.cursor()
     # Se asume que el usuario logueado está guardado en st.session_state["username"]
     cursor.execute("SELECT latitud, longitud, ticket FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
@@ -727,9 +718,7 @@ def mostrar_formulario(click_data):
     form_key = f"{lat_value}_{lng_value}"
 
     try:
-        #conn = sqlite3.connect("data/usuarios.db")
-        conn = sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+        conn = get_db_connection()
         query = """
             SELECT * FROM datos_uis 
             WHERE latitud = ? AND longitud = ?
@@ -871,9 +860,7 @@ def mostrar_formulario(click_data):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia)
 
             # Obtener los emails de todos los usuarios con rol admin
-            #conn = sqlite3.connect("data/usuarios.db")
-            conn = sqlitecloud.connect(
-                "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
             resultados = cursor.fetchall()  # Devuelve una lista de tuplas con cada email

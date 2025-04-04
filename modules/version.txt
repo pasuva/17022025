@@ -30,3 +30,4 @@ v2.0.8 - Corrección de errores y mejoras.
 v2.0.9 - Actualizada base de datos. Mejorada trazabilidad de la aplicación. Añadida la opción de modificar datos ya visitados por los comerciales. Añadida persistencia de datos.
 v2.1.0 - Corregidos los errores por los que las imágenes de las incidencias no se mostraban ni guardaban correctamente.
 v2.1.1 - Corrección de fallo por el cual no se cargaba de forma eficiente los datos nuevos de asignación a la B.B.D.D.
+v2.1.2 - Añadido a datos UNICO 24

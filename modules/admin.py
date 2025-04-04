@@ -1152,7 +1152,7 @@ def admin_dashboard():
                     "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
                     "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
                     "apartment_operational_state", "cto_id", "olt", "cto", "LATITUD", "LONGITUD",
-                    "cto_con_proyecto", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
+                    "cto_con_proyecto", "UNICO24", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
                 ]
                 columnas_faltantes = [col for col in columnas_requeridas if col not in data.columns]
                 if columnas_faltantes:
@@ -1184,9 +1184,9 @@ def admin_dashboard():
                         INSERT INTO datos_uis (
                             id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
                             parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, 
-                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, COMERCIAL, ZONA, FECHA, 
+                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, UNICO24, COMERCIAL, ZONA, FECHA, 
                             SERVICIABLE, MOTIVO, contrato_uis
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """
                     for i in range(num_chunks):
                         chunk = insert_values[i * chunk_size: (i + 1) * chunk_size]
