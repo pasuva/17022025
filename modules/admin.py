@@ -11,6 +11,10 @@ from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
 
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import io
+
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos
@@ -1289,7 +1293,6 @@ def generar_informe(fecha_inicio, fecha_fin):
         # Abrir la conexión para cada consulta
         conn = obtener_conexion()
         cursor = conn.cursor()
-
         cursor.execute(query, params if params else ())
         result = cursor.fetchone()
         conn.close()  # Cerrar la conexión inmediatamente después de ejecutar la consulta
@@ -1300,7 +1303,7 @@ def generar_informe(fecha_inicio, fecha_fin):
         SELECT COUNT(DISTINCT apartment_id) 
         FROM datos_uis
         WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
-        """
+    """
     total_asignaciones = ejecutar_consulta(query_total, (fecha_inicio, fecha_fin))
 
     # 🔹 2️⃣ Cantidad de visitas (apartment_id presente en ambas tablas, sin filtrar por fecha)
@@ -1309,7 +1312,7 @@ def generar_informe(fecha_inicio, fecha_fin):
         FROM datos_uis d
         INNER JOIN ofertas_comercial o 
             ON d.apartment_id = o.apartment_id
-        """
+    """
     total_visitados = ejecutar_consulta(query_visitados)
 
     # 🔹 3️⃣ Cantidad de ventas (visitados donde contrato = 'Sí')
@@ -1319,17 +1322,17 @@ def generar_informe(fecha_inicio, fecha_fin):
         INNER JOIN ofertas_comercial o 
             ON d.apartment_id = o.apartment_id
         WHERE LOWER(o.contrato) = 'sí'
-        """
+    """
     total_ventas = ejecutar_consulta(query_ventas)
 
-    # 🔹 4️⃣ Cantidad de incidencias (donde incidencias = 'Sí')
+    # 🔹 4️⃣ Cantidad de incidencias (donde incidencia = 'Sí')
     query_incidencias = """
         SELECT COUNT(DISTINCT d.apartment_id)
         FROM datos_uis d
         INNER JOIN ofertas_comercial o 
             ON d.apartment_id = o.apartment_id
         WHERE LOWER(o.incidencia) = 'sí'
-        """
+    """
     total_incidencias = ejecutar_consulta(query_incidencias)
 
     # 🔹 5️⃣ Cantidad de viviendas no serviciables (donde serviciable = 'No')
@@ -1337,7 +1340,7 @@ def generar_informe(fecha_inicio, fecha_fin):
         SELECT COUNT(DISTINCT apartment_id)
         FROM ofertas_comercial
         WHERE LOWER(serviciable) = 'no'
-        """
+    """
     total_no_serviciables = ejecutar_consulta(query_no_serviciables)
 
     # 🔹 6️⃣ Cálculo de porcentajes
@@ -1348,7 +1351,7 @@ def generar_informe(fecha_inicio, fecha_fin):
 
     # 🔹 7️⃣ Crear DataFrame con los resultados
     informe = pd.DataFrame({
-        'Total Asignaciones': [total_asignaciones],
+        'Total Asignaciones Directas': [total_asignaciones],
         'Visitados': [total_visitados],
         'Ventas': [total_ventas],
         'Incidencias': [total_incidencias],
@@ -1358,7 +1361,7 @@ def generar_informe(fecha_inicio, fecha_fin):
         '% Incidencias': [porcentaje_incidencias],
         '% Viviendas No Serviciables': [porcentaje_no_serviciables]
     })
-
+    st.write("----------------------")
     # Crear tres columnas para los gráficos
     col1, col2, col3 = st.columns(3)
 
@@ -1384,28 +1387,23 @@ def generar_informe(fecha_inicio, fecha_fin):
     with col3:
         labels_serviciables = ['No Serviciables', 'Serviciables']
         values_serviciables = [porcentaje_no_serviciables, 100 - porcentaje_no_serviciables]
-
-        # Crear gráfico de barras usando go con el mismo estilo de los otros gráficos
         fig_serviciables = go.Figure(data=[go.Bar(
             x=labels_serviciables,
             y=values_serviciables,
             text=values_serviciables,
             textposition='outside',
-            marker=dict(color=['#ff6666', '#99cc99']), )
-
-        ])
-
+            marker=dict(color=['#ff6666', '#99cc99'])
+        )])
         fig_serviciables.update_layout(
             title="Distribución Viviendas visitadas Serviciables/No Serviciables",
             title_x=0,
-            plot_bgcolor='rgba(0, 0, 0, 0)',  # Fondo transparente para el gráfico (similar al estilo anterior)
+            plot_bgcolor='rgba(0, 0, 0, 0)',  # Fondo transparente
             showlegend=False,
             xaxis_title="Estado de Viviendas",
             yaxis_title="Porcentaje",
-            xaxis=dict(tickangle=0),  # Asegura que las etiquetas en el eje X estén alineadas horizontalmente
-            height=450  # Ajuste de altura para que el gráfico no ocupe mucho espacio
+            xaxis=dict(tickangle=0),
+            height=450
         )
-
         st.plotly_chart(fig_serviciables, use_container_width=True)
 
     # Resumen de los resultados
@@ -1413,16 +1411,105 @@ def generar_informe(fecha_inicio, fecha_fin):
     <div style="text-align: justify;">
     Durante el periodo analizado, que abarca desde el <strong>{fecha_inicio}</strong> hasta el <strong>{fecha_fin}</strong>, se han registrado un total de <strong>{total_asignaciones}</strong> asignaciones realizadas, lo que indica la cantidad de propiedades consideradas para asignación en este intervalo. De estas asignaciones, <strong>{total_visitados}</strong> propiedades fueron visitadas, lo que representa un <strong>{porcentaje_visitas:.2f}%</strong> del total de asignaciones. Esto refleja el grado de éxito en la conversión de asignaciones a visitas, lo que es un indicador de la efectividad de la asignación de propiedades.
     De las propiedades visitadas, <strong>{total_ventas}</strong> viviendas fueron finalmente vendidas, lo que constituye el <strong>{porcentaje_ventas:.2f}%</strong> de las propiedades visitadas. Este porcentaje es crucial, ya que nos muestra cuán efectivas han sido las visitas en convertir en ventas las oportunidades de negocio. A su vez, se han registrado <strong>{total_incidencias}</strong> incidencias durante las visitas, lo que equivale a un <strong>{porcentaje_incidencias:.2f}%</strong> de las asignaciones. Las incidencias indican problemas o dificultades encontradas en las propiedades, lo que podría afectar la decisión de los posibles compradores.
-    Por otro lado, en cuanto a la calidad del inventario, <strong>{total_no_serviciables}</strong> propiedades fueron catalogadas como no serviciables, lo que representa un <strong>{porcentaje_no_serviciables:.2f}%</strong> del total de asignaciones. Este dato refleja la cantidad de viviendas que no están en condiciones para ser ofrecidas o comercializadas debido a su estado o características. 
+    Por otro lado, en cuanto a la calidad del inventario, <strong>{total_no_serviciables}</strong> propiedades fueron catalogadas como no serviciables, lo que representa un <strong>{porcentaje_no_serviciables:.2f}%</strong> del total de asignaciones.
     </div>
     <br>
     """
-
-    # Muestra el resumen en Streamlit
     st.markdown(resumen, unsafe_allow_html=True)
 
-    return informe
+    # ─────────────────────────────────────────────
+    # 🔹 Informe de Trazabilidad (Asignación y Desasignación)
+    # ─────────────────────────────────────────────
+    st.write("----------------------")
+    query_asignaciones_trazabilidad = """
+        SELECT COUNT(*) 
+        FROM trazabilidad
+        WHERE LOWER(accion) LIKE '%asignación%' 
+          AND STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
+    """
+    query_desasignaciones = """
+        SELECT COUNT(*) 
+        FROM trazabilidad
+        WHERE LOWER(accion) LIKE '%desasignación%' 
+          AND STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
+    """
+    total_asignaciones_trazabilidad = ejecutar_consulta(query_asignaciones_trazabilidad, (fecha_inicio, fecha_fin))
+    total_desasignaciones = ejecutar_consulta(query_desasignaciones, (fecha_inicio, fecha_fin))
+    total_movimientos = total_asignaciones_trazabilidad + total_desasignaciones
 
+    porcentaje_asignaciones = (
+                total_asignaciones_trazabilidad / total_movimientos * 100) if total_movimientos > 0 else 0
+    porcentaje_desasignaciones = (total_desasignaciones / total_movimientos * 100) if total_movimientos > 0 else 0
+
+    informe_trazabilidad = pd.DataFrame({
+        'Asignaciones Gestor': [total_asignaciones_trazabilidad],
+        'Desasignaciones Gestor': [total_desasignaciones],
+        'Total Movimientos': [total_movimientos],
+        '% Asignaciones': [porcentaje_asignaciones],
+        '% Desasignaciones': [porcentaje_desasignaciones]
+    })
+
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        fig_mov = go.Figure()
+
+        fig_mov.add_trace(go.Bar(
+            x=[porcentaje_asignaciones],
+            y=['Asignaciones'],
+            orientation='h',
+            name='Asignaciones',
+            marker=dict(color='#3366cc'),
+            text=f"{porcentaje_asignaciones:.1f}%",
+            textposition="auto",
+            width=0.5  # 👈 Más fino (por defecto es 0.8)
+        ))
+
+        fig_mov.add_trace(go.Bar(
+            x=[porcentaje_desasignaciones],
+            y=['Desasignaciones'],
+            orientation='h',
+            name='Desasignaciones',
+            marker=dict(color='#ff9933'),
+            text=f"{porcentaje_desasignaciones:.1f}%",
+            textposition="auto",
+            width=0.5  # 👈 Más fino
+        ))
+
+        fig_mov.update_layout(
+            title="Distribución Asignaciones/Desasignaciones realizadas por el gestor",
+            xaxis_title="Porcentaje (%)",
+            yaxis_title="Tipo de Movimiento",
+            barmode='stack',  # Esto apila las barras
+            showlegend=False,
+            title_x=0,
+            bargap=0.05,  # Menor espacio entre las barras
+            xaxis=dict(
+                range=[0, 100],  # Para que la escala vaya del 0 al 100
+            ),
+            yaxis=dict(
+                tickmode='array',
+                tickvals=['Asignaciones', 'Desasignaciones'],
+                ticktext=['Asignaciones', 'Desasignaciones']
+            ),
+            width=400,  # Ancho del gráfico
+            height=300  # Ajusta la altura aquí (por ejemplo, 300px)
+        )
+
+        st.plotly_chart(fig_mov, use_container_width=True)
+
+    with col_t2:
+        st.markdown("<div style='margin-top:40px;'>", unsafe_allow_html=True)
+        st.dataframe(informe_trazabilidad)
+        resumen_trazabilidad = f"""
+            <div style="text-align: justify;">
+            En el periodo analizado, del <strong>{fecha_inicio}</strong> al <strong>{fecha_fin}</strong>, se han registrado un total de <strong>{total_movimientos}</strong> movimientos en la trazabilidad realizados por el gestor comercial. De ellos, <strong>{total_asignaciones_trazabilidad}</strong> corresponden a asignaciones (<strong>{porcentaje_asignaciones:.2f}%</strong>) y <strong>{total_desasignaciones}</strong> a desasignaciones (<strong>{porcentaje_desasignaciones:.2f}%</strong>). 
+            </div>
+            <br>
+            """
+        st.markdown(resumen_trazabilidad, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.write("----------------------")
+    return informe
 
 # Función para leer y mostrar el control de versiones
 def mostrar_control_versiones():
