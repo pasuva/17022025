@@ -810,16 +810,16 @@ def mostrar_formulario(click_data):
             "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
             "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
             "Contrato": contrato,
-            "fecha": pd.Timestamp.now()
+            "fecha": pd.Timestamp.now(tz="Europe/Madrid")
         }
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id)
 
-            # Obtener los emails de todos los administradores
+            # Obtener los emails de todos los administradores y gestores (comercial_jefe)
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+            cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin', 'comercial_jefe')")
             resultados = cursor.fetchall()  # Lista de tuplas con emails
             emails_admin = [fila[0] for fila in resultados]
             conn.close()
@@ -830,7 +830,7 @@ def mostrar_formulario(click_data):
                 descripcion_oferta = (
                     f"🆕 Se ha añadido una nueva oferta para el apartamento con ID {apartment_id}.<br><br>"
                     f"📑 <strong>Detalles de la oferta realizada por el comercial {nombre_comercial}:</strong><br>"
-                    f"🏠 <strong>Apartment ID:</strong> {oferta_data.get('Apartment ID', 'No disponible')}<br>"
+                    f"🏠 <strong>Apartment ID:</strong> {oferta_data.get('apartment_id', 'No disponible')}<br>"
                     f"🌍 <strong>Provincia:</strong> {oferta_data.get('Provincia', 'No disponible')}<br>"
                     f"📌 <strong>Municipio:</strong> {oferta_data.get('Municipio', 'No disponible')}<br>"
                     f"🏡 <strong>Población:</strong> {oferta_data.get('Población', 'No disponible')}<br>"
@@ -848,15 +848,15 @@ def mostrar_formulario(click_data):
                     f"Si necesita hacer modificaciones o tiene preguntas, contacte al comercial responsable o al equipo de administración."
                 )
 
-                # Enviar la notificación a todos los administradores
+                # Enviar la notificación a todos los administradores y gestores
                 for email in emails_admin:
                     correo_oferta_comercial(email, apartment_id, descripcion_oferta)
 
                 st.success("✅ Oferta enviada con éxito")
-                st.info(
-                    f"📧 Se ha enviado una notificación a los administradores sobre la oferta completada.")
+                st.info("📧 Se ha enviado una notificación a los administradores y gestores sobre la oferta completada.")
             else:
-                st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
+                st.warning("⚠️ No se encontró ningún email de administrador/gestor, no se pudo enviar la notificación.")
+
 
 if __name__ == "__main__":
     comercial_dashboard()

@@ -1,4 +1,4 @@
-import zipfile, folium, io, sqlite3, datetime, bcrypt, os, base64, sqlitecloud
+import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -10,10 +10,6 @@ from streamlit_cookies_controller import CookieController  # Se importa localmen
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
-
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-import io
 
 cookie_name = "my_app"
 
@@ -191,21 +187,37 @@ def eliminar_usuario(id):
 
 @st.cache_data
 def cargar_datos_uis():
-    """Carga y cachea los datos de las tablas 'datos_uis' y 'ofertas_comercial'."""
+    """Carga y cachea los datos de las tablas 'datos_uis', 'ofertas_comercial' y 'comercial_rafa'."""
     conn = obtener_conexion()
+
+    # Consulta de datos_uis
     query_datos_uis = """
-        SELECT apartment_id, latitud, longitud, provincia, municipio, poblacion, cto_con_proyecto, serviciable 
+        SELECT apartment_id, latitud, longitud, provincia, municipio, poblacion, cto_con_proyecto, serviciable,
+               vial, numero, letra, cp, cto_id, cto, site_operational_state, apartment_operational_state, zona
         FROM datos_uis
     """
     datos_uis = pd.read_sql(query_datos_uis, conn)
 
+    # Consulta de ofertas_comercial
     query_ofertas = """
-        SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion 
+        SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
+               motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
+               telefono, direccion_alternativa, observaciones
         FROM ofertas_comercial
     """
     ofertas_df = pd.read_sql(query_ofertas, conn)
+
+    # Consulta de comercial_rafa
+    query_rafa = """
+        SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
+               motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
+               telefono, direccion_alternativa, observaciones
+        FROM comercial_rafa
+    """
+    comercial_rafa_df = pd.read_sql(query_rafa, conn)
+
     conn.close()
-    return datos_uis, ofertas_df
+    return datos_uis, ofertas_df, comercial_rafa_df
 
 def limpiar_mapa():
     """Evita errores de re-inicialización del mapa"""
@@ -222,6 +234,7 @@ def cargar_provincias():
 @st.cache_data
 def cargar_datos_por_provincia(provincia):
     conn = obtener_conexion()
+
     query_datos_uis = """
         SELECT * 
         FROM datos_uis
@@ -235,8 +248,16 @@ def cargar_datos_por_provincia(provincia):
         WHERE provincia = ?
     """
     ofertas_df = pd.read_sql(query_ofertas, conn, params=(provincia,))
+
+    query_comercial_rafa = """
+        SELECT * 
+        FROM comercial_rafa
+        WHERE provincia = ?
+    """
+    comercial_rafa_df = pd.read_sql(query_comercial_rafa, conn, params=(provincia,))
+
     conn.close()
-    return datos_uis, ofertas_df
+    return datos_uis, ofertas_df, comercial_rafa_df
 
 
 def mapa_seccion():
@@ -262,7 +283,7 @@ def mapa_seccion():
         return
 
     with st.spinner("⏳ Cargando datos..."):
-        datos_uis, ofertas_df = cargar_datos_por_provincia(provincia_sel)
+        datos_uis, ofertas_df, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
 
     if datos_uis.empty:
         st.error("❌ No se encontraron datos para la provincia seleccionada.")
@@ -275,12 +296,17 @@ def mapa_seccion():
     datos_filtrados = datos_uis if municipio_sel == "Todas" else datos_uis[datos_uis["municipio"] == municipio_sel]
     ofertas_filtradas = ofertas_df if municipio_sel == "Todas" else ofertas_df[ofertas_df["municipio"] == municipio_sel]
 
+    # Filtrar comercial_rafa de forma similar
+    comercial_rafa_filtradas = comercial_rafa_df if municipio_sel == "Todas" else comercial_rafa_df[
+        comercial_rafa_df["municipio"] == municipio_sel]
+
     poblaciones = sorted(datos_filtrados['poblacion'].dropna().unique())
     poblacion_sel = col3.selectbox("Población", ["Todas"] + poblaciones)
 
     if poblacion_sel != "Todas":
         datos_filtrados = datos_filtrados[datos_filtrados["poblacion"] == poblacion_sel]
         ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["poblacion"] == poblacion_sel]
+        comercial_rafa_filtradas = comercial_rafa_filtradas[comercial_rafa_filtradas["poblacion"] == poblacion_sel]
 
     # 🔹 Filtramos datos sin coordenadas
     datos_filtrados = datos_filtrados.dropna(subset=['latitud', 'longitud'])
@@ -290,11 +316,16 @@ def mapa_seccion():
         st.warning("⚠️ No hay datos que cumplan los filtros seleccionados.")
         return
 
-    # 🔹 Diccionarios para rápida búsqueda
-    serviciable_dict = ofertas_filtradas.set_index("apartment_id")["serviciable"].str.strip().str.lower().to_dict()
-    contrato_dict = ofertas_filtradas.set_index("apartment_id")["Contrato"].str.strip().str.lower().to_dict()
-    incidencia_dict = ofertas_filtradas.set_index("apartment_id")["incidencia"].str.strip().str.lower().to_dict()
+    # 🔹 Unificar la información comercial de ambas fuentes
+    # Concatena las filas de ambas tablas.
+    ofertas_combinadas = pd.concat([ofertas_filtradas, comercial_rafa_filtradas], ignore_index=True)
 
+    # Construir diccionarios a partir del DataFrame combinado (se aplican los mismos criterios de color)
+    serviciable_dict = ofertas_combinadas.set_index("apartment_id")["serviciable"].str.strip().str.lower().to_dict()
+    contrato_dict = ofertas_combinadas.set_index("apartment_id")["Contrato"].str.strip().str.lower().to_dict()
+    incidencia_dict = ofertas_combinadas.set_index("apartment_id")["incidencia"].str.strip().str.lower().to_dict()
+
+    # Calcular centro del mapa
     center_lat, center_lon = datos_filtrados[['latitud', 'longitud']].mean()
 
     limpiar_mapa()  # 🔹 Evita la sobrecarga de mapas
@@ -314,7 +345,7 @@ def mapa_seccion():
             lat_val, lon_val = row['latitud'], row['longitud']
             popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
 
-            # 🔹 Determinamos color del marcador
+            # 🔹 Determinamos color del marcador basado en la información combinada
             if incidencia_dict.get(apt_id, "") == "sí":
                 marker_color = 'purple'  # 🟣 Incidencia
             elif serviciable_dict.get(apt_id, "") == "no":
@@ -348,28 +379,29 @@ def mapa_seccion():
         selected_apartment = map_data.get("last_object_clicked_tooltip")
 
         if selected_apartment:
-            mostrar_info_apartamento(selected_apartment, datos_filtrados, ofertas_filtradas)
+            mostrar_info_apartamento(selected_apartment, datos_filtrados, ofertas_filtradas, comercial_rafa_df)
 
-def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df):
+
+def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_df):
     """ Muestra la información del apartamento clickeado de forma bonita y estructurada en tablas """
 
     st.subheader("🏠 **Información del Apartamento Seleccionado**")
 
-    # Obtener datos de los dos DataFrames usando el apartment_id
+    # Obtener datos de los tres DataFrames usando el apartment_id
     datos_info = datos_df[datos_df["apartment_id"] == apartment_id]
     ofertas_info = ofertas_df[ofertas_df["apartment_id"] == apartment_id]
+    comercial_rafa_info = comercial_rafa_df[comercial_rafa_df["apartment_id"] == apartment_id]
 
     # Layout con dos columnas para mostrar las tablas
     col1, col2 = st.columns(2)
 
-    # Tabla de Datos Generales (datos_uis)
+    # Tabla de Datos Generales
     if not datos_info.empty:
         with col1:
             st.markdown("### 🔹 **Datos Generales**")
-            # Creamos un DataFrame con los datos y lo mostramos en formato tabla
             data_uis = {
                 "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Calle/Vial", "Número", "Letra",
-                          "Código Postal", "Estado del Sitio", "Estado del Apartamento", "Proyecto de CTO", "Zona"],
+                          "Código Postal", "cto_id", "cto", "Estado del Sitio", "Estado del Apartamento", "Proyecto de CTO", "Zona"],
                 "Valor": [
                     datos_info.iloc[0]['apartment_id'],
                     datos_info.iloc[0]['provincia'],
@@ -379,6 +411,8 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df):
                     datos_info.iloc[0]['numero'],
                     datos_info.iloc[0]['letra'],
                     datos_info.iloc[0]['cp'],
+                    datos_info.iloc[0]['cto_id'],
+                    datos_info.iloc[0]['cto'],
                     datos_info.iloc[0]['site_operational_state'],
                     datos_info.iloc[0]['apartment_operational_state'],
                     datos_info.iloc[0]['cto_con_proyecto'],
@@ -386,8 +420,6 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df):
                 ]
             }
             df_uis = pd.DataFrame(data_uis)
-
-            # Mostrar la tabla con un estilo agradable
             st.dataframe(df_uis.style.set_table_styles([
                 {'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},
                 {'selector': 'tbody td', 'props': [('padding', '10px')]},
@@ -396,40 +428,42 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df):
         with col1:
             st.warning("❌ **No se encontraron datos para el apartamento en `datos_uis`.**")
 
-    # Tabla de Datos Comerciales (ofertas_comercial)
-    if not ofertas_info.empty:
+    # Tabla de Datos Comerciales (prioridad a ofertas_comercial, luego comercial_rafa)
+    if not ofertas_info.empty or not comercial_rafa_info.empty:
         with col2:
             st.markdown("### 🔹 **Datos Comerciales**")
-            # Creamos un DataFrame con los datos y lo mostramos en formato tabla
+
+            fuente = ofertas_info if not ofertas_info.empty else comercial_rafa_info
+
             data_comercial = {
                 "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Serviciable", "Motivo Serviciable",
                           "Incidencia", "Motivo de Incidencia", "Nombre Cliente", "Teléfono", "Dirección Alternativa",
                           "Observaciones"],
                 "Valor": [
-                    ofertas_info.iloc[0]['apartment_id'],
-                    ofertas_info.iloc[0]['provincia'],
-                    ofertas_info.iloc[0]['municipio'],
-                    ofertas_info.iloc[0]['poblacion'],
-                    ofertas_info.iloc[0]['serviciable'],
-                    ofertas_info.iloc[0].get('motivo_serviciable', 'No disponible'),
-                    ofertas_info.iloc[0]['incidencia'],
-                    ofertas_info.iloc[0].get('motivo_incidencia', 'No disponible'),
-                    ofertas_info.iloc[0].get('nombre_cliente', 'No disponible'),
-                    ofertas_info.iloc[0].get('telefono', 'No disponible'),
-                    ofertas_info.iloc[0].get('direccion_alternativa', 'No disponible'),
-                    ofertas_info.iloc[0].get('observaciones', 'No hay observaciones.')
+                    fuente.iloc[0]['apartment_id'],
+                    fuente.iloc[0]['provincia'],
+                    fuente.iloc[0]['municipio'],
+                    fuente.iloc[0]['poblacion'],
+                    fuente.iloc[0]['serviciable'],
+                    fuente.iloc[0].get('motivo_serviciable', 'No disponible'),
+                    fuente.iloc[0].get('incidencia', 'No disponible'),
+                    fuente.iloc[0].get('motivo_incidencia', 'No disponible'),
+                    fuente.iloc[0].get('nombre_cliente', 'No disponible'),
+                    fuente.iloc[0].get('telefono', 'No disponible'),
+                    fuente.iloc[0].get('direccion_alternativa', 'No disponible'),
+                    fuente.iloc[0].get('observaciones', 'No hay observaciones.')
                 ]
             }
-            df_comercial = pd.DataFrame(data_comercial)
 
-            # Mostrar la tabla con un estilo agradable
+            df_comercial = pd.DataFrame(data_comercial)
             st.dataframe(df_comercial.style.set_table_styles([
                 {'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},
                 {'selector': 'tbody td', 'props': [('padding', '10px')]},
             ]))
     else:
         with col2:
-            st.warning("❌ **No se encontraron datos para el apartamento en `ofertas_comercial`.**")
+            st.warning("❌ **No se encontraron datos para el apartamento en `ofertas_comercial` ni en `comercial_rafa`.**")
+
 
 def viabilidades_seccion():
     log_trazabilidad("Administrador", "Visualización de Viabilidades",

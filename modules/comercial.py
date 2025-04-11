@@ -853,7 +853,7 @@ def mostrar_formulario(click_data):
             "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
             "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
             "Contrato": contrato,  # Solo se incluye si es "Sí" en serviciable
-            "fecha": pd.Timestamp.now()
+            "fecha": pd.Timestamp.now(tz="Europe/Madrid")
         }
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
@@ -873,7 +873,7 @@ def mostrar_formulario(click_data):
                 descripcion_oferta = (
                     f"📢 Se ha añadido una nueva oferta para el apartamento con ID {apartment_id}.<br><br>"
                     f"📝 Detalles de la oferta realizada por el comercial {nombre_comercial}:<br>"
-                    f"🛏️ <strong>Apartment ID:</strong> {oferta_data.get('Apartment ID', 'No disponible')}<br>"
+                    f"🛏️ <strong>Apartment ID:</strong> {oferta_data.get('apartment_id', 'No disponible')}<br>"
                     f"🌍 <strong>Provincia:</strong> {oferta_data.get('Provincia', 'No disponible')}<br>"
                     f"📍 <strong>Municipio:</strong> {oferta_data.get('Municipio', 'No disponible')}<br>"
                     f"🏘️ <strong>Población:</strong> {oferta_data.get('Población', 'No disponible')}<br>"

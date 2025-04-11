@@ -30,5 +30,9 @@ v2.0.8 - Corrección de errores y mejoras.
 v2.0.9 - Actualizada base de datos. Mejorada trazabilidad de la aplicación. Añadida la opción de modificar datos ya visitados por los comerciales. Añadida persistencia de datos.
 v2.1.0 - Corregidos los errores por los que las imágenes de las incidencias no se mostraban ni guardaban correctamente.
 v2.1.1 - Corrección de fallo por el cual no se cargaba de forma eficiente los datos nuevos de asignación a la B.B.D.D.
-v2.1.2 - Añadido a datos UNICO 24
+v2.1.2 - Añadido a datos UNICO 24.
 v2.1.3 - Corrección de bug que provocaba el envío de notificaciones por correo de forma erronea y a veces duplicada.
+v2.1.4 - Añadidos nuevos informes.
+v2.1.5 - Añadida visualización de cto_id y cto al mapa de control de UUIIs.
+v2.1.6 - Solucionado error por el cual uno de los usuarios comerciales no visualizaba correctamente el mapa con sus asignaciones. Otras mejoras aplicadas. Corregido error por el cual, al enviar las notificaciones de ofertas por email, no recogía bien el dato del Apartment ID en el cuerpo del mensaje.
+v2.1.7 - Corregidas las notificaciones por las cuales a veces se descartaban correos. Corregidos los colores del mapa de UUIIs. Corregidas las horas que se enviaban en la notificaciones por correo. Corregido el USO HORARIO de la región.

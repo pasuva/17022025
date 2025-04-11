@@ -47,7 +47,7 @@ def load_datos_uis():
         conn.close()
 
         if datos_uis_data.empty:
-            st.warning("⚠ No hay datos disponibles.")
+            st.warning("⚠️ No hay datos disponibles.")
         return datos_uis_data
     except Exception as e:
         st.error(f"❌ Error al cargar Datos UIS: {e}")
