@@ -211,7 +211,7 @@ def cargar_datos_uis():
     query_rafa = """
         SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
                motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
-               telefono, direccion_alternativa, observaciones
+               telefono, direccion_alternativa, observaciones, comercial
         FROM comercial_rafa
     """
     comercial_rafa_df = pd.read_sql(query_rafa, conn)
@@ -590,19 +590,16 @@ def mostrar_formulario(click_data):
     comentario = click_data.get("comentario", "N/D")
     fecha_viabilidad = click_data.get("fecha_viabilidad", "N/D")
     cto_cercana = click_data.get("cto_cercana", "N/D")
-    comentarios_comercial = click_data.get("comentarios_comercial", "N/D")
 
     # Crear un diseño en columnas
-    col1, col2, col3 = st.columns([1, 1, 1])  # Aseguramos que las columnas tengan un tamaño similar
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        # Ticket y Latitud/Longitud
         st.text_input("🎟️ Ticket", value=ticket, disabled=True, key="ticket_input")
     with col2:
         st.text_input("📍 Latitud", value=latitud, disabled=True, key="latitud_input")
     with col3:
         st.text_input("📍 Longitud", value=longitud, disabled=True, key="longitud_input")
 
-    # Segunda fila con Provincia, Municipio y Población
     col4, col5, col6 = st.columns([1, 1, 1])
     with col4:
         st.text_input("📍 Provincia", value=provincia, disabled=True, key="provincia_input")
@@ -611,7 +608,6 @@ def mostrar_formulario(click_data):
     with col6:
         st.text_input("👥 Población", value=poblacion, disabled=True, key="poblacion_input")
 
-    # Tercera fila con Vial, Número, Letra y CP
     col7, col8, col9, col10 = st.columns([2, 1, 1, 1])
     with col7:
         st.text_input("🚦 Vial", value=vial, disabled=True, key="vial_input")
@@ -622,24 +618,20 @@ def mostrar_formulario(click_data):
     with col10:
         st.text_input("📮 Código Postal", value=cp, disabled=True, key="cp_input")
 
-    # Cuarta fila con Comentarios
-    col11 = st.columns(1)[0]  # Columna única para comentarios
+    col11 = st.columns(1)[0]
     with col11:
         st.text_area("💬 Comentarios", value=comentario, disabled=True, key="comentario_input")
 
-    # Quinta fila con Fecha y Cto Cercana
     col12, col13 = st.columns([1, 1])
     with col12:
         st.text_input("📅 Fecha Viabilidad", value=fecha_viabilidad, disabled=True, key="fecha_viabilidad_input")
     with col13:
         st.text_input("🔌 Cto Cercana", value=cto_cercana, disabled=True, key="cto_cercana_input")
 
-    # Sexta fila con Comentarios Comerciales
-    col14 = st.columns(1)[0]  # Columna única para comentarios
+    col14 = st.columns(1)[0]
     with col14:
-        st.text_area("📝 Comentarios Comerciales", value=comentarios_comercial, disabled=True, key="comentarios_comercial_input")
+        comentarios_comercial = st.text_area("📝 Comentarios Comerciales", value=click_data.get("comentarios_comercial", ""), disabled=False, key="comentarios_comercial_input")
 
-    # Campos para completar
     col15, col16, col17 = st.columns([1, 1, 1])
     with col15:
         apartment_id = st.text_input("🏠 Apartment_id", value="", key="apartment_id_input")
@@ -649,44 +641,36 @@ def mostrar_formulario(click_data):
     with col17:
         id_cto = st.text_input("🔧 ID Cto", value="", key="id_cto_input")
 
-    # Nueva fila para Municipio Admin
-    col18 = st.columns(1)[0]  # Columna única para el municipio admin
+    col18 = st.columns(1)[0]
     with col18:
         municipio_admin = st.text_input("🌍 Municipio Admin", value="", key="municipio_admin_input")
 
-    # Fila para "Es Serviciable?"
     col19, col20 = st.columns([1, 1])
     with col19:
         serviciable = st.selectbox("🔍 ¿Es Serviciable?", ["Sí", "No"], index=0, key="serviciable_input")
     with col20:
         coste = st.number_input("💰 Coste", value=0.0, step=0.01, key="coste_input")
 
-    # Fila final para Comentarios Internos
-    col21 = st.columns(1)[0]  # Columna única para comentarios internos
+    col21 = st.columns(1)[0]
     with col21:
         comentarios_internos = st.text_area("📄 Comentarios Internos", value="", key="comentarios_internos_input")
 
-    # Si el administrador guarda los cambios
     if st.button(f"💾 Guardar cambios para el Ticket {ticket}"):
         try:
-            # Conectar a la base de datos (usuarios.db)
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # Sentencia UPDATE para guardar los cambios basados en el ticket
             query = """
                 UPDATE viabilidades
                 SET apartment_id = ?, olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
-                    coste = ?, comentarios_internos = ?
+                    coste = ?, comentarios_comercial = ?, comentarios_internos = ?
                 WHERE ticket = ?
             """
-            # Ejecutar la sentencia con los valores proporcionados en el formulario
             cursor.execute(query, (
                 apartment_id, olt, cto_admin, id_cto, municipio_admin, serviciable,
-                coste, comentarios_internos, ticket
+                coste, comentarios_comercial, comentarios_internos, ticket
             ))
 
-            # 📢 Consultar el correo del comercial asociado al ticket:
             cursor.execute("""
                 SELECT email 
                 FROM usuarios
@@ -694,39 +678,34 @@ def mostrar_formulario(click_data):
             """, (ticket,))
             email_comercial = cursor.fetchone()
 
-            # Verificar si se encontró el correo
             if email_comercial:
                 destinatario_comercial = email_comercial[0]
             else:
                 st.error("❌ No se encontró el correo del comercial correspondiente.")
-                destinatario_comercial = "patricia@redytelcomputer.com"  # Correo predeterminado
+                destinatario_comercial = "patricia@redytelcomputer.com"
 
-            # Preparar el contenido del correo
             descripcion_viabilidad = (
                 f"📢 La viabilidad del ticket {ticket} ha sido completada.<br><br>"
-                f"📌 **Comentarios Internos**: {comentarios_comercial}<br>"
-                f"📍 **Municipio**: {municipio_admin}<br>"
-                f"💰 **Coste**: {coste}€<br>"
-                f"🔍 **Es Serviciable**: {serviciable}<br>"
-                f"⚙️ **CTO Admin**: {cto_admin}<br>"
-                f"🏠 **Apartment ID**: {apartment_id}<br><br>"
+                f"📌 Comentarios a comerciales: {comentarios_comercial}<br>"
+                f"📍 Municipio: {municipio_admin}<br>"
+                f"💰 Coste: {coste}€<br>"
+                f"🔍 Es Serviciable: {serviciable}<br>"
+                f"🏠 Apartment ID: {apartment_id}<br><br>"
                 f"ℹ️ Por favor, revise los detalles de la viabilidad y asegúrese de que toda la información sea correcta. "
                 f"Si tiene alguna pregunta o necesita realizar alguna modificación, no dude en ponerse en contacto con el equipo de administración."
             )
 
-            # Enviar el correo al comercial
             correo_viabilidad_administracion(destinatario_comercial, ticket, descripcion_viabilidad)
 
-            # Confirmar los cambios en la base de datos
             conn.commit()
             conn.close()
 
-            # Mostrar mensaje de éxito
             st.success(f"✅ Los cambios para el Ticket {ticket} han sido guardados correctamente.")
             st.info(f"📧 Se ha enviado una notificación al comercial sobre la viabilidad completada.")
 
         except Exception as e:
-            st.error(f"❌ Hubo un error al guardar los cambios: {e}")
+            st.error(f"❌ Error al guardar los cambios: {e}")
+
 
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")
@@ -1555,26 +1534,24 @@ def mostrar_control_versiones():
         # Mostrar el encabezado de la sección
         st.subheader("🔄 Control de versiones")
         st.info("ℹ️ Aquí puedes ver el historial de cambios y versiones de la aplicación. Cada entrada incluye el número de versión y una breve descripción de lo que se ha actualizado o modificado.")
-        # Formato para mostrar las versiones con diseño más elegante
 
-        # Mostrar las versiones en formato de lista bonita
+        # Mostrar las versiones en formato de lista con número y descripción en la misma línea
         for version in versiones:
             version_info = version.strip().split(" - ")
             if len(version_info) == 2:
                 st.markdown(
-                    f"<div style='background-color: #f7f7f7; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>"
-                    f"<h4 style='color: #4CAF50; font-size: 18px;'>{version_info[0]}</h4>"
-                    f"<p style='font-size: 14px; color: #666;'>{version_info[1]}</p>"
+                    f"<div style='background-color: #f7f7f7; padding: 10px; border-radius: 8px; margin-bottom: 10px;'>"
+                    f"<p style='font-size: 14px; color: #666; margin: 0;'><strong style='color: #4CAF50; font-size: 16px;'>{version_info[0]}</strong> - {version_info[1]}</p>"
                     f"</div>", unsafe_allow_html=True
                 )
             else:
                 st.markdown(
-                    f"<div style='background-color: #f7f7f7; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>"
-                    f"<h4 style='color: #4CAF50; font-size: 18px;'>{version_info[0]}</h4>"
-                    f"<p style='font-size: 14px; color: #666;'>Sin descripción disponible.</p>"
-                    f"</div>", unsafe_allow_html=True)
+                    f"<div style='background-color: #f7f7f7; padding: 10px; border-radius: 8px; margin-bottom: 10px;'>"
+                    f"<p style='font-size: 14px; color: #666; margin: 0;'><strong style='color: #4CAF50; font-size: 16px;'>{version_info[0]}</strong> - Sin descripción disponible.</p>"
+                    f"</div>", unsafe_allow_html=True
+                )
 
-        # Añadir una pequeña nota técnica para el admin con una fuente diferenciada
+        # Nota técnica adicional para el admin
         st.markdown("<br><i style='font-size: 14px; color: #888;'>Nota técnica: Esta sección muestra el historial completo de cambios aplicados al sistema. Asegúrese de revisar las versiones anteriores para comprender las mejoras y correcciones implementadas.</i>", unsafe_allow_html=True)
 
     except FileNotFoundError:
@@ -1656,8 +1633,17 @@ def create_tipo_vivienda_distribution_graph():
     df_ofertas_comercial = pd.DataFrame(ofertas_comercial_data, columns=["Tipo_Vivienda", "Count_ofertas_comercial"])
     df_comercial_rafa = pd.DataFrame(comercial_rafa_data, columns=["Tipo_Vivienda", "Count_comercial_rafa"])
 
+    # Reemplazar los valores nulos o vacíos con "Asignado - No visitado" en la tabla comercial_rafa
+    # Usamos `fillna` para poner 'Asignado - No visitado' en los tipos de vivienda que no tengan datos en la tabla comercial_rafa
+    df_comercial_rafa['Tipo_Vivienda'] = df_comercial_rafa['Tipo_Vivienda'].fillna('Asignado - No visitado')
+
     # Fusionar los DataFrames por la columna 'Tipo_Vivienda'
     df = pd.merge(df_ofertas_comercial, df_comercial_rafa, on="Tipo_Vivienda", how="outer").fillna(0)
+
+    # Si hay valores en 'Count_comercial_rafa' como 0, los cambiamos a 'Asignado - No visitado'
+    df['Tipo_Vivienda'] = df['Tipo_Vivienda'].apply(
+        lambda x: 'Asignado - No visitado' if x == 0 else x
+    )
 
     # Crear gráfico de barras con Plotly
     fig = px.bar(df, x="Tipo_Vivienda", y=["Count_ofertas_comercial", "Count_comercial_rafa"],

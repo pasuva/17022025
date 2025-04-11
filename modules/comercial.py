@@ -1,5 +1,5 @@
 import streamlit as st
-import folium, sqlite3, os, re, time, sqlitecloud
+import folium, os, re, time, sqlitecloud
 from folium.plugins import MarkerCluster
 import pandas as pd
 from streamlit_folium import st_folium
