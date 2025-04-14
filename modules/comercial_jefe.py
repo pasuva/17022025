@@ -6,6 +6,7 @@ from datetime import datetime
 from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion, correo_asignacion_administracion2, correo_desasignacion_administracion2
 from folium.plugins import MarkerCluster
 from streamlit_cookies_controller import CookieController  # Se importa localmente
+from datetime import datetime
 
 cookie_name = "my_app"
 
@@ -365,29 +366,80 @@ def mapa_dashboard():
     st.info("ℹ️ Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
     st.dataframe(total_ofertas, use_container_width=True)
 
+    # Mostrar tabla de zonas asignadas y total de ofertas
+    conn = get_db_connection()
+    viabilidades = pd.read_sql("SELECT DISTINCT * FROM viabilidades WHERE usuario = 'jose ramon' OR usuario = 'rafaela'", conn)
+    conn.close()
+    st.info("ℹ️ Viabilidades: Visualización del total de viabilidades y su estado actual")
+    st.dataframe(viabilidades, use_container_width=True)
+
+    # Sección de descarga de datos
     # Sección de descarga de datos
     st.subheader("Descargar Datos")
-    descarga_opcion = st.radio("Formato de descarga:", ["CSV", "Excel"])
-    if descarga_opcion == "CSV":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó datos en CSV.")
+
+    # Opciones de descarga
+    dataset_opcion = st.selectbox("¿Qué deseas descargar?", ["Datos", "Ofertas asignadas", "Viabilidades", "Todo"])
+    formato_opcion = st.radio("Formato de descarga:", ["CSV", "Excel"])
+    nombre_base = st.text_input("Nombre base del archivo:", "rafa_sanz_datos")
+
+    # Fecha para incluir en el nombre del archivo
+    fecha_actual = datetime.now().strftime("%Y-%m-%d")
+    nombre_archivo_final = f"{nombre_base}_{fecha_actual}"
+
+    # Funciones auxiliares
+    def descargar_csv(df, nombre_archivo):
         st.download_button(
-            label="Descargar como CSV",
-            data=datos_uis.to_csv(index=False).encode(),
-            file_name="datos_rafa_sanz.csv",
+            label=f"Descargar {nombre_archivo} como CSV",
+            data=df.to_csv(index=False).encode(),
+            file_name=f"{nombre_archivo}.csv",
             mime="text/csv"
         )
-    elif descarga_opcion == "Excel":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó datos en Excel.")
-        with io.BytesIO() as towrite:
-            with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                datos_uis.to_excel(writer, index=False, sheet_name="Datos Rafa Sanz")
-            towrite.seek(0)
+
+    def descargar_excel(dfs_dict, nombre_archivo):
+        with io.BytesIO() as output:
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                for sheet_name, df in dfs_dict.items():
+                    df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
+            output.seek(0)
             st.download_button(
-                label="Descargar como Excel",
-                data=towrite,
-                file_name="datos_rafa_sanz.xlsx",
+                label=f"Descargar {nombre_archivo} como Excel",
+                data=output,
+                file_name=f"{nombre_archivo}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+    # Mostrar botón según selección
+    if dataset_opcion == "Datos":
+        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó los datos.")
+        if formato_opcion == "CSV":
+            descargar_csv(datos_uis, nombre_archivo_final)
+        else:
+            descargar_excel({"Datos Rafa Sanz": datos_uis}, nombre_archivo_final)
+
+    elif dataset_opcion == "Ofertas asignadas":
+        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó ofertas asignadas.")
+        if formato_opcion == "CSV":
+            descargar_csv(total_ofertas, nombre_archivo_final)
+        else:
+            descargar_excel({"Ofertas Asignadas": total_ofertas}, nombre_archivo_final)
+
+    elif dataset_opcion == "Viabilidades":
+        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó viabilidades.")
+        if formato_opcion == "CSV":
+            descargar_csv(viabilidades, nombre_archivo_final)
+        else:
+            descargar_excel({"Viabilidades": viabilidades}, nombre_archivo_final)
+
+    elif dataset_opcion == "Todo":
+        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó todos los datos.")
+        if formato_opcion == "Excel":
+            descargar_excel({
+                "Datos Rafa Sanz": datos_uis,
+                "Ofertas Asignadas": total_ofertas,
+                "Viabilidades": viabilidades
+            }, nombre_archivo_final)
+        else:
+            st.warning("⚠️ Para descargar todo junto, selecciona el formato Excel.")
     st.info("Dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
 if __name__ == "__main__":
     mapa_dashboard()
