@@ -368,7 +368,15 @@ def mapa_dashboard():
 
     # Mostrar tabla de zonas asignadas y total de ofertas
     conn = get_db_connection()
-    viabilidades = pd.read_sql("SELECT DISTINCT * FROM viabilidades WHERE usuario = 'jose ramon' OR usuario = 'rafaela'", conn)
+    viabilidades = pd.read_sql("""
+        SELECT DISTINCT 
+            id, latitud, longitud, provincia, municipio, poblacion, 
+            vial, numero, letra, cp, comentario, olt, serviciable, 
+            comentarios_comercial, fecha_viabilidad, ticket, apartment_id, 
+            nombre_cliente, telefono, usuario
+        FROM viabilidades 
+        WHERE usuario = 'jose ramon' OR usuario = 'rafaela'
+    """, conn)
     conn.close()
     st.info("ℹ️ Viabilidades: Visualización del total de viabilidades y su estado actual")
     st.dataframe(viabilidades, use_container_width=True)
