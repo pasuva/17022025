@@ -171,7 +171,7 @@ def mapa_dashboard():
                             INSERT INTO comercial_rafa (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
                             SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, ?, 'Pendiente'
                             FROM datos_uis
-                            WHERE municipio = ? AND poblacion = ?
+                            WHERE municipio = ? AND poblacion = ? AND comercial = 'RAFA SANZ'
                         """, (comercial_elegido, municipio_sel, poblacion_sel))
                         conn.commit()
 

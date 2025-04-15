@@ -52,6 +52,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
             imagen_url = upload_image_to_cloudinary(imagen_incidencia)
 
         comercial = st.session_state["username"]  # Nombre del comercial actual
+        print("Se va a guardar el comercial:", st.session_state.get("username"))
 
         if existe:
             cursor.execute('''UPDATE ofertas_comercial SET
@@ -81,7 +82,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                                oferta_data["Tipo_Vivienda"],
                                oferta_data["Contrato"],
-                               comercial,
+                               st.session_state.get("username"),
                                oferta_data["Apartment ID"]
                            ))
             mensaje = "✅ ¡Oferta modificada con éxito!"
@@ -114,7 +115,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                                oferta_data["Tipo_Vivienda"],
                                oferta_data["Contrato"],
-                               comercial
+                               st.session_state.get("username")
                            ))
             mensaje = "✅ ¡Oferta enviada y guardada en la base de datos con éxito!"
 
@@ -559,7 +560,7 @@ def obtener_viabilidades():
     conn = get_db_connection()
     cursor = conn.cursor()
     # Se asume que el usuario logueado está guardado en st.session_state["username"]
-    cursor.execute("SELECT latitud, longitud, ticket FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
+    cursor.execute("SELECT latitud, longitud, ticket, serviciable, apartment_id FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
     viabilidades = cursor.fetchall()
     conn.close()
     return viabilidades
@@ -569,9 +570,11 @@ def viabilidades_section():
     st.title("✔️ Viabilidades")
     st.markdown("""**Leyenda:**
              ⚫ Viabilidad ya existente
-             🔴 Viabilidad nueva
+             🔵 Viabilidad nueva aún sin estudio
+             🟢 Viabilidad serviciable y con Apartment ID ya asociado
+             🔴 Viabilidad no serviciable
             """)
-    st.info("ℹ️ Haz click en el mapa para agregar un marcador rojo que represente el punto de viabilidad.")
+    st.info("ℹ️ Haz click en el mapa para agregar un marcador que represente el punto de viabilidad.")
 
     # Inicializar estados de sesión si no existen
     if "viabilidad_marker" not in st.session_state:
@@ -589,23 +592,40 @@ def viabilidades_section():
         attr="Google"
     )
 
-    # Agregar marcadores de viabilidades guardadas (solo las del usuario logueado) en negro
+    # Agregar marcadores de viabilidades guardadas (solo las del usuario logueado)
+    # Se asume que `obtener_viabilidades()` retorna registros con la siguiente estructura:
+    # (latitud, longitud, ticket, serviciable, apartment_id)
     viabilidades = obtener_viabilidades()
     for v in viabilidades:
-        lat, lon, ticket = v
+        # Desempaquetamos cada registro
+        lat, lon, ticket, serviciable, apartment_id = v
+
+        # Determinar color según la respuesta al comercial y estado:
+        if serviciable is not None and str(serviciable).strip() != "":
+            serv = str(serviciable).strip()
+            apt = str(apartment_id).strip() if apartment_id is not None else ""
+            if serv == "No":
+                marker_color = "red"
+            elif serv == "Sí" and apt not in ["", "N/D"]:
+                marker_color = "green"
+            else:
+                marker_color = "black"
+        else:
+            marker_color = "black"
+
         folium.Marker(
             [lat, lon],
-            icon=folium.Icon(color="black"),
+            icon=folium.Icon(color=marker_color),
             popup=f"Ticket: {ticket}"
         ).add_to(m)
 
-    # Si hay un marcador, agregarlo al mapa en rojo
+    # Si hay un marcador nuevo (seleccionado mediante clic en el mapa), agregarlo en azul
     if st.session_state.viabilidad_marker:
         lat = st.session_state.viabilidad_marker["lat"]
         lon = st.session_state.viabilidad_marker["lon"]
         folium.Marker(
             [lat, lon],
-            icon=folium.Icon(color="red")
+            icon=folium.Icon(color="blue")
         ).add_to(m)
 
     # Mostrar el mapa y capturar clics
@@ -634,17 +654,35 @@ def viabilidades_section():
 
         st.subheader("Completa los datos del punto de viabilidad")
         with st.form("viabilidad_form"):
-            st.text_input("📍 Latitud", value=str(lat), disabled=True)
-            st.text_input("📍 Longitud", value=str(lon), disabled=True)
-            provincia = st.text_input("🏞️ Provincia")
-            municipio = st.text_input("🏘️ Municipio")
-            poblacion = st.text_input("👥 Población")
-            vial = st.text_input("🛣️ Vial")
-            numero = st.text_input("🔢 Número")
-            letra = st.text_input("🔤 Letra")
-            cp = st.text_input("📮 Código Postal")
-            nombre_cliente = st.text_input("👤 Nombre Cliente")
-            telefono = st.text_input("📞 Teléfono")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.text_input("📍 Latitud", value=str(lat), disabled=True)
+            with col2:
+                st.text_input("📍 Longitud", value=str(lon), disabled=True)
+
+            col3, col4, col5 = st.columns(3)
+            with col3:
+                provincia = st.text_input("🏞️ Provincia")
+            with col4:
+                municipio = st.text_input("🏘️ Municipio")
+            with col5:
+                poblacion = st.text_input("👥 Población")
+
+            col6, col7, col8, col9 = st.columns([3, 1, 1, 2])
+            with col6:
+                vial = st.text_input("🛣️ Vial")
+            with col7:
+                numero = st.text_input("🔢 Número")
+            with col8:
+                letra = st.text_input("🔤 Letra")
+            with col9:
+                cp = st.text_input("📮 Código Postal")
+
+            col10, col11 = st.columns(2)
+            with col10:
+                nombre_cliente = st.text_input("👤 Nombre Cliente")
+            with col11:
+                telefono = st.text_input("📞 Teléfono")
             comentario = st.text_area("📝 Comentario")
             submit = st.form_submit_button("Enviar Formulario")
 
@@ -714,11 +752,11 @@ def validar_email(email):
 def mostrar_formulario(click_data):
     """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
     st.subheader("📄 Enviar Oferta")
+
     popup_text = click_data.get("popup", "")
     apartment_id = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
     lat_value = click_data.get("lat", "N/D")
     lng_value = click_data.get("lng", "N/D")
-    # Definir una clave única para este formulario basada en las coordenadas
     form_key = f"{lat_value}_{lng_value}"
 
     try:
@@ -745,7 +783,7 @@ def mostrar_formulario(click_data):
         st.error(f"❌ Error al obtener datos de la base de datos: {e}")
         return
 
-    # Mostrar datos fijos (disabled) sin clave, pues no se modifican
+    # Campos bloqueados (fuera del form)
     st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -769,141 +807,95 @@ def mostrar_formulario(click_data):
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
 
-    # Los campos de entrada del formulario usan claves únicas basadas en form_key
-    es_serviciable = st.radio("🛠️ ¿Es serviciable?",
-                              ["Sí", "No"],
-                              index=0,
-                              horizontal=True,
-                              key=f"es_serviciable_{form_key}")
+    # Formulario editable
+    with st.form(f"formulario_oferta_{form_key}"):
+        es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
 
-    if es_serviciable == "Sí":
-        tipo_vivienda = st.selectbox("🏠 Tipo de Ui",
-                                     ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
-                                     index=0,
-                                     key=f"tipo_vivienda_{form_key}")
-        if tipo_vivienda == "Otro":
-            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui",
-                                               key=f"tipo_vivienda_otro_{form_key}")
+        if es_serviciable == "Sí":
+            tipo_vivienda = st.selectbox("🏠 Tipo de Ui", ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"], index=0)
+            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui") if tipo_vivienda == "Otro" else ""
+            contrato = st.radio("📑 Tipo de Contrato", ["Sí", "No Interesado"], index=0, horizontal=True)
+            motivo_serviciable = ""
+            client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
+            phone = st.text_input("📞 Teléfono", max_chars=15)
+            alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
+            observations = st.text_area("📝 Observaciones")
+            contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
+            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia") if contiene_incidencias == "Sí" else ""
+            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"]) if contiene_incidencias == "Sí" else None
         else:
-            tipo_vivienda_otro = ""  # Si no elige "Otro", el valor es vacío
-        contrato = st.radio("📑 Tipo de Contrato",
-                            ["Sí", "No Interesado"],
-                            index=0,
-                            horizontal=True,
-                            key=f"contrato_{form_key}")
-    else:
-        tipo_vivienda = contrato = tipo_vivienda_otro = None
-
-    if es_serviciable == "No":
-        motivo_serviciable = st.text_area("❌ Motivo de No Servicio",
-                                          key=f"motivo_serviciable_{form_key}")
-        client_name = ""
-        phone = ""
-        alt_address = ""
-        observations = ""
-        contiene_incidencias = ""
-        motivo_incidencia = ""
-        imagen_incidencia = None
-    else:
-        client_name = st.text_input("👤 Nombre del Cliente",
-                                    max_chars=100,
-                                    key=f"client_name_{form_key}")
-        phone = st.text_input("📞 Teléfono",
-                              max_chars=15,
-                              key=f"phone_{form_key}")
-        alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)",
-                                    key=f"alt_address_{form_key}")
-        observations = st.text_area("📝 Observaciones",
-                                    key=f"observations_{form_key}")
-        contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?",
-                                        ["Sí", "No"],
-                                        index=1,
-                                        horizontal=True,
-                                        key=f"contiene_incidencias_{form_key}")
-        if contiene_incidencias == "Sí":
-            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia",
-                                             key=f"motivo_incidencia_{form_key}")
-            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)",
-                                                 type=["png", "jpg", "jpeg"],
-                                                 key=f"imagen_incidencia_{form_key}")
-        else:
-            motivo_incidencia = ""
+            motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
+            tipo_vivienda = tipo_vivienda_otro = contrato = client_name = phone = alt_address = observations = contiene_incidencias = motivo_incidencia = ""
             imagen_incidencia = None
-        motivo_serviciable = ""
 
-    if st.button("🚀 Enviar Oferta", key=f"enviar_oferta_{form_key}"):
-        if phone and not phone.isdigit():
-            st.error("❌ El teléfono debe contener solo números.")
-            return
+        enviar = st.form_submit_button("🚀 Enviar Oferta")
 
-        oferta_data = {
-            "Apartment ID": apartment_id,
-            "Provincia": provincia,
-            "Municipio": municipio,
-            "Población": poblacion,
-            "Vial": vial,
-            "Número": numero,
-            "Letra": letra,
-            "Código Postal": cp,
-            "Latitud": lat_value,
-            "Longitud": lng_value,
-            "Nombre Cliente": client_name,
-            "Teléfono": phone,
-            "Dirección Alternativa": alt_address,
-            "Observaciones": observations,
-            "serviciable": es_serviciable,
-            "motivo_serviciable": motivo_serviciable,
-            "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
-            "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
-            "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
-            "Contrato": contrato,  # Solo se incluye si es "Sí" en serviciable
-            "fecha": pd.Timestamp.now(tz="Europe/Madrid")
-        }
+        if enviar:
+            if phone and not phone.isdigit():
+                st.error("❌ El teléfono debe contener solo números.")
+                return
 
-        with st.spinner("⏳ Guardando la oferta en la base de datos..."):
-            guardar_en_base_de_datos(oferta_data, imagen_incidencia)
+            oferta_data = {
+                "Apartment ID": apartment_id,
+                "Provincia": provincia,
+                "Municipio": municipio,
+                "Población": poblacion,
+                "Vial": vial,
+                "Número": numero,
+                "Letra": letra,
+                "Código Postal": cp,
+                "Latitud": lat_value,
+                "Longitud": lng_value,
+                "Nombre Cliente": client_name,
+                "Teléfono": phone,
+                "Dirección Alternativa": alt_address,
+                "Observaciones": observations,
+                "serviciable": es_serviciable,
+                "motivo_serviciable": motivo_serviciable,
+                "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
+                "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
+                "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
+                "Contrato": contrato,
+                "fecha": pd.Timestamp.now(tz="Europe/Madrid")
+            }
 
-            # Obtener los emails de todos los usuarios con rol admin
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
-            resultados = cursor.fetchall()  # Devuelve una lista de tuplas con cada email
-            emails_admin = [fila[0] for fila in resultados]
-            conn.close()
+            with st.spinner("⏳ Guardando la oferta en la base de datos..."):
+                guardar_en_base_de_datos(oferta_data, imagen_incidencia)
 
-            nombre_comercial = st.session_state["username"]
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                emails_admin = [fila[0] for fila in cursor.fetchall()]
+                conn.close()
 
-            if emails_admin:
-                descripcion_oferta = (
-                    f"📢 Se ha añadido una nueva oferta para el apartamento con ID {apartment_id}.<br><br>"
-                    f"📝 Detalles de la oferta realizada por el comercial {nombre_comercial}:<br>"
-                    f"🛏️ <strong>Apartment ID:</strong> {oferta_data.get('apartment_id', 'No disponible')}<br>"
-                    f"🌍 <strong>Provincia:</strong> {oferta_data.get('Provincia', 'No disponible')}<br>"
-                    f"📍 <strong>Municipio:</strong> {oferta_data.get('Municipio', 'No disponible')}<br>"
-                    f"🏘️ <strong>Población:</strong> {oferta_data.get('Población', 'No disponible')}<br>"
-                    f"🛣️ <strong>Vial:</strong> {oferta_data.get('Vial', 'No disponible')}<br>"
-                    f"🏠 <strong>Número:</strong> {oferta_data.get('Número', 'No disponible')}<br>"
-                    f"📮 <strong>Código Postal:</strong> {oferta_data.get('Código Postal', 'No disponible')}<br>"
-                    f"📅 <strong>Fecha:</strong> {oferta_data.get('fecha', 'No disponible')}<br>"
-                    f"📱 <strong>Teléfono:</strong> {oferta_data.get('Teléfono', 'No disponible')}<br>"
-                    f"🏡 <strong>Tipo Vivienda:</strong> {oferta_data.get('Tipo_Vivienda', 'No disponible')}<br>"
-                    f"✅ <strong>Contratado:</strong> {oferta_data.get('Contrato', 'No disponible')}<br>"
-                    f"🔧 <strong>Servicio:</strong> {oferta_data.get('serviciable', 'No disponible')}<br>"
-                    f"⚠️ <strong>Incidencia:</strong> {oferta_data.get('incidencia', 'No disponible')}<br>"
-                    f"💬 <strong>Observaciones:</strong> {oferta_data.get('Observaciones', 'No disponible')}<br><br>"
-                    f"ℹ️ Por favor, revise los detalles de la oferta y asegúrese de que toda la información sea correcta. "
-                    f"Si necesita realizar alguna modificación o tiene preguntas adicionales, no dude en ponerse en contacto con el comercial responsable o el equipo de administración."
-                )
+                nombre_comercial = st.session_state.get("username", "N/D")
 
-                # Enviar el correo a cada administrador
-                for email in emails_admin:
-                    correo_oferta_comercial(email, apartment_id, descripcion_oferta)
+                if emails_admin:
+                    descripcion_oferta = (
+                        f"📢 Se ha añadido una nueva oferta para el apartamento con ID {apartment_id}.<br><br>"
+                        f"📝 Detalles de la oferta realizada por el comercial {nombre_comercial}:<br>"
+                        f"🌍 <strong>Provincia:</strong> {provincia}<br>"
+                        f"📍 <strong>Municipio:</strong> {municipio}<br>"
+                        f"🏘️ <strong>Población:</strong> {poblacion}<br>"
+                        f"🛣️ <strong>Vial:</strong> {vial}<br>"
+                        f"🏠 <strong>Número:</strong> {numero}<br>"
+                        f"📮 <strong>Código Postal:</strong> {cp}<br>"
+                        f"📅 <strong>Fecha:</strong> {oferta_data['fecha']}<br>"
+                        f"📱 <strong>Teléfono:</strong> {phone}<br>"
+                        f"🏡 <strong>Tipo Vivienda:</strong> {oferta_data['Tipo_Vivienda']}<br>"
+                        f"✅ <strong>Contratado:</strong> {contrato}<br>"
+                        f"🔧 <strong>Servicio:</strong> {es_serviciable}<br>"
+                        f"⚠️ <strong>Incidencia:</strong> {contiene_incidencias}<br>"
+                        f"💬 <strong>Observaciones:</strong> {observations}<br><br>"
+                        f"ℹ️ Por favor, revise los detalles de la oferta y asegúrese de que toda la información sea correcta."
+                    )
+                    for email in emails_admin:
+                        correo_oferta_comercial(email, apartment_id, descripcion_oferta)
 
-                st.success("✅ Oferta enviada con éxito")
-                st.info(f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)}")
-            else:
-                st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
-
+                    st.success("✅ Oferta enviada con éxito")
+                    st.info(f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)}")
+                else:
+                    st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
 
 if __name__ == "__main__":
     comercial_dashboard()

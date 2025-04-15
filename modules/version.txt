@@ -3,7 +3,7 @@ v1.0.1 - Mejoras en el sistema de autenticación
 v1.0.2 - Se ha solucionado el problema con la geolocalización del usuario
 v1.0.3 - Corrección del marcador rojo en el mapa para ubicaciones no serviciables
 v1.0.4 - Mejora en el sistema de cierre de sesión para evitar sesiones bloqueadas
-v1.0.5 - Ahora cada usuario solo puede visualizar sus propias UIs asignadas
+v1.0.5 - Ahora cada usuario solo puede visualizar sus propias UI asignadas
 v1.0.6 - Ajuste en el zoom del clúster para mejorar la experiencia en zonas con alta densidad de marcadores
 v1.0.7 - Corrección en la visualización de datos dentro del pop-up del mapa
 v1.0.8 - Validación mejorada en los campos del formulario para evitar envíos con datos incompletos o incorrectos
@@ -16,7 +16,7 @@ v1.1.5 - Se modifican los mensajes de las notificaciones de correo para que sean
 v1.1.6 - Se ha implementado el envío de correos al usuario cuando se crea un nuevo usuario, se modifica un usuario o se elimina un usuario, con detalles de los cambios realizados, utilizando notificaciones más claras y amigables para los usuarios finales. Además, se ha introducido un formato HTML más organizado en los correos con iconos relevantes.
 v1.1.7 - Se ha añadido la funcionalidad de distinguir entre los campos modificados al editar un usuario para enviar notificaciones específicas indicando qué detalles del usuario han cambiado (nombre, rol, email, contraseña).
 v1.1.7 - Corrección de errores.
-v1.1.8 - Arreglado reseteo de IDs autoincrementales de la B.B.D.D.
+v1.1.8 - Arreglado reseteo de ID autoincrementales de la B.B.D.D.
 v1.1.9 - Limpieza del código, generado correo de no-reply especifico de verde para generar y enviar las notificaciones.
 v2.0.0 - Prototipo de "Home" solo para usuarios con rol de administrador. Visualización y estudio de datos en gráficos. (ZONA EN CONSTRUCCIÓN)
 v2.0.1 - Mejoras visuales, mejoras de información al usuario.
@@ -31,13 +31,14 @@ v2.0.9 - Actualizada base de datos. Mejorada trazabilidad de la aplicación. Añ
 v2.1.0 - Corregidos los errores por los que las imágenes de las incidencias no se mostraban ni guardaban correctamente.
 v2.1.1 - Corrección de fallo por el cual no se cargaba de forma eficiente los datos nuevos de asignación a la B.B.D.D.
 v2.1.2 - Añadido a datos UNICO 24.
-v2.1.3 - Corrección de bug que provocaba el envío de notificaciones por correo de forma erronea y a veces duplicada.
+v2.1.3 - Corrección de bug que provocaba el envío de notificaciones por correo de forma errónea y a veces duplicada.
 v2.1.4 - Añadidos nuevos informes.
-v2.1.5 - Añadida visualización de cto_id y cto al mapa de control de UUIIs.
+v2.1.5 - Añadida visualización de cto_id y cto al mapa de control de UUII.
 v2.1.6 - Solucionado error por el cual uno de los usuarios comerciales no visualizaba correctamente el mapa con sus asignaciones. Otras mejoras aplicadas. Corregido error por el cual, al enviar las notificaciones de ofertas por email, no recogía bien el dato del Apartment ID en el cuerpo del mensaje.
-v2.1.7 - Corregidas las notificaciones por las cuales a veces se descartaban correos. Corregidos los colores del mapa de UUIIs. Corregidas las horas que se enviaban en las notificaciones por correo. Corregido el HUSO HORARIO de la región.
+v2.1.7 - Corregidas las notificaciones por las cuales a veces se descartaban correos. Corregidos los colores del mapa de UUII. Corregidas las horas que se enviaban en las notificaciones por correo. Corregido el HUSO HORARIO de la región.
 v2.1.8 - Formulario de viabilidades corregido, causaba errores al guardar algunos comentarios.
 v2.1.9 - Notificaciones de viabilidades hacia los comerciales corregidas, se duplicaban y faltaban datos en los correos. Corregido error de gráficos Plotly por el cual las asignaciones aparecían en la leyenda nombrada como 0 en lugar de como Asignado No visitado.
 v2.2.0 - Se añade la visualización de la tabla de viabilidades en el gestor de comerciales. Se añade la descarga de varios tipos de Excel (datos, ofertas, viabilidades ...) en el rol de gestor de comercial.
-v2.2.1 - OLT's Dejadas precargadas en desplegable, ya no hay que meterlas a mano por el administrador. Corregido el error por el cual, a veces los nombres de los comerciales no salían en las ofertas realizadas.
+v2.2.1 - OLT Dejadas precargadas en desplegable, ya no hay que meterlas a mano por el administrador. Corregido el error por el cual, a veces los nombres de los comerciales no salían en las ofertas realizadas.
 v2.2.2 - Corregido error de formularios, por los que se recargaba cada vez que se rellenaba un campo. Se muestran en el formulario de viabilidades de administración, los datos previos rellenados. Comprobación de tickets únicos para viabilidades realizada. Poder pinchar en las viabilidades y que automáticamente el mapa se recargue a esas coordenadas.
+v2.2.3 - Añadido nuevo sistema de colores para las viabilidades. Mejora en los formularios, se envían y rellenan con más rapidez. Solucionados las notificaciones que se enviaban con campos en "N/D". Mejora visual del formulario de viabilidades. Revisión y mejora de generador de informes y datos. Solucionado problema por el cual algunos puntos aislados se asignaban a más de un comercial.

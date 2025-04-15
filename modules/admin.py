@@ -548,13 +548,41 @@ def viabilidades_seccion():
                            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
                            attr="Google")
             marker_cluster = MarkerCluster().add_to(m)
+
             for _, row in df.iterrows():
                 popup = f"🏠 {row['ticket']} - 📍 {row['latitud']}, {row['longitud']}"
+
+                # Obtener el valor de 'serviciable' y asegurarse de que sea una cadena.
+                serviciable = row.get('serviciable')
+                if serviciable is None:
+                    serviciable = ""
+                else:
+                    serviciable = str(serviciable).strip()
+
+                # Obtener y validar el valor de 'apartment_id'
+                apartment_id = row.get('apartment_id')
+                if apartment_id is None:
+                    apartment_id = ""
+                else:
+                    apartment_id = str(apartment_id).strip()
+
+                # Asignar el color en función de las condiciones:
+                # Rojo: viabilidad categorizada como no serviciable.
+                # Verde: viabilidad marcada como serviciable y que además tiene un apartment_id válido.
+                # Azul: por defecto.
+                if serviciable == "No":
+                    marker_color = 'red'
+                elif serviciable == "Sí" and apartment_id not in ["", "N/D"]:
+                    marker_color = 'green'
+                else:
+                    marker_color = 'blue'
+
                 folium.Marker(
                     location=[row['latitud'], row['longitud']],
                     popup=popup,
-                    icon=folium.Icon(color='blue', icon='info-sign')
+                    icon=folium.Icon(color=marker_color, icon='info-sign')
                 ).add_to(marker_cluster)
+
             return m
 
         m_to_show = draw_map(viabilidades_df, st.session_state["map_center"], st.session_state["map_zoom"])
@@ -1073,6 +1101,11 @@ def admin_dashboard():
             "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
             "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
             " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos.")
+        st.markdown("""**Leyenda:**
+                     🔵 Viabilidad aún sin estudio
+                     🟢 Viabilidad serviciable y con Apartment ID ya asociado
+                     🔴 Viabilidad no serviciable
+                    """)
         viabilidades_seccion()
 
         # Opción: Viabilidades (En construcción)
