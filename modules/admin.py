@@ -202,7 +202,7 @@ def cargar_datos_uis():
     query_ofertas = """
         SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
                motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
-               telefono, direccion_alternativa, observaciones
+               telefono, direccion_alternativa, observaciones, comercial
         FROM ofertas_comercial
     """
     ofertas_df = pd.read_sql(query_ofertas, conn)
@@ -438,7 +438,7 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
             data_comercial = {
                 "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Serviciable", "Motivo Serviciable",
                           "Incidencia", "Motivo de Incidencia", "Nombre Cliente", "Teléfono", "Dirección Alternativa",
-                          "Observaciones"],
+                          "Observaciones","Comercial"],
                 "Valor": [
                     fuente.iloc[0]['apartment_id'],
                     fuente.iloc[0]['provincia'],
@@ -451,7 +451,8 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
                     fuente.iloc[0].get('nombre_cliente', 'No disponible'),
                     fuente.iloc[0].get('telefono', 'No disponible'),
                     fuente.iloc[0].get('direccion_alternativa', 'No disponible'),
-                    fuente.iloc[0].get('observaciones', 'No hay observaciones.')
+                    fuente.iloc[0].get('observaciones', 'No hay observaciones.'),
+                    fuente.iloc[0].get('comercial', 'No disponible.')
                 ]
             }
 
@@ -469,20 +470,25 @@ def viabilidades_seccion():
     log_trazabilidad("Administrador", "Visualización de Viabilidades",
                      "El administrador visualizó la sección de viabilidades.")
 
-    # Cargar los datos de la base de datos
+    # Inicializamos el estado si no existe
+    if "map_center" not in st.session_state:
+        st.session_state["map_center"] = [43.463444, -3.790476]
+    if "map_zoom" not in st.session_state:
+        st.session_state["map_zoom"] = 12
+    if "selected_ticket" not in st.session_state:
+        st.session_state["selected_ticket"] = None
+
+    # Cargar datos
     with st.spinner("⏳ Cargando los datos de viabilidades..."):
         try:
             conn = obtener_conexion()
-            query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
-            tables = pd.read_sql(query_tables, conn)
-
+            tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
             if 'viabilidades' not in tables['name'].values:
                 st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
                 conn.close()
                 return
 
-            query = "SELECT * FROM viabilidades"
-            viabilidades_df = pd.read_sql(query, conn)
+            viabilidades_df = pd.read_sql("SELECT * FROM viabilidades", conn)
             conn.close()
 
             if viabilidades_df.empty:
@@ -493,90 +499,89 @@ def viabilidades_seccion():
             st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
             return
 
-    # Verificar que existan las columnas necesarias
-    required_columns = ['latitud', 'longitud', 'ticket']
-    for col in required_columns:
+    # Verificamos columnas necesarias
+    for col in ['latitud', 'longitud', 'ticket']:
         if col not in viabilidades_df.columns:
-            st.error(f"❌ No se encuentra la columna '{col}'.")
+            st.error(f"❌ Falta la columna '{col}'.")
             return
 
-    # Organizar la disposición de la interfaz con columnas
-    col1, col2 = st.columns([3, 3])  # Hacemos la columna 1 más ancha para el mapa
+    # Agregamos columna de duplicados
+    viabilidades_df['is_duplicate'] = viabilidades_df['apartment_id'].duplicated(keep=False)
 
-    with col1:
-        # Crear y mostrar el mapa con Folium
-        with st.spinner("⏳ Cargando mapa..."):
-            m = folium.Map(location=[43.463444, -3.790476], zoom_start=12,
-                           tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-                           attr="Google")
-            marker_cluster = MarkerCluster().add_to(m)
+    def highlight_duplicates(val):
+        if isinstance(val, str) and val in viabilidades_df[viabilidades_df['is_duplicate']]['apartment_id'].values:
+            return 'background-color: yellow'
+        return ''
 
-            # Iterar sobre los datos de las viabilidades para agregar marcadores
-            for _, row in viabilidades_df.iterrows():
-                popup_text = f"🏠 {row['ticket']} - 📍 {row['latitud']}, {row['longitud']}"
-                folium.Marker(
-                    location=[row['latitud'], row['longitud']],
-                    popup=popup_text,  # Aquí se está pasando el popup
-                    icon=folium.Icon(color='blue', icon='info-sign')
-                ).add_to(marker_cluster)
-
-            # Mostrar el mapa
-            map_data = st_folium(m, height=500, width=700)
+    # Interfaz: columnas para mapa y tabla
+    col1, col2 = st.columns([3, 3])
 
     with col2:
-        # Mostrar la tabla de viabilidades
-        st.subheader("Tabla de Viabilidades")
-        # Identificar los apartment_id repetidos
-        viabilidades_df['is_duplicate'] = viabilidades_df['apartment_id'].duplicated(keep=False)
+        st.subheader("📋 Tabla de Viabilidades")
 
-        # Función para resaltar las celdas con apartment_id duplicados
-        def highlight_duplicates(val):
-            if isinstance(val, str) and val in viabilidades_df[viabilidades_df['is_duplicate']]['apartment_id'].values:
-                return 'background-color: yellow'  # Cambia el color que desees
-            return ''
-
-        # Aplicar el estilo a la columna apartment_id
+        # Mostramos tabla completa con estilo
         styled_df = viabilidades_df.style.applymap(highlight_duplicates, subset=['apartment_id'])
-
-        # Mostrar la tabla con el estilo aplicado
         st.dataframe(styled_df, use_container_width=True)
 
-        # Añadir un botón de refresco para actualizar la tabla
+        # Selector de viabilidad por ticket (usando selectbox)
+        selected_index = st.selectbox(
+            "Selecciona una viabilidad por Ticket:",
+            options=viabilidades_df["ticket"],
+            index=viabilidades_df["ticket"].tolist().index(st.session_state["selected_ticket"]) if st.session_state["selected_ticket"] in viabilidades_df["ticket"].tolist() else 0,
+            key="viabilidad_selectbox"
+        )
+
+        # Filtramos el dataframe con el ticket seleccionado
+        selected_viabilidad = viabilidades_df[viabilidades_df["ticket"] == selected_index].iloc[0]
+        st.session_state["selected_ticket"] = selected_viabilidad["ticket"]
+        st.session_state["map_center"] = [selected_viabilidad["latitud"], selected_viabilidad["longitud"]]
+        st.session_state["map_zoom"] = 14
+
         if st.button("🔄 Refrescar Tabla"):
             st.rerun()
 
-    # Verificación del objeto del clic
-    if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
-        clicked_object = map_data["last_object_clicked"]
+    with col1:
+        st.subheader("🗺️ Mapa de Viabilidades")
 
-        # Extraer latitud y longitud del objeto clicado
-        lat_click = clicked_object.get("lat", "")
-        lon_click = clicked_object.get("lng", "")
+        def draw_map(df, center, zoom):
+            m = folium.Map(location=center, zoom_start=zoom,
+                           tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+                           attr="Google")
+            marker_cluster = MarkerCluster().add_to(m)
+            for _, row in df.iterrows():
+                popup = f"🏠 {row['ticket']} - 📍 {row['latitud']}, {row['longitud']}"
+                folium.Marker(
+                    location=[row['latitud'], row['longitud']],
+                    popup=popup,
+                    icon=folium.Icon(color='blue', icon='info-sign')
+                ).add_to(marker_cluster)
+            return m
 
-        if lat_click and lon_click:
-            # Consultar en la base de datos para encontrar el ticket correspondiente a las coordenadas
-            viabilidad_data = viabilidades_df[
-                (viabilidades_df['latitud'] == lat_click) & (viabilidades_df['longitud'] == lon_click)
-            ]
+        m_to_show = draw_map(viabilidades_df, st.session_state["map_center"], st.session_state["map_zoom"])
+        st_folium(m_to_show, height=500, width=700, key="main_map")
 
-            if viabilidad_data.empty:
-                st.error(f"❌ No se encontró viabilidad para las coordenadas: Lat: {lat_click}, Lon: {lon_click}")
-                st.write(f"🚨 Viabilidades disponibles en la base de datos:")
-                st.write(viabilidades_df[['ticket', 'latitud', 'longitud']])
-            else:
-                # Aquí se encontró una viabilidad para esas coordenadas
-                ticket = viabilidad_data['ticket'].iloc[0]
-                st.write(f"✔️ Viabilidad encontrada para el Ticket: {ticket}")
+    # Mostrar formulario debajo
+    if st.session_state["selected_ticket"]:
+        st.markdown("---")
+        st.subheader(f"📝 Formulario para Ticket: {st.session_state['selected_ticket']}")
+        mostrar_formulario(selected_viabilidad)
 
-                # Llamar a la función para mostrar el formulario con los datos de la viabilidad
-                mostrar_formulario(viabilidad_data.iloc[0])
-        else:
-            st.error("❌ No se encontraron coordenadas en el clic.")
 
 def mostrar_formulario(click_data):
     """Muestra el formulario para editar los datos de la viabilidad y guarda los cambios en la base de datos."""
 
-    # Extraer los datos
+    # Obtener valores de la tabla OLT
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY id_olt ASC")
+    olts = cursor.fetchall()
+    conn.close()
+
+    # Preparar opciones del selectbox: se mostrará "id_olt - nombre_olt"
+    opciones_olt = [f"{olt[0]} - {olt[1]}" for olt in olts]
+    map_olt = {f"{olt[0]} - {olt[1]}": olt[0] for olt in olts}
+
+    # Extraer los datos de click_data
     ticket = click_data["ticket"]
     latitud = click_data["latitud"]
     longitud = click_data["longitud"]
@@ -591,71 +596,87 @@ def mostrar_formulario(click_data):
     fecha_viabilidad = click_data.get("fecha_viabilidad", "N/D")
     cto_cercana = click_data.get("cto_cercana", "N/D")
 
-    # Crear un diseño en columnas
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        st.text_input("🎟️ Ticket", value=ticket, disabled=True, key="ticket_input")
-    with col2:
-        st.text_input("📍 Latitud", value=latitud, disabled=True, key="latitud_input")
-    with col3:
-        st.text_input("📍 Longitud", value=longitud, disabled=True, key="longitud_input")
+    # Utilizar un formulario para evitar reejecuciones en cada cambio
+    with st.form(key="form_viabilidad"):
+        # Diseño en columnas del formulario
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            st.text_input("🎟️ Ticket", value=ticket, disabled=True, key="ticket_input")
+        with col2:
+            st.text_input("📍 Latitud", value=latitud, disabled=True, key="latitud_input")
+        with col3:
+            st.text_input("📍 Longitud", value=longitud, disabled=True, key="longitud_input")
 
-    col4, col5, col6 = st.columns([1, 1, 1])
-    with col4:
-        st.text_input("📍 Provincia", value=provincia, disabled=True, key="provincia_input")
-    with col5:
-        st.text_input("🏙️ Municipio", value=municipio, disabled=True, key="municipio_input")
-    with col6:
-        st.text_input("👥 Población", value=poblacion, disabled=True, key="poblacion_input")
+        col4, col5, col6 = st.columns([1, 1, 1])
+        with col4:
+            st.text_input("📍 Provincia", value=provincia, disabled=True, key="provincia_input")
+        with col5:
+            st.text_input("🏙️ Municipio", value=municipio, disabled=True, key="municipio_input")
+        with col6:
+            st.text_input("👥 Población", value=poblacion, disabled=True, key="poblacion_input")
 
-    col7, col8, col9, col10 = st.columns([2, 1, 1, 1])
-    with col7:
-        st.text_input("🚦 Vial", value=vial, disabled=True, key="vial_input")
-    with col8:
-        st.text_input("🔢 Número", value=numero, disabled=True, key="numero_input")
-    with col9:
-        st.text_input("🔠 Letra", value=letra, disabled=True, key="letra_input")
-    with col10:
-        st.text_input("📮 Código Postal", value=cp, disabled=True, key="cp_input")
+        col7, col8, col9, col10 = st.columns([2, 1, 1, 1])
+        with col7:
+            st.text_input("🚦 Vial", value=vial, disabled=True, key="vial_input")
+        with col8:
+            st.text_input("🔢 Número", value=numero, disabled=True, key="numero_input")
+        with col9:
+            st.text_input("🔠 Letra", value=letra, disabled=True, key="letra_input")
+        with col10:
+            st.text_input("📮 Código Postal", value=cp, disabled=True, key="cp_input")
 
-    col11 = st.columns(1)[0]
-    with col11:
-        st.text_area("💬 Comentarios", value=comentario, disabled=True, key="comentario_input")
+        col11 = st.columns(1)[0]
+        with col11:
+            st.text_area("💬 Comentarios", value=comentario, disabled=True, key="comentario_input")
 
-    col12, col13 = st.columns([1, 1])
-    with col12:
-        st.text_input("📅 Fecha Viabilidad", value=fecha_viabilidad, disabled=True, key="fecha_viabilidad_input")
-    with col13:
-        st.text_input("🔌 Cto Cercana", value=cto_cercana, disabled=True, key="cto_cercana_input")
+        col12, col13 = st.columns([1, 1])
+        with col12:
+            st.text_input("📅 Fecha Viabilidad", value=fecha_viabilidad, disabled=True, key="fecha_viabilidad_input")
+        with col13:
+            st.text_input("🔌 Cto Cercana", value=cto_cercana, disabled=True, key="cto_cercana_input")
 
-    col14 = st.columns(1)[0]
-    with col14:
-        comentarios_comercial = st.text_area("📝 Comentarios Comerciales", value=click_data.get("comentarios_comercial", ""), disabled=False, key="comentarios_comercial_input")
+        # Campo editable: comentarios comerciales con valor precargado (si existe)
+        col14 = st.columns(1)[0]
+        with col14:
+            comentarios_comercial = st.text_area("📝 Comentarios Comerciales",
+                                                 value=click_data.get("comentarios_comercial", ""),
+                                                 key="comentarios_comercial_input")
 
-    col15, col16, col17 = st.columns([1, 1, 1])
-    with col15:
-        apartment_id = st.text_input("🏠 Apartment_id", value="", key="apartment_id_input")
-        olt = st.text_input("⚡ OLT", value="", key="olt_input")
-    with col16:
-        cto_admin = st.text_input("⚙️ Cto Admin", value="", key="cto_admin_input")
-    with col17:
-        id_cto = st.text_input("🔧 ID Cto", value="", key="id_cto_input")
+        col15, col16, col17 = st.columns([1, 1, 1])
+        with col15:
+            # Campo editable: Apartment_id con valor precargado si existe
+            apartment_id = st.text_input("🏠 Apartment_id",
+                                         value=click_data.get("apartment_id", ""),
+                                         key="apartment_id_input")
+            # Para el campo OLT se determina la opción por defecto según el valor anterior
+            default_olt = next((op for op in opciones_olt if op.startswith(f"{click_data.get('olt', '')} -")), opciones_olt[0])
+            opcion_olt = st.selectbox("⚡ OLT", opciones_olt, index=opciones_olt.index(default_olt), key="olt_input")
+            olt = map_olt[opcion_olt]  # Se guarda sólo el id_olt
+        with col16:
+            # Campos editables: Cto Admin y Municipio Admin con valores precargados
+            cto_admin = st.text_input("⚙️ Cto Admin", value=click_data.get("cto_admin", ""), key="cto_admin_input")
+            municipio_admin = st.text_input("🌍 Municipio Admin", value=click_data.get("municipio_admin", ""), key="municipio_admin_input")
+        with col17:
+            # Campos editables: ID Cto y seleccionable: ¿Es Serviciable?
+            id_cto = st.text_input("🔧 ID Cto", value=click_data.get("id_cto", ""), key="id_cto_input")
+            # Para el selectbox de serviciable se asigna por defecto según click_data
+            serviciable_val = click_data.get("serviciable", "Sí")
+            index_serviciable = 0 if serviciable_val == "Sí" else 1
+            serviciable = st.selectbox("🔍 ¿Es Serviciable?", ["Sí", "No"], index=index_serviciable, key="serviciable_input")
 
-    col18 = st.columns(1)[0]
-    with col18:
-        municipio_admin = st.text_input("🌍 Municipio Admin", value="", key="municipio_admin_input")
+        col19, col20 = st.columns([1, 1])
+        with col19:
+            # Campo editable: Coste con valor precargado
+            coste = st.number_input("💰 Coste", value=float(click_data.get("coste", 0.0)), step=0.01, key="coste_input")
+        with col20:
+            # Campo editable: Comentarios Internos con valor precargado (si existe)
+            comentarios_internos = st.text_area("📄 Comentarios Internos", value=click_data.get("comentarios_internos", ""), key="comentarios_internos_input")
 
-    col19, col20 = st.columns([1, 1])
-    with col19:
-        serviciable = st.selectbox("🔍 ¿Es Serviciable?", ["Sí", "No"], index=0, key="serviciable_input")
-    with col20:
-        coste = st.number_input("💰 Coste", value=0.0, step=0.01, key="coste_input")
+        # Botón de envío del formulario
+        submit = st.form_submit_button(f"💾 Guardar cambios para el Ticket {ticket}")
 
-    col21 = st.columns(1)[0]
-    with col21:
-        comentarios_internos = st.text_area("📄 Comentarios Internos", value="", key="comentarios_internos_input")
-
-    if st.button(f"💾 Guardar cambios para el Ticket {ticket}"):
+    # Procesar el formulario solo si se presiona el botón submit
+    if submit:
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
@@ -705,7 +726,6 @@ def mostrar_formulario(click_data):
 
         except Exception as e:
             st.error(f"❌ Error al guardar los cambios: {e}")
-
 
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")

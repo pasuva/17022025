@@ -366,7 +366,7 @@ def mapa_dashboard():
     st.info("ℹ️ Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
     st.dataframe(total_ofertas, use_container_width=True)
 
-    # Mostrar tabla de zonas asignadas y total de ofertas
+    # Mostrar tabla de viabilidades
     conn = get_db_connection()
     viabilidades = pd.read_sql("""
         SELECT DISTINCT 
@@ -381,7 +381,6 @@ def mapa_dashboard():
     st.info("ℹ️ Viabilidades: Visualización del total de viabilidades y su estado actual")
     st.dataframe(viabilidades, use_container_width=True)
 
-    # Sección de descarga de datos
     # Sección de descarga de datos
     st.subheader("Descargar Datos")
 

@@ -51,11 +51,13 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
             filename = f"{oferta_data['Apartment ID']}{extension}"
             imagen_url = upload_image_to_cloudinary(imagen_incidencia)
 
+        comercial = st.session_state["username"]  # Nombre del comercial actual
+
         if existe:
             cursor.execute('''UPDATE ofertas_comercial SET
                                 provincia=?, municipio=?, poblacion=?, vial=?, numero=?, letra=?, cp=?, latitud=?, longitud=?,
                                 nombre_cliente=?, telefono=?, direccion_alternativa=?, observaciones=?, serviciable=?,
-                                motivo_serviciable=?, incidencia=?, motivo_incidencia=?, fichero_imagen=?, fecha=?, Tipo_Vivienda=?, Contrato=?
+                                motivo_serviciable=?, incidencia=?, motivo_incidencia=?, fichero_imagen=?, fecha=?, Tipo_Vivienda=?, Contrato=?, comercial=?
                               WHERE apartment_id=?''',
                            (
                                oferta_data["Provincia"],
@@ -79,6 +81,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                                oferta_data["Tipo_Vivienda"],
                                oferta_data["Contrato"],
+                               comercial,
                                oferta_data["Apartment ID"]
                            ))
             mensaje = "✅ ¡Oferta modificada con éxito!"
@@ -86,8 +89,8 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
             cursor.execute('''INSERT INTO ofertas_comercial (
                                 apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
                                 nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable,
-                                motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                                motivo_serviciable, incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato, comercial
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                            (
                                oferta_data["Apartment ID"],
                                oferta_data["Provincia"],
@@ -110,7 +113,8 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia):
                                imagen_url,
                                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
                                oferta_data["Tipo_Vivienda"],
-                               oferta_data["Contrato"]
+                               oferta_data["Contrato"],
+                               comercial
                            ))
             mensaje = "✅ ¡Oferta enviada y guardada en la base de datos con éxito!"
 
