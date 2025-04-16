@@ -807,34 +807,48 @@ def mostrar_formulario(click_data):
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
 
-    # Formulario editable
-    with st.form(f"formulario_oferta_{form_key}"):
-        es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
+    # 🔘 Selector reactivo principal
+    es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
 
+    # Contenedor principal
+    with st.container():
         if es_serviciable == "Sí":
-            tipo_vivienda = st.selectbox("🏠 Tipo de Ui", ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"], index=0)
-            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui") if tipo_vivienda == "Otro" else ""
-            contrato = st.radio("📑 Tipo de Contrato", ["Sí", "No Interesado"], index=0, horizontal=True)
-            motivo_serviciable = ""
-            client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
-            phone = st.text_input("📞 Teléfono", max_chars=15)
-            alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
-            observations = st.text_area("📝 Observaciones")
+            col1, col2 = st.columns(2)
+
+            with col1:
+                tipo_vivienda = st.selectbox("🏠 Tipo de Ui", ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
+                                             index=0)
+                contrato = st.radio("📑 Tipo de Contrato", ["Sí", "No Interesado"], index=0, horizontal=True)
+                client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
+                phone = st.text_input("📞 Teléfono", max_chars=15)
+
+            with col2:
+                tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui") if tipo_vivienda == "Otro" else ""
+                alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
+                observations = st.text_area("📝 Observaciones")
+
             contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
-            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia") if contiene_incidencias == "Sí" else ""
-            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"]) if contiene_incidencias == "Sí" else None
+            if contiene_incidencias == "Sí":
+                motivo_incidencia = st.text_area("📄 Motivo de la Incidencia")
+                imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
+            else:
+                motivo_incidencia = ""
+                imagen_incidencia = None
+
+            motivo_serviciable = ""
+
         else:
             motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
             tipo_vivienda = tipo_vivienda_otro = contrato = client_name = phone = alt_address = observations = contiene_incidencias = motivo_incidencia = ""
             imagen_incidencia = None
 
-        enviar = st.form_submit_button("🚀 Enviar Oferta")
+    # Botón de envío
+    enviar = st.button("🚀 Enviar Oferta")
 
-        if enviar:
-            if phone and not phone.isdigit():
-                st.error("❌ El teléfono debe contener solo números.")
-                return
-
+    if enviar:
+        if es_serviciable == "Sí" and phone and not phone.isdigit():
+            st.error("❌ El teléfono debe contener solo números.")
+        else:
             oferta_data = {
                 "Apartment ID": apartment_id,
                 "Provincia": provincia,
@@ -858,6 +872,9 @@ def mostrar_formulario(click_data):
                 "Contrato": contrato,
                 "fecha": pd.Timestamp.now(tz="Europe/Madrid")
             }
+
+            st.success("✅ Oferta enviada correctamente.")
+            #st.json(oferta_data)  # Puedes quitar esto o usarlo solo para depuración
 
             with st.spinner("⏳ Guardando la oferta en la base de datos..."):
                 guardar_en_base_de_datos(oferta_data, imagen_incidencia)

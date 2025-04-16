@@ -761,102 +761,85 @@ def mostrar_formulario(click_data):
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
 
-    # Formulario interactivo
-    with st.form(key=f"form_oferta_{form_key}"):
-        es_serviciable = st.radio("🛠️ ¿Es serviciable?",
-                                  ["Sí", "No"],
-                                  index=0,
-                                  horizontal=True,
-                                  key=f"es_serviciable_{form_key}")
+    # Selector principal fuera del form para reactividad
+    es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True,
+                              key=f"es_serviciable_{form_key}")
 
-        if es_serviciable == "Sí":
+    # Variables comunes
+    tipo_vivienda = tipo_vivienda_otro = contrato = client_name = phone = alt_address = observations = ""
+    contiene_incidencias = motivo_incidencia = motivo_serviciable = ""
+    imagen_incidencia = None
+
+    # Campos si es serviciable
+    if es_serviciable == "Sí":
+        col1, col2 = st.columns(2)
+
+        with col1:
             tipo_vivienda = st.selectbox("🏠 Tipo de Ui",
                                          ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
                                          index=0,
                                          key=f"tipo_vivienda_{form_key}")
-            if tipo_vivienda == "Otro":
-                tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui",
-                                                   key=f"tipo_vivienda_otro_{form_key}")
-            else:
-                tipo_vivienda_otro = ""
             contrato = st.radio("📑 Tipo de Contrato",
                                 ["Sí", "No Interesado"],
                                 index=0,
                                 horizontal=True,
                                 key=f"contrato_{form_key}")
-        else:
-            tipo_vivienda = contrato = tipo_vivienda_otro = None
+            client_name = st.text_input("👤 Nombre del Cliente", max_chars=100, key=f"client_name_{form_key}")
 
-        if es_serviciable == "No":
-            motivo_serviciable = st.text_area("❌ Motivo de No Servicio",
-                                              key=f"motivo_serviciable_{form_key}")
-            client_name = ""
-            phone = ""
-            alt_address = ""
-            observations = ""
-            contiene_incidencias = ""
-            motivo_incidencia = ""
-            imagen_incidencia = None
-        else:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                client_name = st.text_input("👤 Nombre del Cliente",
-                                            max_chars=100,
-                                            key=f"client_name_{form_key}")
-            with col_b:
-                phone = st.text_input("📞 Teléfono",
-                                      max_chars=15,
-                                      key=f"phone_{form_key}")
-            alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)",
-                                        key=f"alt_address_{form_key}")
-            observations = st.text_area("📝 Observaciones",
-                                        key=f"observations_{form_key}")
-            contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?",
-                                            ["Sí", "No"],
-                                            index=1,
-                                            horizontal=True,
-                                            key=f"contiene_incidencias_{form_key}")
-            if contiene_incidencias == "Sí":
-                motivo_incidencia = st.text_area("📄 Motivo de la Incidencia",
-                                                 key=f"motivo_incidencia_{form_key}")
-                imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)",
-                                                     type=["png", "jpg", "jpeg"],
-                                                     key=f"imagen_incidencia_{form_key}")
-            else:
-                motivo_incidencia = ""
-                imagen_incidencia = None
-            motivo_serviciable = ""
+        with col2:
+            tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui",
+                                               key=f"tipo_vivienda_otro_{form_key}") if tipo_vivienda == "Otro" else ""
+            phone = st.text_input("📞 Teléfono", max_chars=15, key=f"phone_{form_key}")
 
-        submit = st.form_submit_button("🚀 Enviar Oferta")
+        alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)",
+                                    key=f"alt_address_{form_key}")
+        observations = st.text_area("📝 Observaciones", key=f"observations_{form_key}")
 
-    # Procesar el formulario
+        contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True,
+                                        key=f"contiene_incidencias_{form_key}")
+
+        if contiene_incidencias == "Sí":
+            motivo_incidencia = st.text_area("📄 Motivo de la Incidencia", key=f"motivo_incidencia_{form_key}")
+            imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"],
+                                                 key=f"imagen_incidencia_{form_key}")
+
+    # Campos si NO es serviciable
+    else:
+        motivo_serviciable = st.text_area("❌ Motivo de No Servicio", key=f"motivo_serviciable_{form_key}")
+
+    # Botón de envío
+    submit = st.button("🚀 Enviar Oferta", key=f"submit_oferta_{form_key}")
+
+    # Procesar envío
     if submit:
-        if phone and not phone.isdigit():
+        if es_serviciable == "Sí" and phone and not phone.isdigit():
             st.error("❌ El teléfono debe contener solo números.")
-            return
+        else:
+            oferta_data = {
+                "Provincia": provincia,
+                "Municipio": municipio,
+                "Población": poblacion,
+                "Vial": vial,
+                "Número": numero,
+                "Letra": letra,
+                "Código Postal": cp,
+                "Latitud": lat_value,
+                "Longitud": lng_value,
+                "Nombre Cliente": client_name,
+                "Teléfono": phone,
+                "Dirección Alternativa": alt_address,
+                "Observaciones": observations,
+                "serviciable": es_serviciable,
+                "motivo_serviciable": motivo_serviciable,
+                "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
+                "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
+                "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
+                "Contrato": contrato,
+                "fecha": pd.Timestamp.now(tz="Europe/Madrid")
+            }
 
-        oferta_data = {
-            "Provincia": provincia,
-            "Municipio": municipio,
-            "Población": poblacion,
-            "Vial": vial,
-            "Número": numero,
-            "Letra": letra,
-            "Código Postal": cp,
-            "Latitud": lat_value,
-            "Longitud": lng_value,
-            "Nombre Cliente": client_name,
-            "Teléfono": phone,
-            "Dirección Alternativa": alt_address,
-            "Observaciones": observations,
-            "serviciable": es_serviciable,
-            "motivo_serviciable": motivo_serviciable,
-            "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
-            "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
-            "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
-            "Contrato": contrato,
-            "fecha": pd.Timestamp.now(tz="Europe/Madrid")
-        }
+            st.success("✅ Oferta enviada correctamente.")
+            #st.json(oferta_data)  # Puedes usarlo solo para depurar si quieres
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id)

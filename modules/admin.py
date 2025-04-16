@@ -185,7 +185,6 @@ def eliminar_usuario(id):
     else:
         st.error("Usuario no encontrado.")
 
-@st.cache_data
 def cargar_datos_uis():
     """Carga y cachea los datos de las tablas 'datos_uis', 'ofertas_comercial' y 'comercial_rafa'."""
     conn = obtener_conexion()
@@ -202,7 +201,7 @@ def cargar_datos_uis():
     query_ofertas = """
         SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
                motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
-               telefono, direccion_alternativa, observaciones, comercial
+               telefono, direccion_alternativa, observaciones, comercial, comentarios
         FROM ofertas_comercial
     """
     ofertas_df = pd.read_sql(query_ofertas, conn)
@@ -211,7 +210,7 @@ def cargar_datos_uis():
     query_rafa = """
         SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
                motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
-               telefono, direccion_alternativa, observaciones, comercial
+               telefono, direccion_alternativa, observaciones, comercial, comentarios
         FROM comercial_rafa
     """
     comercial_rafa_df = pd.read_sql(query_rafa, conn)
@@ -231,7 +230,6 @@ def cargar_provincias():
     return sorted(df['provincia'].dropna().unique())
 
 
-@st.cache_data
 def cargar_datos_por_provincia(provincia):
     conn = obtener_conexion()
 
@@ -383,11 +381,12 @@ def mapa_seccion():
 
 
 def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_df):
-    """ Muestra la información del apartamento clickeado de forma bonita y estructurada en tablas """
+    """ Muestra la información del apartamento clickeado, junto con un campo para comentarios.
+        Se actualiza el campo 'comentarios' en la tabla (ofertas_comercial o comercial_rafa) donde se encuentre el registro.
+    """
+    st.subheader(f"🏠 **Información del Apartament ID {apartment_id}**")
 
-    st.subheader("🏠 **Información del Apartamento Seleccionado**")
-
-    # Obtener datos de los tres DataFrames usando el apartment_id
+    # Obtener los datos de cada DataFrame usando el apartment_id
     datos_info = datos_df[datos_df["apartment_id"] == apartment_id]
     ofertas_info = ofertas_df[ofertas_df["apartment_id"] == apartment_id]
     comercial_rafa_info = comercial_rafa_df[comercial_rafa_df["apartment_id"] == apartment_id]
@@ -398,10 +397,11 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
     # Tabla de Datos Generales
     if not datos_info.empty:
         with col1:
-            st.markdown("### 🔹 **Datos Generales**")
+            st.markdown("##### 🔹 **Datos Generales**")
             data_uis = {
                 "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Calle/Vial", "Número", "Letra",
-                          "Código Postal", "cto_id", "cto", "Estado del Sitio", "Estado del Apartamento", "Proyecto de CTO", "Zona"],
+                          "Código Postal", "cto_id", "cto", "Estado del Sitio", "Estado del Apartamento",
+                          "Proyecto de CTO", "Zona"],
                 "Valor": [
                     datos_info.iloc[0]['apartment_id'],
                     datos_info.iloc[0]['provincia'],
@@ -428,17 +428,26 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
         with col1:
             st.warning("❌ **No se encontraron datos para el apartamento en `datos_uis`.**")
 
-    # Tabla de Datos Comerciales (prioridad a ofertas_comercial, luego comercial_rafa)
-    if not ofertas_info.empty or not comercial_rafa_info.empty:
+    # Tabla de Datos Comerciales (prioridad a ofertas_info, luego comercial_rafa_info)
+    fuente = None
+    tabla_objetivo = None  # Variable para determinar qué tabla actualizar.
+    if not ofertas_info.empty:
+        fuente = ofertas_info
+        tabla_objetivo = "ofertas_comercial"  # o la variable/objeto que uses para actualizar esta tabla
+    elif not comercial_rafa_info.empty:
+        fuente = comercial_rafa_info
+        tabla_objetivo = "comercial_rafa"
+    else:
         with col2:
-            st.markdown("### 🔹 **Datos Comerciales**")
+            st.warning("❌ **No se encontraron datos para el apartamento en `ofertas_comercial` ni en `comercial_rafa`.**")
 
-            fuente = ofertas_info if not ofertas_info.empty else comercial_rafa_info
-
+    if fuente is not None:
+        with col2:
+            st.markdown("##### 🔹 **Datos Comerciales**")
             data_comercial = {
                 "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Serviciable", "Motivo Serviciable",
                           "Incidencia", "Motivo de Incidencia", "Nombre Cliente", "Teléfono", "Dirección Alternativa",
-                          "Observaciones","Comercial"],
+                          "Observaciones", "Comercial", "Comentarios"],
                 "Valor": [
                     fuente.iloc[0]['apartment_id'],
                     fuente.iloc[0]['provincia'],
@@ -452,18 +461,53 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
                     fuente.iloc[0].get('telefono', 'No disponible'),
                     fuente.iloc[0].get('direccion_alternativa', 'No disponible'),
                     fuente.iloc[0].get('observaciones', 'No hay observaciones.'),
-                    fuente.iloc[0].get('comercial', 'No disponible.')
+                    fuente.iloc[0].get('comercial', 'No disponible.'),
+                    fuente.iloc[0].get('comentarios', 'No disponible.')
                 ]
             }
-
             df_comercial = pd.DataFrame(data_comercial)
             st.dataframe(df_comercial.style.set_table_styles([
                 {'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},
                 {'selector': 'tbody td', 'props': [('padding', '10px')]},
             ]))
-    else:
-        with col2:
-            st.warning("❌ **No se encontraron datos para el apartamento en `ofertas_comercial` ni en `comercial_rafa`.**")
+
+        # Preparamos el comentario ya existente para el formulario
+        # Si el campo es None o 'No disponible.' se muestra una cadena vacía para editar
+        comentario_previo = fuente.iloc[0].get('comentarios') or ""
+        if comentario_previo == "No disponible.":
+            comentario_previo = ""
+
+        # Campo para agregar o editar nuevos comentarios, utilizando el comentario previo como valor inicial
+        nuevo_comentario = st.text_area(f"### 🔹 **Añadir/Editar Comentario u Observación de {apartment_id}**",
+                                        value=comentario_previo,
+                                        help="El comentario se guardará en la tabla correspondiente de la base de datos, asociado al Apartment ID elegido")
+        if st.button("Guardar Comentario"):
+            if not nuevo_comentario.strip():
+                st.error("❌ El comentario no puede estar vacío.")
+            else:
+                # Actualizamos la base de datos
+                resultado = guardar_comentario(apartment_id, nuevo_comentario, tabla_objetivo)
+                if resultado:
+                    st.success("✅ Comentario guardado exitosamente.")
+                else:
+                    st.error("❌ Hubo un error al guardar el comentario. Intenta nuevamente.")
+
+
+def guardar_comentario(apartment_id, comentario, tabla):
+    try:
+        # Conexión a la base de datos (cambia la ruta o la conexión según corresponda)
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+
+        # Actualizar el comentario para el registro con el apartment_id dado
+        query = f"UPDATE {tabla} SET comentarios = ? WHERE apartment_id = ?"
+        cursor.execute(query, (comentario, apartment_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error al actualizar la base de datos: {str(e)}")
+        return False
 
 
 def viabilidades_seccion():
