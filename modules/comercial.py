@@ -753,12 +753,14 @@ def mostrar_formulario(click_data):
     """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
     st.subheader("📄 Enviar Oferta")
 
+    # Extraer datos del click
     popup_text = click_data.get("popup", "")
-    apartment_id = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
+    apartment_id_from_popup = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
     lat_value = click_data.get("lat", "N/D")
     lng_value = click_data.get("lng", "N/D")
     form_key = f"{lat_value}_{lng_value}"
 
+    # Consultar la base de datos para las coordenadas seleccionadas.
     try:
         conn = get_db_connection()
         query = """
@@ -767,23 +769,69 @@ def mostrar_formulario(click_data):
         """
         df = pd.read_sql(query, conn, params=(lat_value, lng_value))
         conn.close()
-        if df.empty:
-            st.warning("⚠️ No se encontraron datos para estas coordenadas.")
-            provincia = municipio = poblacion = vial = numero = letra = cp = "No disponible"
-        else:
-            apartment_id = df.iloc[0]["apartment_id"]
-            provincia = df.iloc[0]["provincia"]
-            municipio = df.iloc[0]["municipio"]
-            poblacion = df.iloc[0]["poblacion"]
-            vial = df.iloc[0]["vial"]
-            numero = df.iloc[0]["numero"]
-            letra = df.iloc[0]["letra"]
-            cp = df.iloc[0]["cp"]
     except Exception as e:
         st.error(f"❌ Error al obtener datos de la base de datos: {e}")
         return
 
-    # Campos bloqueados (fuera del form)
+    # Si no se encontraron registros, el formulario se mostrará vacío.
+    if df.empty:
+        st.warning("⚠️ No se encontraron datos para estas coordenadas.")
+        form_data = {}    # Formulario vacío
+        es_serviciable_default = "Sí"  # Por defecto, para nuevos puntos, se marca como "Sí"
+    else:
+        # Si hay más de un registro, pedir al usuario que seleccione uno
+        if len(df) > 1:
+            # Generamos una lista de opciones con más info
+            opciones = [
+                f"{row['apartment_id']}  –  Vial: {row['vial']}  –  Nº: {row['numero']}  –  Letra: {row['letra']}"
+                for _, row in df.iterrows()
+            ]
+            st.warning("⚠️ Hay varias ofertas en estas coordenadas. Elige un Apartment ID de la lista del deplegable, en este caso, no es necesario que vayas eligiendo cada punto,"
+                       "puedes elegir siempre el mismo e ir cambiando de Apartment ID en el listado que aparece a continuación, los colores se irán actualizando solos. ¡NO TE OLVIDES DE GUARDAR"
+                       "CADA OFERTA POR SEPARADO!")
+            seleccion = st.selectbox(
+                "Elige un Apartment ID:",
+                options=opciones,
+                key=f"select_apartment_{form_key}"
+            )
+            # Extraemos el apartment_id (es la parte antes del primer espacio)
+            apartment_id = seleccion.split()[0]
+            # Filtramos el DataFrame por ese apartment_id
+            df = df[df["apartment_id"] == apartment_id]
+
+        # Tomamos los datos de la (o la única) fila
+        apartment_id = df.iloc[0]["apartment_id"]
+        provincia = df.iloc[0]["provincia"]
+        municipio = df.iloc[0]["municipio"]
+        poblacion = df.iloc[0]["poblacion"]
+        vial = df.iloc[0]["vial"]
+        numero = df.iloc[0]["numero"]
+        letra = df.iloc[0]["letra"]
+        cp = df.iloc[0]["cp"]
+        # Suponemos que en la base se guardó el estado "serviciable" en una columna, de lo contrario lo dejamos en "Sí"
+        es_serviciable_default = df.iloc[0].get("serviciable", "Sí")
+        form_data = {
+            "apartment_id": apartment_id,
+            "provincia": provincia,
+            "municipio": municipio,
+            "poblacion": poblacion,
+            "vial": vial,
+            "numero": numero,
+            "letra": letra,
+            "cp": cp
+        }
+
+    # Rellenar campos con datos existentes o dejar en blanco si es nuevo
+    apartment_id = form_data.get("apartment_id", "N/D")
+    provincia = form_data.get("provincia", "")
+    municipio = form_data.get("municipio", "")
+    poblacion = form_data.get("poblacion", "")
+    vial = form_data.get("vial", "")
+    numero = form_data.get("numero", "")
+    letra = form_data.get("letra", "")
+    cp = form_data.get("cp", "")
+
+    # Mostrar campos bloqueados (datos no editables) con la información del punto
     st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -807,38 +855,46 @@ def mostrar_formulario(click_data):
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
 
-    # 🔘 Selector reactivo principal
-    es_serviciable = st.radio("🛠️ ¿Es serviciable?", ["Sí", "No"], index=0, horizontal=True)
+    # Selector reactivo para "¿Es serviciable?"
+    # Si es un punto nuevo (no hay datos) usamos "Sí" por defecto, de lo contrario usamos lo guardado
+    es_serviciable = st.radio("🛠️ ¿Es serviciable?",
+                              ["Sí", "No"],
+                              index=0 if es_serviciable_default == "Sí" else 1,
+                              horizontal=True)
 
-    # Contenedor principal
+    # Aquí se construye el resto del formulario, dentro de un contenedor
     with st.container():
         if es_serviciable == "Sí":
             col1, col2 = st.columns(2)
-
             with col1:
-                tipo_vivienda = st.selectbox("🏠 Tipo de Ui", ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
+                tipo_vivienda = st.selectbox("🏠 Tipo de Ui",
+                                             ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
                                              index=0)
-                contrato = st.radio("📑 Tipo de Contrato", ["Sí", "No Interesado"], index=0, horizontal=True)
+                contrato = st.radio("📑 Tipo de Contrato",
+                                    ["Sí", "No Interesado"],
+                                    index=0,
+                                    horizontal=True)
                 client_name = st.text_input("👤 Nombre del Cliente", max_chars=100)
                 phone = st.text_input("📞 Teléfono", max_chars=15)
-
             with col2:
                 tipo_vivienda_otro = st.text_input("📝 Especificar Tipo de Ui") if tipo_vivienda == "Otro" else ""
                 alt_address = st.text_input("📌 Dirección Alternativa (Rellenar si difiere de la original)")
                 observations = st.text_area("📝 Observaciones")
-
-            contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?", ["Sí", "No"], index=1, horizontal=True)
+            contiene_incidencias = st.radio("⚠️ ¿Contiene incidencias?",
+                                            ["Sí", "No"],
+                                            index=1,
+                                            horizontal=True)
             if contiene_incidencias == "Sí":
                 motivo_incidencia = st.text_area("📄 Motivo de la Incidencia")
-                imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
+                imagen_incidencia = st.file_uploader("📷 Adjuntar Imagen (PNG, JPG, JPEG)",
+                                                     type=["png", "jpg", "jpeg"])
             else:
                 motivo_incidencia = ""
                 imagen_incidencia = None
-
             motivo_serviciable = ""
-
         else:
             motivo_serviciable = st.text_area("❌ Motivo de No Servicio")
+            # Estos campos estarán vacíos si se marca "No"
             tipo_vivienda = tipo_vivienda_otro = contrato = client_name = phone = alt_address = observations = contiene_incidencias = motivo_incidencia = ""
             imagen_incidencia = None
 
@@ -874,7 +930,6 @@ def mostrar_formulario(click_data):
             }
 
             st.success("✅ Oferta enviada correctamente.")
-            #st.json(oferta_data)  # Puedes quitar esto o usarlo solo para depuración
 
             with st.spinner("⏳ Guardando la oferta en la base de datos..."):
                 guardar_en_base_de_datos(oferta_data, imagen_incidencia)
