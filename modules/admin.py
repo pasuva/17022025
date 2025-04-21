@@ -7,7 +7,7 @@ from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
 from streamlit_cookies_controller import CookieController  # Se importa localmente
-from folium.plugins import MarkerCluster
+from folium.plugins import MarkerCluster, Geocoder
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
 
@@ -329,48 +329,67 @@ def mapa_seccion():
     limpiar_mapa()  # 🔹 Evita la sobrecarga de mapas
 
     with st.spinner("⏳ Cargando mapa..."):
+        # Inicialización del mapa
         m = folium.Map(
-            location=[center_lat, center_lon], zoom_start=12, max_zoom=21,
-            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google"
+            location=[center_lat, center_lon],
+            zoom_start=12,
+            max_zoom=21,
+            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+            attr="Google"
         )
-        cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
+        Geocoder().add_to(m)
 
-        # 🔹 Agrupamos coordenadas para evitar solapamientos
-        coord_counts = datos_filtrados.groupby(['latitud', 'longitud']).size().to_dict()
+        # Elegimos si usar clustering en función del zoom
+        if m.options['zoom'] >= 15:
+            cluster_layer = m
+        else:
+            cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
 
+        # 1️⃣ Detectar duplicados para desplazar
+        coord_counts = {}
+        for _, row in datos_filtrados.iterrows():
+            coord = (row['latitud'], row['longitud'])
+            coord_counts[coord] = coord_counts.get(coord, 0) + 1
+
+        # 2️⃣ Dibujar cada marcador con desplazamiento si hace falta
         for _, row in datos_filtrados.iterrows():
             apt_id = row['apartment_id']
             lat_val, lon_val = row['latitud'], row['longitud']
             popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
 
-            # 🔹 Determinamos color del marcador basado en la información combinada
-            if incidencia_dict.get(apt_id, "") == "sí":
-                marker_color = 'purple'  # 🟣 Incidencia
-            elif serviciable_dict.get(apt_id, "") == "no":
-                marker_color = 'red'  # 🔴 No Serviciable
+            # Determinar color según tus dicts
+            if incidencia_dict.get(apt_id, "").lower() == "sí":
+                marker_color = 'purple'
+            elif serviciable_dict.get(apt_id, "").lower() == "no":
+                marker_color = 'red'
             elif str(row["serviciable"]).strip().lower() == "sí":
-                marker_color = 'green'  # 🟢 Serviciable
-            elif contrato_dict.get(apt_id, "") == "sí":
-                marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
-            elif contrato_dict.get(apt_id, "") == "no interesado":
-                marker_color = 'gray'  # ⚫ Oferta (No Interesado)
+                marker_color = 'green'
+            elif contrato_dict.get(apt_id, "").lower() == "sí":
+                marker_color = 'orange'
+            elif contrato_dict.get(apt_id, "").lower() == "no interesado":
+                marker_color = 'gray'
             else:
-                marker_color = 'blue'  # 🔵 Sin Oferta
+                marker_color = 'blue'
 
-            # 🔹 Ajuste de coordenadas solo si hay solapamiento
-            count = coord_counts.get((lat_val, lon_val), 1)
+            # Aplicar desplazamiento ordenado si hay duplicados
+            count = coord_counts[(row['latitud'], row['longitud'])]
             if count > 1:
-                lat_val += count * 0.00003
-                lon_val -= count * 0.00003
-                coord_counts[(lat_val, lon_val)] = count - 1
+                lat_offset = count * 0.00003
+                lon_offset = -count * 0.00003
+                lat_val += lat_offset
+                lon_val += lon_offset
+                # Reducimos el contador en la posición original
+                coord_counts[(row['latitud'], row['longitud'])] = count - 1
 
+            # Añadir marcador al cluster o al mapa directamente
             folium.Marker(
                 location=[lat_val, lon_val],
                 popup=popup_text,
                 icon=folium.Icon(color=marker_color, icon="map-marker"),
-                tooltip=apt_id  # Usamos el ID como tooltip
+                tooltip=apt_id
             ).add_to(cluster_layer)
 
+        # Renderizar con st_folium
         map_data = st_folium(m, height=500, use_container_width=True)
 
         # 🔹 Extraer el apartment_id clickeado
@@ -563,15 +582,24 @@ def viabilidades_seccion():
     with col2:
         st.subheader("📋 Tabla de Viabilidades")
 
+        # Reordenamos para que 'ticket' quede primero
+        cols = viabilidades_df.columns.tolist()
+        if 'ticket' in cols:
+            cols.remove('ticket')
+            cols = ['ticket'] + cols
+        df_reordered = viabilidades_df[cols]
+
         # Mostramos tabla completa con estilo
-        styled_df = viabilidades_df.style.applymap(highlight_duplicates, subset=['apartment_id'])
+        styled_df = df_reordered.style.applymap(highlight_duplicates, subset=['apartment_id'])
         st.dataframe(styled_df, use_container_width=True)
 
         # Selector de viabilidad por ticket (usando selectbox)
         selected_index = st.selectbox(
             "Selecciona una viabilidad por Ticket:",
             options=viabilidades_df["ticket"],
-            index=viabilidades_df["ticket"].tolist().index(st.session_state["selected_ticket"]) if st.session_state["selected_ticket"] in viabilidades_df["ticket"].tolist() else 0,
+            index=viabilidades_df["ticket"].tolist().index(st.session_state["selected_ticket"])
+            if st.session_state["selected_ticket"] in viabilidades_df["ticket"].tolist()
+            else 0,
             key="viabilidad_selectbox"
         )
 
@@ -753,6 +781,7 @@ def mostrar_formulario(click_data):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
+            # 1️⃣ Actualizar viabilidad en la base de datos
             query = """
                 UPDATE viabilidades
                 SET apartment_id = ?, olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
@@ -764,19 +793,36 @@ def mostrar_formulario(click_data):
                 coste, comentarios_comercial, comentarios_internos, ticket
             ))
 
+            # 2️⃣ Obtener el email del comercial responsable
             cursor.execute("""
                 SELECT email 
                 FROM usuarios
-                WHERE username = (SELECT usuario FROM viabilidades WHERE ticket = ?)
+                WHERE username = (
+                    SELECT usuario 
+                    FROM viabilidades 
+                    WHERE ticket = ?
+                )
             """, (ticket,))
             email_comercial = cursor.fetchone()
+            destinatarios = []
 
             if email_comercial:
-                destinatario_comercial = email_comercial[0]
+                destinatarios.append(email_comercial[0])
             else:
                 st.error("❌ No se encontró el correo del comercial correspondiente.")
-                destinatario_comercial = "patricia@redytelcomputer.com"
+                destinatarios.append("patricia@redytelcomputer.com")
 
+            # 3️⃣ Obtener todos los emails de los comercial_jefe
+            cursor.execute("""
+                SELECT email
+                FROM usuarios
+                WHERE role = 'comercial_jefe'
+            """)
+            jefes = cursor.fetchall()
+            for fila in jefes:
+                destinatarios.append(fila[0])
+
+            # 4️⃣ Montar descripción del correo
             descripcion_viabilidad = (
                 f"📢 La viabilidad del ticket {ticket} ha sido completada.<br><br>"
                 f"📌 Comentarios a comerciales: {comentarios_comercial}<br>"
@@ -788,16 +834,19 @@ def mostrar_formulario(click_data):
                 f"Si tiene alguna pregunta o necesita realizar alguna modificación, no dude en ponerse en contacto con el equipo de administración."
             )
 
-            correo_viabilidad_administracion(destinatario_comercial, ticket, descripcion_viabilidad)
+            # 5️⃣ Enviar correo a todos los destinatarios
+            for destinatario in set(destinatarios):  # set() para evitar duplicados
+                correo_viabilidad_administracion(destinatario, ticket, descripcion_viabilidad)
 
+            # 6️⃣ Confirmaciones y cierre
             conn.commit()
             conn.close()
 
             st.success(f"✅ Los cambios para el Ticket {ticket} han sido guardados correctamente.")
-            st.info(f"📧 Se ha enviado una notificación al comercial sobre la viabilidad completada.")
+            st.info(f"📧 Se ha enviado una notificación al comercial y a los jefes de equipo.")
 
         except Exception as e:
-            st.error(f"❌ Error al guardar los cambios: {e}")
+            st.error(f"❌ Error al guardar los cambios o enviar notificaciones: {e}")
 
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")
