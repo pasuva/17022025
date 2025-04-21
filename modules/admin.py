@@ -259,7 +259,8 @@ def cargar_datos_por_provincia(provincia):
 
 
 def mapa_seccion():
-    """Muestra un mapa interactivo con los datos de serviciabilidad y ofertas."""
+    """Muestra un mapa interactivo con los datos de serviciabilidad y ofertas,
+       con un filtro siempre visible por Apartment ID."""
 
     # 🔹 LEYENDA DE COLORES
     st.markdown("""
@@ -271,65 +272,71 @@ def mapa_seccion():
        🟣 **Incidencia reportada** 
     """)
 
+    # 🔍 FILTRO OPCIONAL SIEMPRE VISIBLE: Apartment ID
+    apartment_search = st.text_input("🔍 Buscar por Apartment ID (opcional)")
+
     col1, col2, col3 = st.columns(3)
 
-    provincias = cargar_provincias()
-    provincia_sel = col1.selectbox("Provincia", ["Selecciona una provincia"] + provincias)
+    # —— Si se busca por ID, cargamos todos sin filtrar y aislamos ese registro
+    if apartment_search:
+        datos_uis, ofertas_df, comercial_rafa_df = cargar_datos_uis()
+        datos_filtrados = datos_uis[datos_uis["apartment_id"].astype(str) == apartment_search]
+        ofertas_filtradas = ofertas_df[ofertas_df["apartment_id"].astype(str) == apartment_search]
+        comercial_rafa_filtradas = comercial_rafa_df[comercial_rafa_df["apartment_id"].astype(str) == apartment_search]
 
-    if provincia_sel == "Selecciona una provincia":
-        st.warning("Selecciona una provincia para cargar los datos.")
-        return
+        if datos_filtrados.empty:
+            st.error(f"❌ No se encontró ningún Apartment ID **{apartment_search}**.")
+            return
 
-    with st.spinner("⏳ Cargando datos..."):
-        datos_uis, ofertas_df, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
+    # —— Si no, fluye tu lógica normal por provincia/municipio/población
+    else:
+        provincias = cargar_provincias()
+        provincia_sel = col1.selectbox("Provincia", ["Selecciona una provincia"] + provincias)
+        if provincia_sel == "Selecciona una provincia":
+            st.warning("Selecciona una provincia para cargar los datos.")
+            return
 
-    if datos_uis.empty:
-        st.error("❌ No se encontraron datos para la provincia seleccionada.")
-        return
+        with st.spinner("⏳ Cargando datos..."):
+            datos_uis, ofertas_df, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
 
-    # 🔹 Filtros de Municipio y Población
-    municipios = sorted(datos_uis['municipio'].dropna().unique())
-    municipio_sel = col2.selectbox("Municipio", ["Todas"] + municipios)
+        if datos_uis.empty:
+            st.error("❌ No se encontraron datos para la provincia seleccionada.")
+            return
 
-    datos_filtrados = datos_uis if municipio_sel == "Todas" else datos_uis[datos_uis["municipio"] == municipio_sel]
-    ofertas_filtradas = ofertas_df if municipio_sel == "Todas" else ofertas_df[ofertas_df["municipio"] == municipio_sel]
+        # 🔹 Filtros de Municipio
+        municipios = sorted(datos_uis['municipio'].dropna().unique())
+        municipio_sel = col2.selectbox("Municipio", ["Todas"] + municipios)
+        datos_filtrados = datos_uis if municipio_sel == "Todas" else datos_uis[datos_uis["municipio"] == municipio_sel]
+        ofertas_filtradas = ofertas_df if municipio_sel == "Todas" else ofertas_df[ofertas_df["municipio"] == municipio_sel]
+        comercial_rafa_filtradas = comercial_rafa_df if municipio_sel == "Todas" else comercial_rafa_df[comercial_rafa_df["municipio"] == municipio_sel]
 
-    # Filtrar comercial_rafa de forma similar
-    comercial_rafa_filtradas = comercial_rafa_df if municipio_sel == "Todas" else comercial_rafa_df[
-        comercial_rafa_df["municipio"] == municipio_sel]
+        # 🔹 Filtros de Población
+        poblaciones = sorted(datos_filtrados['poblacion'].dropna().unique())
+        poblacion_sel = col3.selectbox("Población", ["Todas"] + poblaciones)
+        if poblacion_sel != "Todas":
+            datos_filtrados = datos_filtrados[datos_filtrados["poblacion"] == poblacion_sel]
+            ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["poblacion"] == poblacion_sel]
+            comercial_rafa_filtradas = comercial_rafa_filtradas[comercial_rafa_filtradas["poblacion"] == poblacion_sel]
 
-    poblaciones = sorted(datos_filtrados['poblacion'].dropna().unique())
-    poblacion_sel = col3.selectbox("Población", ["Todas"] + poblaciones)
-
-    if poblacion_sel != "Todas":
-        datos_filtrados = datos_filtrados[datos_filtrados["poblacion"] == poblacion_sel]
-        ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["poblacion"] == poblacion_sel]
-        comercial_rafa_filtradas = comercial_rafa_filtradas[comercial_rafa_filtradas["poblacion"] == poblacion_sel]
-
-    # 🔹 Filtramos datos sin coordenadas
+    # 🔹 Filtramos datos sin coordenadas y convertimos tipos
     datos_filtrados = datos_filtrados.dropna(subset=['latitud', 'longitud'])
     datos_filtrados[['latitud', 'longitud']] = datos_filtrados[['latitud', 'longitud']].astype(float)
-
     if datos_filtrados.empty:
         st.warning("⚠️ No hay datos que cumplan los filtros seleccionados.")
         return
 
     # 🔹 Unificar la información comercial de ambas fuentes
-    # Concatena las filas de ambas tablas.
     ofertas_combinadas = pd.concat([ofertas_filtradas, comercial_rafa_filtradas], ignore_index=True)
-
-    # Construir diccionarios a partir del DataFrame combinado (se aplican los mismos criterios de color)
     serviciable_dict = ofertas_combinadas.set_index("apartment_id")["serviciable"].str.strip().str.lower().to_dict()
-    contrato_dict = ofertas_combinadas.set_index("apartment_id")["Contrato"].str.strip().str.lower().to_dict()
-    incidencia_dict = ofertas_combinadas.set_index("apartment_id")["incidencia"].str.strip().str.lower().to_dict()
+    contrato_dict    = ofertas_combinadas.set_index("apartment_id")["Contrato"].str.strip().str.lower().to_dict()
+    incidencia_dict  = ofertas_combinadas.set_index("apartment_id")["incidencia"].str.strip().str.lower().to_dict()
 
-    # Calcular centro del mapa
+    # 🔹 Calcular centro del mapa
     center_lat, center_lon = datos_filtrados[['latitud', 'longitud']].mean()
 
-    limpiar_mapa()  # 🔹 Evita la sobrecarga de mapas
+    limpiar_mapa()  # evita sobrecarga de mapas
 
     with st.spinner("⏳ Cargando mapa..."):
-        # Inicialización del mapa
         m = folium.Map(
             location=[center_lat, center_lon],
             zoom_start=12,
@@ -339,49 +346,45 @@ def mapa_seccion():
         )
         Geocoder().add_to(m)
 
-        # Elegimos si usar clustering en función del zoom
+        # Clustering
         if m.options['zoom'] >= 15:
             cluster_layer = m
         else:
             cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
 
-        # 1️⃣ Detectar duplicados para desplazar
+        # 1️⃣ Detectar duplicados
         coord_counts = {}
         for _, row in datos_filtrados.iterrows():
             coord = (row['latitud'], row['longitud'])
             coord_counts[coord] = coord_counts.get(coord, 0) + 1
 
-        # 2️⃣ Dibujar cada marcador con desplazamiento si hace falta
+        # 2️⃣ Dibujar marcadores con desplazamiento si hace falta
         for _, row in datos_filtrados.iterrows():
             apt_id = row['apartment_id']
             lat_val, lon_val = row['latitud'], row['longitud']
             popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
 
-            # Determinar color según tus dicts
-            if incidencia_dict.get(apt_id, "").lower() == "sí":
+            # color según estado
+            if incidencia_dict.get(apt_id, "") == "sí":
                 marker_color = 'purple'
-            elif serviciable_dict.get(apt_id, "").lower() == "no":
+            elif serviciable_dict.get(apt_id, "") == "no":
                 marker_color = 'red'
             elif str(row["serviciable"]).strip().lower() == "sí":
                 marker_color = 'green'
-            elif contrato_dict.get(apt_id, "").lower() == "sí":
+            elif contrato_dict.get(apt_id, "") == "sí":
                 marker_color = 'orange'
-            elif contrato_dict.get(apt_id, "").lower() == "no interesado":
+            elif contrato_dict.get(apt_id, "") == "no interesado":
                 marker_color = 'gray'
             else:
                 marker_color = 'blue'
 
-            # Aplicar desplazamiento ordenado si hay duplicados
+            # aplicar offset si duplicados
             count = coord_counts[(row['latitud'], row['longitud'])]
             if count > 1:
-                lat_offset = count * 0.00003
-                lon_offset = -count * 0.00003
-                lat_val += lat_offset
-                lon_val += lon_offset
-                # Reducimos el contador en la posición original
-                coord_counts[(row['latitud'], row['longitud'])] = count - 1
+                lat_val += count * 0.00003
+                lon_val -= count * 0.00003
+                coord_counts[(row['latitud'], row['longitud'])] -= 1
 
-            # Añadir marcador al cluster o al mapa directamente
             folium.Marker(
                 location=[lat_val, lon_val],
                 popup=popup_text,
@@ -389,14 +392,15 @@ def mapa_seccion():
                 tooltip=apt_id
             ).add_to(cluster_layer)
 
-        # Renderizar con st_folium
+        # renderizar y captura de click
         map_data = st_folium(m, height=500, use_container_width=True)
-
-        # 🔹 Extraer el apartment_id clickeado
         selected_apartment = map_data.get("last_object_clicked_tooltip")
-
         if selected_apartment:
-            mostrar_info_apartamento(selected_apartment, datos_filtrados, ofertas_filtradas, comercial_rafa_df)
+            mostrar_info_apartamento(selected_apartment,
+                                     datos_filtrados,
+                                     ofertas_filtradas,
+                                     comercial_rafa_df)
+
 
 
 def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_df):
@@ -1205,7 +1209,9 @@ def admin_dashboard():
     elif opcion == "Mapa UUIIs":
         st.header("🌍 Mapa UUIIs")
         st.info(
-            "ℹ️ En esta sección puedes ver todos los datos cruzados entre ams y las ofertas de los comerciales, así como su estado actual.")
+            "ℹ️ En esta sección puedes ver todos los datos cruzados entre ams y las ofertas de los comerciales, así como su estado actual. Ten en cuenta que tienes dos tipos de filtros "
+            "diferentes. Puedes buscar por Aparment ID y de forma independiente puedes buscar por Provincia, Municipio y Población. En el caso de haber utilizado el Apartment ID y querer usar "
+            "luego la otra opción de filtro, no te olvides de borrar el contenido de Aparrment ID del campo correspondiente para que se reactiven el resto de filtros.")
         mapa_seccion()
 
     # Opción: Generar Informes
