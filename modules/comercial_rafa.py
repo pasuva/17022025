@@ -99,12 +99,15 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
         st.success("✅ ¡Oferta actualizada con éxito en la base de datos!")
 
         # Enviar notificación al administrador
-        destinatario_admin = "rebeca.sanchru@gmail.com"  # Dirección del administrador
+        # Obtener todos los correos de usuarios con rol 'admin' o 'comercial_jefe'
+        cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin', 'comercial_jefe')")
+        destinatario_admin = [fila[0] for fila in cursor.fetchall()]
         descripcion_oferta = f"Se ha actualizado una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
-        correo_oferta_comercial(destinatario_admin, apartment_id, descripcion_oferta)
+        for correo in destinatario_admin:
+            correo_oferta_comercial(correo, apartment_id, descripcion_oferta)
 
         st.success("✅ Oferta actualizada con éxito")
-        st.info(f"📧 Se ha enviado una notificación al administrador sobre la oferta actualizada.")
+        st.info(f"📧 Se ha enviado una notificación a {len(destinatario_admin)} destinatario(s) con rol 'admin' o 'comercial_jefe', sobre la oferta actualizada.")
 
         # Registrar trazabilidad
         log_trazabilidad(st.session_state["username"], "Actualizar Oferta",
@@ -220,7 +223,17 @@ def comercial_dashboard():
                     conn.close()
                     return
 
-                query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
+                #query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
+                query= """
+                    SELECT cr.*
+                    FROM comercial_rafa cr
+                    LEFT JOIN datos_uis du ON cr.apartment_id = du.apartment_id
+                    WHERE LOWER(cr.comercial) = LOWER(?)
+                    AND (
+                        LOWER(cr.serviciable) <> 'no'
+                        OR UPPER(IFNULL(du.cto_con_proyecto, '')) <> 'SI'
+                    )
+                    """
                 df = pd.read_sql(query, conn, params=(comercial,))
 
                 query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
@@ -527,14 +540,12 @@ def obtener_viabilidades():
 
 def viabilidades_section():
     st.title("✔️ Viabilidades")
-    st.markdown(
-        """**Leyenda:**
-            ⚫ Viabilidad existente sin respuesta o no categorizada  
-            🔴 Viabilidad existente: No serviciable  
-            🟢 Viabilidad existente: Serviciable con apartment_id asociado  
-            🔵 Viabilidad nueva  
-        """
-    )
+    st.markdown("""**Leyenda:**
+                 ⚫ Viabilidad ya existente
+                 🔵 Viabilidad nueva aún sin estudio
+                 🟢 Viabilidad serviciable y con Apartment ID ya asociado
+                 🔴 Viabilidad no serviciable
+                """)
     st.info("ℹ️ Haz click en el mapa para agregar un marcador que represente el punto de viabilidad.")
 
     # Inicializar estados de sesión si no existen
@@ -589,8 +600,9 @@ def viabilidades_section():
         ).add_to(m)
 
     # Mostrar el mapa y capturar clics
-    map_data = st_folium(m, height=500, width=700)
     Geocoder().add_to(m)
+    map_data = st_folium(m, height=500, width=700)
+    #Geocoder().add_to(m)
 
     # Detectar el clic para agregar el marcador nuevo
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:

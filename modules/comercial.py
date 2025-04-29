@@ -629,8 +629,9 @@ def viabilidades_section():
         ).add_to(m)
 
     # Mostrar el mapa y capturar clics
-    map_data = st_folium(m, height=500, width=700)
     Geocoder().add_to(m)
+    map_data = st_folium(m, height=500, width=700)
+    #Geocoder().add_to(m)
 
     # Detectar el clic para agregar el marcador
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
