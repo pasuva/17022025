@@ -231,7 +231,7 @@ def comercial_dashboard():
                     WHERE LOWER(cr.comercial) = LOWER(?)
                     AND (
                         LOWER(cr.serviciable) <> 'no'
-                        OR UPPER(IFNULL(du.cto_con_proyecto, '')) <> 'SI'
+                        OR UPPER(IFNULL(du.cto_con_proyecto, '')) = 'SI'
                     )
                     """
                 df = pd.read_sql(query, conn, params=(comercial,))
