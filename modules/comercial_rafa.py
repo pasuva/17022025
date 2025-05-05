@@ -203,7 +203,7 @@ def comercial_dashboard():
 
     if menu_opcion == "Ofertas Comerciales":
         st.markdown("""
-         🟢 Serviciable
+         🟢 Serviciable (Finalizado)
          🟠 Oferta (Contrato: Sí)
          ⚫ Oferta (No Interesado)
          🔵 Sin Oferta
@@ -306,15 +306,19 @@ def comercial_dashboard():
                         popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
                         apartment_id = row['apartment_id']
 
+                        # Obtener estado de serviciable desde datos_uis (no desde comercial_rafa)
+                        serviciable_val = str(row.get("serviciable", "")).strip().lower()
+
                         # Lógica para determinar el color del marcador
-                        if apartment_id in serviciable_no_set:
+                        if serviciable_val == "no":
                             marker_color = 'red'  # 🔴 No Serviciable
-                        elif apartment_id in serviciable_set:
+                        elif serviciable_val == "si":
                             marker_color = 'green'  # 🟢 Serviciable
                         elif apartment_id in contrato_dict:
-                            if contrato_dict[apartment_id] == "Sí":
+                            contrato_val = contrato_dict[apartment_id].strip().lower()
+                            if contrato_val == "sí":
                                 marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
-                            elif contrato_dict[apartment_id] == "No Interesado":
+                            elif contrato_val == "no interesado":
                                 marker_color = 'black'  # ⚫ Oferta (No Interesado)
                             else:
                                 marker_color = 'blue'  # 🔵 Sin oferta ni contrato
@@ -405,6 +409,16 @@ def comercial_dashboard():
             """
 
             df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
+
+            # ⬇️ Pega aquí el nuevo bloque
+            query_seguimiento = """
+                            SELECT apartment_id, estado
+                            FROM seguimiento_contratos
+                            WHERE LOWER(estado) = 'finalizado'
+                        """
+            df_seguimiento = pd.read_sql(query_seguimiento, conn)
+            df_ofertas['Contrato_Activo'] = df_ofertas['apartment_id'].isin(df_seguimiento['apartment_id']).map(
+                {True: '✅ Activo', False: '❌ No Activo'})
 
             # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """

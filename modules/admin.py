@@ -265,7 +265,7 @@ def mapa_seccion():
 
     # 🔹 LEYENDA DE COLORES
     st.markdown("""
-       🟢 **Serviciable** 
+       🟢 **Serviciable (Finalizado)** 
        🟠 **Oferta (Contrato: Sí)** 
        ⚫ **Oferta (No Interesado)** 
        🔵 **Sin Oferta** 
@@ -365,16 +365,20 @@ def mapa_seccion():
             lat_val, lon_val = row['latitud'], row['longitud']
             popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
 
-            # color según estado
-            if incidencia_dict.get(apt_id, "") == "sí":
+            serv_uis = str(row.get("serviciable", "")).strip().lower()
+            serv_oferta = serviciable_dict.get(apt_id, "").strip().lower()
+            contrato = contrato_dict.get(apt_id, "").strip().lower()
+            incidencia = incidencia_dict.get(apt_id, "").strip().lower()
+
+            if incidencia == "sí":
                 marker_color = 'purple'
-            elif serviciable_dict.get(apt_id, "") == "no":
+            elif serv_oferta == "no":
                 marker_color = 'red'
-            elif str(row["serviciable"]).strip().lower() == "sí":
+            elif serv_uis == "si":
                 marker_color = 'green'
-            elif contrato_dict.get(apt_id, "") == "sí":
+            elif contrato == "sí" and serv_uis != "si":
                 marker_color = 'orange'
-            elif contrato_dict.get(apt_id, "") == "no interesado":
+            elif contrato == "no interesado" and serv_uis != "si":
                 marker_color = 'gray'
             else:
                 marker_color = 'blue'
@@ -1298,6 +1302,196 @@ def admin_dashboard():
                     file_name="datos.csv",
                     mime="text/csv"
                 )
+        # -----------------------------------------------------------
+        # NUEVO: Seguimiento de contratos
+        # -----------------------------------------------------------
+        st.header("📋 Seguimiento de Contratos")
+        st.info(
+            "ℹ️ En esta sección puedes visualizar y gestionar el seguimiento de contratos, filtrar por columnas, buscar por términos concretos "
+            "y descargar la información en formato Excel o CSV. Ten en cuenta que la carga y el guardado posterior son procesos independientes y cada uno de ellos "
+            "puede tardar un tiempo en función del tamaño del fichero que quieras cargar."
+        )
+        # Mapeo de columnas del Excel a la BD
+        column_mapping = {
+            'Nº CONTRATO': 'num_contrato',
+            'CLIENTE': 'cliente',
+            'DIRECCIÓN O COORDENADAS': 'coordenadas',
+            'ESTADO': 'estado',
+            'Fecha contrato': 'fecha_contrato',
+            'Fecha petición ADAMO': 'fecha_peticion_adamo',
+            '¿Quién solicita a ADAMO?': 'quien_solicita_a_adamo',
+            'FECHA INSTALACIÓN': 'fecha_instalacion',
+            'ID': 'apartment_id'
+        }
+
+        uploaded = st.file_uploader(
+            label="Carga tu archivo de contratos",
+            type=["xlsx", "xls", "csv"],
+            help="El archivo debe tener columnas: " + ", ".join(column_mapping.keys())
+        )
+
+        if uploaded:
+            try:
+                df = pd.read_csv(uploaded) if uploaded.name.lower().endswith('.csv') else pd.read_excel(uploaded)
+                df.rename(columns=column_mapping, inplace=True)
+
+                # Convertir fechas a texto
+                for date_col in ['fecha_contrato', 'fecha_peticion_adamo', 'fecha_instalacion']:
+                    if date_col in df.columns:
+                        try:
+                            df[date_col] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                        except Exception:
+                            df[date_col] = df[date_col].astype(str)
+
+                st.success(f"✅ Archivo cargado y columnas mapeadas correctamente. Total filas: {len(df)}")
+
+                if st.button("💾 Guardar seguimiento en base de datos"):
+                    with st.spinner("Guardando datos en la base de datos..."):
+                        conn = obtener_conexion()
+                        cur = conn.cursor()
+
+                        # Crear tabla si no existe
+                        cur.execute(
+                            '''CREATE TABLE IF NOT EXISTS seguimiento_contratos (
+                                id INTEGER PRIMARY KEY,
+                                num_contrato TEXT,
+                                cliente TEXT,
+                                coordenadas TEXT,
+                                estado TEXT,
+                                fecha_contrato TEXT,
+                                fecha_peticion_adamo TEXT,
+                                quien_solicita_a_adamo TEXT,
+                                fecha_instalacion TEXT,
+                                apartment_id TEXT
+                            )'''
+                        )
+
+                        # Borrar registros anteriores
+                        cur.execute("SELECT COUNT(*) FROM seguimiento_contratos")
+                        count_old = cur.fetchone()[0]
+                        if count_old > 0:
+                            cur.execute("DELETE FROM seguimiento_contratos")
+                            conn.commit()
+                            cur.execute("DELETE FROM sqlite_sequence WHERE name='seguimiento_contratos'")
+                            conn.commit()
+                            st.info(
+                                f"ℹ️ Se han borrado {count_old} registros anteriores y reiniciado el contador de IDs.")
+
+                        # Insertar nuevas filas con padding en apartment_id
+                        total = len(df)
+                        progress = st.progress(0)
+                        insert_sql = '''INSERT INTO seguimiento_contratos (
+                                    num_contrato, cliente, coordenadas, estado, fecha_contrato,
+                                    fecha_peticion_adamo, quien_solicita_a_adamo, fecha_instalacion, apartment_id
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+                        for i, row in df.iterrows():
+                            ap_id = row['apartment_id']
+                            try:
+                                ap_id_int = int(ap_id)
+                                padded_id = 'P' + str(ap_id_int).zfill(10)
+                            except (ValueError, TypeError):
+                                padded_id = None
+                            cur.execute(insert_sql, (
+                                row['num_contrato'], row['cliente'], row['coordenadas'], row['estado'],
+                                row['fecha_contrato'], row['fecha_peticion_adamo'], row['quien_solicita_a_adamo'],
+                                row['fecha_instalacion'], padded_id
+                            ))
+                            progress.progress((i + 1) / total)
+
+                        conn.commit()
+
+                        # 1. Actualizar estado
+                        with obtener_conexion() as conn:
+                            cur = conn.cursor()
+                            update_estado_sql = """
+                                UPDATE datos_uis
+                                SET estado = (
+                                    SELECT sc.estado
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.estado IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE estado IS NOT NULL
+                                )
+                            """
+                            cur.execute(update_estado_sql)
+                            updated_estado = cur.rowcount
+                            conn.commit()
+
+                        # 2. Actualizar contrato_uis
+                        with obtener_conexion() as conn:
+                            cur = conn.cursor()
+                            update_contrato_sql = """
+                                UPDATE datos_uis
+                                SET contrato_uis = (
+                                    SELECT sc.num_contrato
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.num_contrato IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE num_contrato IS NOT NULL
+                                )
+                            """
+                            cur.execute(update_contrato_sql)
+                            updated_contratos = cur.rowcount
+                            conn.commit()
+
+                        # 3. Marcar como 'serviciable = SI' si estado es FINALIZADO
+                        with obtener_conexion() as conn:
+                            cur = conn.cursor()
+                            update_serviciable_sql = """
+                                UPDATE datos_uis
+                                SET serviciable = 'SI'
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id
+                                    FROM seguimiento_contratos
+                                    WHERE TRIM(UPPER(estado)) = 'FINALIZADO'
+                                    AND apartment_id IS NOT NULL
+                                )
+                            """
+                            cur.execute(update_serviciable_sql)
+                            updated_serviciables = cur.rowcount
+                            conn.commit()
+
+                    # Dar feedback al usuario
+                    st.success(f"✅ Registros insertados correctamente en 'seguimiento_contratos'.")
+                    if updated_estado > 0:
+                        st.info(f"🔄 {updated_estado} registros actualizados con estado.")
+                    else:
+                        st.warning("⚠️ No se actualizó ninguna fila con estado. Revisa los datos.")
+
+                    if updated_contratos > 0:
+                        st.info(f"📝 {updated_contratos} registros actualizados con contrato_uis.")
+                    else:
+                        st.warning("⚠️ No se actualizó ninguna fila con contrato_uis.")
+
+                    if updated_serviciables > 0:
+                        st.info(f"✅ {updated_serviciables} viviendas marcadas como serviciables.")
+                    else:
+                        st.warning("⚠️ No se marcó ninguna vivienda como serviciable.")
+
+            except Exception as e:
+                st.error(f"❌ Error procesando el archivo: {e}")
+
+        if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
+            with st.spinner("Cargando registros de contratos..."):
+                try:
+                    conn = obtener_conexion()
+                    existing = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
+                    conn.close()
+                    if existing.empty:
+                        st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
+                    else:
+                        cols = st.multiselect("Filtra columnas a mostrar", existing.columns, default=existing.columns,
+                                              key="cols_existing")
+                        st.dataframe(existing[cols], use_container_width=True)
+                except Exception as e:
+                    st.error(f"❌ Error al cargar registros existentes: {e}")
+
 
     # Opción: Visualizar datos de la tabla ofertas_comercial y comercial_rafa
     elif opcion == "Ofertas Comerciales":
@@ -1599,7 +1793,9 @@ def admin_dashboard():
         st.header("📤 Cargar Nuevos Datos")
         st.info(
             "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión más moderna. "
-            "¡ATENCIÓN! ¡Se eliminarán todos los datos actuales!"
+            "¡ATENCIÓN! ¡Se eliminarán todos los datos actuales! Ten en cuenta que si realizas esta acción cualquier actualización realizada en la aplicación sobre "
+            "la tabla de datos también quedará eliminada. Se recomienda recargar el excel de seguimiento de contratos en el caso de que esta carga de datos no tenga "
+            "todas las columnas actualizadas."
         )
         log_trazabilidad(
             st.session_state["username"],
@@ -1878,6 +2074,43 @@ def generar_informe(fecha_inicio, fecha_fin):
     <br>
     """
     st.markdown(resumen, unsafe_allow_html=True)
+
+    # 🔹 VIABILIDADES: Cálculo y resumen textual
+    conn = obtener_conexion()
+    query_viabilidades = """
+           SELECT 
+               CASE 
+                   WHEN LOWER(serviciable) = 'sí' THEN 'sí'
+                   WHEN LOWER(serviciable) = 'no' THEN 'no'
+                   ELSE 'desconocido'
+               END AS serviciable,
+               COUNT(*) as total
+           FROM viabilidades
+           WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
+           GROUP BY serviciable
+       """
+    df_viabilidades = pd.read_sql_query(query_viabilidades, conn, params=(fecha_inicio, fecha_fin))
+    conn.close()
+
+    total_viabilidades = df_viabilidades['total'].sum()
+    total_serviciables = df_viabilidades[df_viabilidades['serviciable'] == 'sí']['total'].sum() if 'sí' in \
+                                                                                                          df_viabilidades[
+                                                                                                              'serviciable'].values else 0
+    total_no_serviciables_v = df_viabilidades[df_viabilidades['serviciable'] == 'no']['total'].sum() if 'no' in \
+                                                                                                               df_viabilidades[
+                                                                                                                   'serviciable'].values else 0
+
+    porcentaje_viables = (total_serviciables / total_viabilidades * 100) if total_viabilidades > 0 else 0
+    porcentaje_no_viables = (total_no_serviciables_v / total_viabilidades * 100) if total_viabilidades > 0 else 0
+
+    resumen_viabilidades = f"""
+       <div style="text-align: justify;">
+       Además, durante el mismo periodo se registraron <strong>{total_viabilidades}</strong> viabilidades realizadas. De estas, <strong>{total_serviciables}</strong> fueron consideradas <strong>serviciables</strong> (<strong>{porcentaje_viables:.2f}%</strong>) y <strong>{total_no_serviciables_v}</strong> fueron <strong>no serviciables</strong> (<strong>{porcentaje_no_viables:.2f}%</strong>). Las restantes, son viabilidades aun en estudio.
+       </div>
+       <br>
+       """
+
+    st.markdown(resumen_viabilidades, unsafe_allow_html=True)
 
     # ─────────────────────────────────────────────
     # 🔹 Informe de Trazabilidad (Asignación y Desasignación)

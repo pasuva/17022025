@@ -193,7 +193,7 @@ def comercial_dashboard():
 
     if menu_opcion == "Ofertas Comerciales":
         st.markdown("""
-         🟢 Serviciable
+         🟢 Serviciable (Finalizado)
          🟠 Oferta (Contrato: Sí)
          ⚫ Oferta (No Interesado)
          🔵 Sin Oferta
@@ -283,25 +283,26 @@ def comercial_dashboard():
                 popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
                 apartment_id = row['apartment_id']
 
-                # Filtrar la oferta correspondiente a este apartment_id
+                # Serviciable real: de datos_uis
+                serviciable_val = str(row.get("serviciable", "")).strip().lower()
+
+                # Info adicional desde ofertas
                 oferta = ofertas_df[ofertas_df["apartment_id"] == apartment_id]
+                contrato_val = str(oferta.iloc[0].get("Contrato", "")).strip().lower() if not oferta.empty else ""
                 oferta_serviciable = str(
                     oferta.iloc[0].get("serviciable", "")).strip().lower() if not oferta.empty else ""
 
-                # Determinar el color del marcador
-                if apartment_id in serviciable_set:
-                    marker_color = 'green'  # 🟢 Serviciable
+                # ✅ Prioridad correcta: primero el serviciable real de datos_uis
+                if serviciable_val == "si":
+                    marker_color = 'green'  # 🟢 Serviciable (datos_uis)
                 elif oferta_serviciable == "no":
-                    marker_color = 'red'  # 🔴 No Serviciable
-                elif apartment_id in contrato_dict:
-                    if contrato_dict[apartment_id] == "Sí":
-                        marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
-                    elif contrato_dict[apartment_id] == "No Interesado":
-                        marker_color = 'gray'  # ⚫ Oferta (No Interesado)
-                    else:
-                        marker_color = 'blue'  # 🔵 Sin oferta ni contrato
+                    marker_color = 'red'  # 🔴 No Serviciable (desde oferta, si aplica)
+                elif contrato_val == "sí":
+                    marker_color = 'orange'  # 🟠 Oferta con contrato
+                elif contrato_val == "no interesado":
+                    marker_color = 'gray'  # ⚫ Oferta no interesado
                 else:
-                    marker_color = 'blue'  # 🔵 Default (Sin información)
+                    marker_color = 'blue'  # 🔵 Sin oferta
 
                 # 📌 Aplicar desplazamiento ordenado SOLO si hay coordenadas duplicadas
                 coord = (row['latitud'], row['longitud'])
@@ -389,6 +390,16 @@ def comercial_dashboard():
 
             df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
 
+            # ⬇️ Pega aquí el nuevo bloque
+            query_seguimiento = """
+                SELECT apartment_id, estado
+                FROM seguimiento_contratos
+                WHERE LOWER(estado) = 'finalizado'
+            """
+            df_seguimiento = pd.read_sql(query_seguimiento, conn)
+            df_ofertas['Contrato_Activo'] = df_ofertas['apartment_id'].isin(df_seguimiento['apartment_id']).map(
+                {True: '✅ Activo', False: '❌ No Activo'})
+
             # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """
                 SELECT v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
@@ -419,7 +430,7 @@ def comercial_dashboard():
             if df_ofertas.empty:
                 st.warning(f"⚠️ No hay ofertas con contrato activo para el comercial '{comercial_usuario}'.")
             else:
-                st.subheader("📋 Tabla de Ofertas con Contrato Activo")
+                st.subheader("📋 Tabla de Ofertas con Contrato Activo / Cliente Interesado")
                 st.dataframe(df_ofertas, use_container_width=True)
 
             # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)

@@ -64,7 +64,7 @@ def mapa_dashboard():
         ℹ️ **Oferta sin Proyecto:** Icono de información azul.
         \n
         **Colores:**
-        🟢 **Serviciable (Sí)**
+        🟢 **Serviciable (Sí - Finalizado)**
         🔴 **No Serviciable (No)**
         🟠 **Oferta (Contrato: Sí)**
         ⚫ **Oferta (Contrato: No Interesado)**
@@ -326,10 +326,16 @@ def mapa_dashboard():
                 numero = row.get('numero', 'No Disponible')
                 letra = row.get('letra', 'No Disponible')
 
+                # Valor de serviciable desde datos_uis
+                serviciable_val = str(row.get('serviciable', '')).strip().lower()
+
                 oferta = comercial_rafa[comercial_rafa['apartment_id'] == apartment_id]
                 color = 'blue'
-                if str(row.get('serviciable', '')).strip().lower() == "sí":
-                    color = 'green'
+
+                if serviciable_val == "si":
+                    color = 'green'  # 🟢 Serviciable desde datos_uis
+                elif serviciable_val == "no":
+                    color = 'red'  # 🔴 No serviciable desde datos_uis
                 elif not oferta.empty:
                     oferta_serviciable = str(oferta.iloc[0].get('serviciable', '')).strip().lower()
                     contrato = str(oferta.iloc[0].get('Contrato', '')).strip().lower()
@@ -358,7 +364,21 @@ def mapa_dashboard():
     conn = get_db_connection()
     assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
     total_ofertas = pd.read_sql("SELECT DISTINCT * FROM comercial_rafa", conn)
+
+    # Obtener contratos activos desde seguimiento_contratos
+    query_contratos = """
+        SELECT apartment_id
+        FROM seguimiento_contratos
+        WHERE TRIM(LOWER(estado)) = 'finalizado'
+    """
+    df_contratos = pd.read_sql(query_contratos, conn)
+
     conn.close()
+
+    # Agregar columna 'Contrato_Activo' a total_ofertas
+    total_ofertas['Contrato_Activo'] = total_ofertas['apartment_id'].isin(df_contratos['apartment_id']).map(
+        {True: '✅ Activo', False: '❌ No Activo'})
+
     if not assigned_zones.empty:
         st.info("ℹ️ Zonas ya asignadas:")
         st.dataframe(assigned_zones, use_container_width=True)
