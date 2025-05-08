@@ -11,6 +11,7 @@ from folium.plugins import MarkerCluster, Geocoder
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
 from io import BytesIO
+import re
 
 cookie_name = "my_app"
 
@@ -1563,7 +1564,6 @@ def admin_dashboard():
             else:
                 st.warning("❌ Esta oferta no tiene una imagen asociada.")
 
-        st.subheader("📥 Descargar datos")
         download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"], key="oferta_download")
 
         if download_format == "Excel":
@@ -1590,7 +1590,7 @@ def admin_dashboard():
                 )
 
             # Ver los Apartment IDs disponibles
-        st.markdown("### Eliminar Oferta Comercial")
+        st.markdown("##### Eliminar Oferta Comercial")
 
         # Desplegable para seleccionar el Apartment ID de la oferta a eliminar
         apartment_ids = combined_data['apartment_id'].tolist()
@@ -1635,7 +1635,7 @@ def admin_dashboard():
                 offers_with_image.append((row["apartment_id"], fichero_imagen))
 
         if offers_with_image:
-            st.markdown("### Descarga de imágenes de ofertas")
+            st.markdown("##### Descarga de imágenes de ofertas")
 
             # Desplegable para seleccionar una oferta
             option = st.selectbox(
@@ -1680,6 +1680,127 @@ def admin_dashboard():
                 file_name="imagenes_ofertas.zip",
                 mime="application/zip"
             )
+
+
+        # Nueva sección: Generar Certificación Completa
+        st.markdown(
+            "##### 🧾 Generar Certificación Completa: Total de UUII visitadas, CTO a las que corresponden, total viviendas por cada CTO")
+
+        with st.spinner("⏳ Cargando y procesando datos..."):
+            try:
+                conn = obtener_conexion()
+                if conn is None:
+                    st.error("❌ No se pudo establecer conexión con la base de datos.")
+                    st.stop()
+
+                # Paso 1: Cargar ofertas unificadas con info de datos_uis
+                query_completa = """
+                SELECT 
+                    ofertas_unificadas.*,
+                    datos.cto_id,
+                    datos.olt,
+                    datos.cto
+                FROM (
+                    SELECT * FROM comercial_rafa WHERE contrato IS NULL OR LOWER(TRIM(contrato)) != 'pendiente'
+                    UNION ALL
+                    SELECT * FROM ofertas_comercial WHERE contrato IS NULL OR LOWER(TRIM(contrato)) != 'pendiente'
+                ) AS ofertas_unificadas
+                LEFT JOIN datos_uis datos ON ofertas_unificadas.apartment_id = datos.apartment_id
+                """
+                df_ofertas = pd.read_sql(query_completa, conn)
+
+                # Paso 2: Calcular resumen por CTO (cuántos apartments tiene cada CTO y cuántos se han visitado)
+                query_ctos = """
+                WITH visitas AS (
+                    SELECT DISTINCT apartment_id
+                    FROM (
+                        SELECT apartment_id FROM comercial_rafa
+                        UNION
+                        SELECT apartment_id FROM ofertas_comercial
+                    )
+                )
+                SELECT
+                    d.cto,
+                    COUNT(DISTINCT d.apartment_id) AS total_apartments_en_cto,
+                    SUM(CASE WHEN v.apartment_id IS NOT NULL THEN 1 ELSE 0 END) AS apartments_visitados
+                FROM datos_uis d
+                LEFT JOIN visitas v ON d.apartment_id = v.apartment_id
+                WHERE d.cto IS NOT NULL
+                GROUP BY d.cto
+                ORDER BY total_apartments_en_cto DESC
+                """
+                cursor = conn.cursor()
+                cursor.execute(query_ctos)
+                rows = cursor.fetchall()
+                cursor.close()
+                conn.close()
+
+                df_ctos = pd.DataFrame(rows, columns=["cto", "Total Apartments en CTO", "Apartments Visitados"])
+
+                # Paso 3: Unir la tabla de ofertas con el resumen por CTO
+                df_final = df_ofertas.merge(df_ctos, how="left", on="cto")
+
+                if df_final.empty:
+                    st.warning("⚠️ No se encontraron datos para mostrar.")
+                    st.stop()
+
+                st.session_state["df"] = df_final
+
+                columnas = st.multiselect("📊 Selecciona las columnas a mostrar:",
+                                          df_final.columns.tolist(),
+                                          default=df_final.columns.tolist())
+
+                st.dataframe(df_final[columnas], use_container_width=True)
+
+                # Exportar a Excel
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                    df_final.to_excel(writer, index=False, sheet_name="Certificación")
+                    workbook = writer.book
+                    worksheet = writer.sheets["Certificación"]
+
+                    # Estilo de cabecera
+                    header_format = workbook.add_format({
+                        "bold": True,
+                        "text_wrap": True,
+                        "valign": "top",
+                        "fg_color": "#D7E4BC",
+                        "border": 1
+                    })
+
+                    # Estilo normal
+                    normal_format = workbook.add_format({
+                        "text_wrap": False,
+                        "valign": "top",
+                        "border": 1
+                    })
+
+                    # Aplicar formato a encabezados
+                    for col_num, value in enumerate(df_final.columns.values):
+                        worksheet.write(0, col_num, value, header_format)
+
+                    # Escribir celdas asegurando que NaN no causen error
+                    for row in range(1, len(df_final) + 1):
+                        for col in range(len(df_final.columns)):
+                            value = df_final.iloc[row - 1, col]
+                            if pd.isna(value):
+                                worksheet.write(row, col, "", normal_format)
+                            else:
+                                worksheet.write(row, col, value, normal_format)
+
+                    writer.close()
+
+                # Botón para descargar el archivo Excel
+                st.download_button(
+                    label="📥 Obtener certificación",
+                    data=output.getvalue(),
+                    file_name="certificacion_ofertas.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+            except Exception as e:
+                st.error(f"❌ Error al generar la certificación completa: {e}")
+
 
     # Opción: Viabilidades (En construcción)
     elif opcion == "Viabilidades":
