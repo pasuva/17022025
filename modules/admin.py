@@ -367,10 +367,11 @@ def mapa_seccion():
             lat_val, lon_val = row['latitud'], row['longitud']
             popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
 
-            serv_uis = str(row.get("serviciable", "")).strip().lower()
-            serv_oferta = serviciable_dict.get(apt_id, "").strip().lower()
-            contrato = contrato_dict.get(apt_id, "").strip().lower()
-            incidencia = incidencia_dict.get(apt_id, "").strip().lower()
+            # Asegura que ningún valor sea None antes de aplicar strip y lower
+            serv_uis = (str(row.get("serviciable") or "")).strip().lower()
+            serv_oferta = (serviciable_dict.get(apt_id) or "").strip().lower()
+            contrato = (contrato_dict.get(apt_id) or "").strip().lower()
+            incidencia = (incidencia_dict.get(apt_id) or "").strip().lower()
 
             if incidencia == "sí":
                 marker_color = 'purple'
