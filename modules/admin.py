@@ -12,6 +12,7 @@ from streamlit_folium import st_folium
 import plotly.graph_objects as go
 from io import BytesIO
 import re
+from rapidfuzz import fuzz
 
 cookie_name = "my_app"
 
@@ -1681,10 +1682,10 @@ def admin_dashboard():
                 mime="application/zip"
             )
 
-
         # Nueva sección: Generar Certificación Completa
         st.markdown(
-            "##### 🧾 Generar Certificación Completa: Total de UUII visitadas, CTO a las que corresponden, total viviendas por cada CTO")
+            "##### 🧾 Generar Certificación Completa: Total de UUII visitadas, CTO a las que corresponden, total viviendas por cada CTO"
+        )
 
         with st.spinner("⏳ Cargando y procesando datos..."):
             try:
@@ -1709,7 +1710,7 @@ def admin_dashboard():
                 """
                 df_ofertas = pd.read_sql(query_completa, conn)
 
-                # Paso 2: Calcular resumen por CTO (cuántos apartments tiene cada CTO y cuántos se han visitado)
+                # Paso 2: Calcular resumen por CTO
                 query_ctos = """
                 WITH visitas AS (
                     SELECT DISTINCT apartment_id
@@ -1744,12 +1745,96 @@ def admin_dashboard():
                     st.warning("⚠️ No se encontraron datos para mostrar.")
                     st.stop()
 
+                # ——— Categorías enriquecidas y unificadas para observaciones ———
+                categorias = {
+                    "Cliente con otro operador": [
+                        "movistar", "adamo", "digi", "vodafone", "orange", "jazztel",
+                        "euskaltel", "netcan", "o2", "yoigo", "masmovil", "másmóvil",
+                        "otro operador", "no se quiere cambiar",
+                        "con el móvil se arreglan", "datos ilimitados de su móvil",
+                        "se apaña con los datos", "se apaña con el móvil",
+                    ],
+                    "Segunda residencia / vacía / cerrada": [
+                        "segunda residencia", "casa vacía", "casa cerrada", "vacacional",
+                        "deshabitada", "abandonada", "cabaña cerrada", "nave cerrada",
+                        "campo de fútbol", "pabellón cerrado", "cerrada", "cerrado", "abandonado", "abandonada",
+                        "Casa en ruinas", "Cabaña en ruinas", "No hay nadie", "Casa secundaria?", "No viven",
+                        "guardar el coche"
+                    ],
+                    "No interesado / no necesita fibra": [
+                        "no quiere", "no le interesa", "no interesado",
+                        "no contratar", "decide no contratar", "hablado con el cliente decide",
+                        "anciano", "persona mayor",
+                        "sin internet", "no necesita fibra", "no necesita internet",
+                        "no necesitan fibra", "consultorio médico", "estación de tren",
+                        "nave", "ganado", "ganadería", "almacén", "cese de actividad",
+                        "negocio cerrado", "bolería cerrada", "casa deshabitada",
+                        "casa en obras", "en obras", "obras", "estación de tren", "ermita",
+                        "estabulación", "estabulacion", "prao", "prado", "no vive nadie", "consultorio",
+                        "patatas", "almacen", "ya no viven", "hace tiempo", "no estan en casa", "no están en casa", "no tiene interes",
+                        "no tiene interés", "casa a vender", "casa a la venta" "boleria cerrada", "bolera cerrada", "NO ESTA INTERESADA",
+                        "HABLADO CON SU HERMANA ME COMENTA Q DE MOMENTO NO ESTA INTERESADA"
+                    ],
+                    "Pendiente / seguimiento": [
+                        "pendiente visita", "pendiente", "dejado contacto", "dejada info",
+                        "dejado folleto", "presentada oferta", "hablar con hijo",
+                        "volver más adelante", "quedar", "me llamará", "pasar mas adelante", "Lo tiene que pensar", "Dejada oferta",
+                        "Explicada la oferta"
+                    ],
+                    "Cliente Verde": [
+                        "contratado con verde", "cliente de verde", "ya es cliente de verde", "verde", "otro comercial"
+                    ],
+                    "Reformas / obra": [
+                        "reforma", "obra", "reformando", "rehabilitando", "en obras"
+                    ],
+                    "Venta / Contrato realizado": [
+                        "venta realizada", "vendido", "venta hecha",
+                        "contrata fibra", "contrato solo fibra", "contrata tarifa", "contrata",
+                        "contrata fibra 1000", "contrata tarifa avanza"
+                    ],
+                    "Sin observaciones": [
+                        ""
+                    ]
+                }
+
+                def clasificar_observacion(texto):
+                    # 1) Si no es string o está vacío -> Sin observaciones
+                    if not isinstance(texto, str) or texto.strip() == "":
+                        return "Sin observaciones"
+                    txt = texto.lower()
+
+                    # 2) Match exacto por substring
+                    for cat, claves in categorias.items():
+                        for clave in claves:
+                            if clave and clave in txt:
+                                return cat
+
+                    # 3) Fuzzy matching
+                    for cat, claves in categorias.items():
+                        for clave in claves:
+                            if clave and fuzz.partial_ratio(clave, txt) > 85:
+                                return cat
+
+                    return "Otros / sin clasificar"
+
+                df_final["Categoría Observación"] = df_final["observaciones"].apply(clasificar_observacion)
+
+                # Auto-descubrimiento: top 20 observaciones sin clasificar
+                df_otros = df_final[df_final["Categoría Observación"] == "Otros / sin clasificar"]
+                top_otros = df_otros["observaciones"].value_counts().head(20)
+
+                st.markdown("####### 🔍 Top 20 observaciones no clasificadas (para ampliar patrones, en caso contrario la lista se muestra vacía)")
+                for obs, cnt in top_otros.items():
+                    st.write(f"- ({cnt}) {obs}")
+                # ——————————————————————————————
+
                 st.session_state["df"] = df_final
 
-                columnas = st.multiselect("📊 Selecciona las columnas a mostrar:",
-                                          df_final.columns.tolist(),
-                                          default=df_final.columns.tolist())
-
+                columnas = st.multiselect(
+                    "📊 Selecciona las columnas a mostrar:",
+                    df_final.columns.tolist(),
+                    default=df_final.columns.tolist()
+                )
                 st.dataframe(df_final[columnas], use_container_width=True)
 
                 # Exportar a Excel
@@ -1759,38 +1844,24 @@ def admin_dashboard():
                     workbook = writer.book
                     worksheet = writer.sheets["Certificación"]
 
-                    # Estilo de cabecera
                     header_format = workbook.add_format({
-                        "bold": True,
-                        "text_wrap": True,
-                        "valign": "top",
-                        "fg_color": "#D7E4BC",
-                        "border": 1
+                        "bold": True, "text_wrap": True, "valign": "top",
+                        "fg_color": "#D7E4BC", "border": 1
                     })
-
-                    # Estilo normal
                     normal_format = workbook.add_format({
-                        "text_wrap": False,
-                        "valign": "top",
-                        "border": 1
+                        "text_wrap": False, "valign": "top", "border": 1
                     })
 
-                    # Aplicar formato a encabezados
-                    for col_num, value in enumerate(df_final.columns.values):
-                        worksheet.write(0, col_num, value, header_format)
+                    # Encabezados
+                    for col_num, val in enumerate(df_final.columns):
+                        worksheet.write(0, col_num, val, header_format)
 
-                    # Escribir celdas asegurando que NaN no causen error
+                    # Filas
                     for row in range(1, len(df_final) + 1):
                         for col in range(len(df_final.columns)):
-                            value = df_final.iloc[row - 1, col]
-                            if pd.isna(value):
-                                worksheet.write(row, col, "", normal_format)
-                            else:
-                                worksheet.write(row, col, value, normal_format)
+                            v = df_final.iat[row - 1, col]
+                            worksheet.write(row, col, "" if pd.isna(v) else v, normal_format)
 
-                    writer.close()
-
-                # Botón para descargar el archivo Excel
                 st.download_button(
                     label="📥 Obtener certificación",
                     data=output.getvalue(),
@@ -1800,6 +1871,7 @@ def admin_dashboard():
 
             except Exception as e:
                 st.error(f"❌ Error al generar la certificación completa: {e}")
+
 
 
     # Opción: Viabilidades (En construcción)
