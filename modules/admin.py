@@ -14,6 +14,9 @@ from io import BytesIO
 import re
 from rapidfuzz import fuzz
 
+# — instala antes: pip install streamlit-aggrid
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode, JsCode
+
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos
@@ -601,9 +604,36 @@ def viabilidades_seccion():
             cols = ['ticket'] + cols
         df_reordered = viabilidades_df[cols]
 
-        # Mostramos tabla completa con estilo
-        styled_df = df_reordered.style.applymap(highlight_duplicates, subset=['apartment_id'])
-        st.dataframe(styled_df, use_container_width=True)
+        # Preparamos la configuración con filtros y anchos
+        gb = GridOptionsBuilder.from_dataframe(df_reordered)
+        gb.configure_default_column(
+            filter=True,
+            floatingFilter=True,
+            sortable=True,
+            resizable=True,
+            minWidth=100,  # ancho mínimo
+            flex=1  # reparte espacio extra
+        )
+        # (Opcional) Para resaltar duplicados en apartment_id sin pandas styling:
+        dup_ids = viabilidades_df.loc[viabilidades_df['is_duplicate'], 'apartment_id'].unique().tolist()
+        gb.configure_column(
+            'apartment_id',
+            cellStyle={
+                'function': f"if (value && {dup_ids}.includes(value)) return {{'backgroundColor':'yellow'}}"
+            }
+        )
+        gridOptions = gb.build()
+
+        AgGrid(
+            df_reordered,
+            gridOptions=gridOptions,
+            enable_enterprise_modules=True,
+            update_mode=GridUpdateMode.NO_UPDATE,
+            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+            fit_columns_on_grid_load=False,
+            height=400,
+            theme='alpine'
+        )
 
         # Selector de viabilidad por ticket (usando selectbox)
         selected_index = st.selectbox(
@@ -1239,6 +1269,7 @@ def admin_dashboard():
                 st.experimental_set_query_params()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
                 st.rerun()
 
+
     # Opción: Visualizar datos de la tabla datos_uis
     if opcion == "Home":
         home_page()
@@ -1279,9 +1310,32 @@ def admin_dashboard():
             data = data.loc[:, ~data.columns.duplicated()]
 
         st.session_state["df"] = data
-        columnas = st.multiselect("Filtra las columnas a mostrar", data.columns.tolist(),
-                                  default=data.columns.tolist())
-        st.dataframe(data[columnas], use_container_width=True)
+        columnas = data.columns.tolist()
+
+        #st.dataframe(data[columnas], use_container_width=True)
+        # Construimos las opciones de AgGrid
+        gb = GridOptionsBuilder.from_dataframe(data[columnas])
+        gb.configure_default_column(
+            filter=True,
+            floatingFilter=True,  # muestro el input de filtro directamente bajo el header
+            sortable=True,
+            resizable=True,
+            minWidth=120,  # ancho mínimo en px
+            flex=1  # reparte espacio sobrante equitativamente
+        )
+        gridOptions = gb.build()
+
+        # Muestro la tabla con AgGrid en lugar de st.dataframe
+        AgGrid(
+            data[columnas],
+            gridOptions=gridOptions,
+            enable_enterprise_modules=True,  # filtros avanzados
+            update_mode=GridUpdateMode.NO_UPDATE,  # sólo lectura
+            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+            fit_columns_on_grid_load=True,
+            height=500,
+            theme='alpine'
+        )
 
         download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"])
         if download_format == "Excel":
@@ -1547,10 +1601,31 @@ def admin_dashboard():
         # Guardar en sesión de Streamlit
         st.session_state["df"] = combined_data
 
-        columnas = st.multiselect("🔎 Filtra las columnas a mostrar:", combined_data.columns.tolist(),
-                                  default=combined_data.columns.tolist())
+        columnas = combined_data.columns.tolist()
 
-        st.dataframe(combined_data[columnas], use_container_width=True)
+        #st.dataframe(combined_data[columnas], use_container_width=True)
+        # Configuramos AgGrid con filtros en cabecera y anchos amplios
+        gb = GridOptionsBuilder.from_dataframe(combined_data[columnas])
+        gb.configure_default_column(
+            filter=True,
+            floatingFilter=True,
+            sortable=True,
+            resizable=True,
+            minWidth=120,  # ancho mínimo
+            flex=1  # reparte espacio extra
+        )
+        gridOptions = gb.build()
+
+        AgGrid(
+            combined_data[columnas],
+            gridOptions=gridOptions,
+            enable_enterprise_modules=True,
+            update_mode=GridUpdateMode.NO_UPDATE,
+            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+            fit_columns_on_grid_load=False,
+            height=500,
+            theme='alpine'
+        )
 
         seleccion_id = st.selectbox("🖼️ Selecciona un Apartment ID para ver su imagen:",
                                     combined_data["apartment_id"].unique())
