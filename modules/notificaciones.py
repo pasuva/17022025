@@ -121,4 +121,18 @@ def correo_usuario(destinatario, asunto, mensaje):
     # Llamada a la función que envía la notificación
     enviar_notificacion(destinatario, asunto, contenido)
 
+# 7. Correo de notificación de nuevas zonas asignadas tras carga masiva
+def correo_nuevas_zonas_comercial(destinatario, nombre_comercial, total_nuevos, poblaciones_nuevas):
+    asunto = f"📍 Nuevas zonas asignadas en la última actualización"
+    poblaciones_nuevas = limpiar_texto(poblaciones_nuevas)
+    contenido = {
+        "mensaje": f"Hola <strong>{nombre_comercial}</strong>, se han cargado nuevos datos en el sistema.",
+        "Descripción": f"""
+        - 🔢 Nuevos registros asignados: <strong>{total_nuevos}</strong><br>
+        - 🏘️ Nuevas poblaciones: <strong>{poblaciones_nuevas}</strong><br><br>
+        Revisa tu panel de usuario para ver más detalles.
+        """
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+
 

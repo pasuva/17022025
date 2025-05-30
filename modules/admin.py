@@ -2,7 +2,7 @@ import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from modules.notificaciones import correo_viabilidad_administracion, correo_usuario
+from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
@@ -11,11 +11,8 @@ from folium.plugins import MarkerCluster, Geocoder
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
 from io import BytesIO
-import re
 from rapidfuzz import fuzz
-
-# — instala antes: pip install streamlit-aggrid
-from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode, JsCode
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 
 cookie_name = "my_app"
 
@@ -412,8 +409,6 @@ def mapa_seccion():
                                      ofertas_filtradas,
                                      comercial_rafa_df)
 
-
-
 def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_df):
     """ Muestra la información del apartamento clickeado, junto con un campo para comentarios.
         Se actualiza el campo 'comentarios' en la tabla (ofertas_comercial o comercial_rafa) donde se encuentre el registro.
@@ -454,10 +449,7 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
                 ]
             }
             df_uis = pd.DataFrame(data_uis)
-            st.dataframe(df_uis.style.set_table_styles([
-                {'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},
-                {'selector': 'tbody td', 'props': [('padding', '10px')]},
-            ]))
+            st.dataframe(df_uis.style.set_table_styles([{'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},{'selector': 'tbody td', 'props': [('padding', '10px')]},]))
     else:
         with col1:
             st.warning("❌ **No se encontraron datos para el apartamento en `datos_uis`.**")
@@ -500,10 +492,7 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
                 ]
             }
             df_comercial = pd.DataFrame(data_comercial)
-            st.dataframe(df_comercial.style.set_table_styles([
-                {'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},
-                {'selector': 'tbody td', 'props': [('padding', '10px')]},
-            ]))
+            st.dataframe(df_comercial.style.set_table_styles([{'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},{'selector': 'tbody td', 'props': [('padding', '10px')]},]))
 
         # Preparamos el comentario ya existente para el formulario
         # Si el campo es None o 'No disponible.' se muestra una cadena vacía para editar
@@ -627,12 +616,12 @@ def viabilidades_seccion():
         AgGrid(
             df_reordered,
             gridOptions=gridOptions,
-            enable_enterprise_modules=True,
+            enable_enterprise_modules=False,
             update_mode=GridUpdateMode.NO_UPDATE,
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             fit_columns_on_grid_load=False,
             height=400,
-            theme='alpine'
+            theme='alpine-dark'
         )
 
         # Selector de viabilidad por ticket (usando selectbox)
@@ -862,13 +851,7 @@ def viabilidades_seccion():
                         cursor.execute("""
                             INSERT INTO presupuestos_viabilidades (ticket, fecha, proyecto, observaciones, subtotal)
                             VALUES (?, ?, ?, ?, ?)
-                        """, (
-                            st.session_state["selected_ticket"],
-                            fecha,
-                            proyecto,
-                            observaciones,
-                            subtotal
-                        ))
+                        """, (st.session_state["selected_ticket"],fecha,proyecto,observaciones,subtotal))
                         id_presupuesto = cursor.lastrowid  # recuperamos el ID insertado
 
                         # Insertar en lineas_presupuesto_viabilidad
@@ -877,14 +860,7 @@ def viabilidades_seccion():
                                 INSERT INTO lineas_presupuesto_viabilidad (
                                     id_presupuesto, concepto_codigo, concepto_descripcion, unidades, precio_unitario, precio_total
                                 ) VALUES (?, ?, ?, ?, ?, ?)
-                            """, (
-                                id_presupuesto,
-                                linea["CÓDIGO"],
-                                linea["DESCRIPCIÓN"],
-                                linea["UDS."],
-                                linea["P UNITARIO (€)"],
-                                linea["P TOTAL (€)"]
-                            ))
+                            """, (id_presupuesto,linea["CÓDIGO"],linea["DESCRIPCIÓN"],linea["UDS."],linea["P UNITARIO (€)"],linea["P TOTAL (€)"]))
 
                         conn.commit()
                         conn.close()
@@ -1126,10 +1102,7 @@ def mostrar_formulario(click_data):
                     coste = ?, comentarios_comercial = ?, comentarios_internos = ?
                 WHERE ticket = ?
             """
-            cursor.execute(query, (
-                apartment_id, olt, cto_admin, id_cto, municipio_admin, serviciable,
-                coste, comentarios_comercial, comentarios_internos, ticket
-            ))
+            cursor.execute(query, (apartment_id, olt, cto_admin, id_cto, municipio_admin, serviciable,coste, comentarios_comercial, comentarios_internos, ticket))
 
             # 2️⃣ Obtener el email del comercial responsable
             cursor.execute("""
@@ -1269,7 +1242,6 @@ def admin_dashboard():
                 st.experimental_set_query_params()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
                 st.rerun()
 
-
     # Opción: Visualizar datos de la tabla datos_uis
     if opcion == "Home":
         home_page()
@@ -1329,12 +1301,12 @@ def admin_dashboard():
         AgGrid(
             data[columnas],
             gridOptions=gridOptions,
-            enable_enterprise_modules=True,  # filtros avanzados
+            enable_enterprise_modules=False,  # filtros avanzados
             update_mode=GridUpdateMode.NO_UPDATE,  # sólo lectura
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             fit_columns_on_grid_load=True,
             height=500,
-            theme='alpine'
+            theme='alpine-dark'
         )
 
         download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"])
@@ -1549,7 +1521,6 @@ def admin_dashboard():
                 except Exception as e:
                     st.error(f"❌ Error al cargar registros existentes: {e}")
 
-
     # Opción: Visualizar datos de la tabla ofertas_comercial y comercial_rafa
     elif opcion == "Ofertas Comerciales":
         st.header("📊 Visualizar Ofertas Comerciales")
@@ -1619,12 +1590,12 @@ def admin_dashboard():
         AgGrid(
             combined_data[columnas],
             gridOptions=gridOptions,
-            enable_enterprise_modules=True,
+            enable_enterprise_modules=False,
             update_mode=GridUpdateMode.NO_UPDATE,
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             fit_columns_on_grid_load=False,
             height=500,
-            theme='alpine'
+            theme='alpine-dark'
         )
 
         seleccion_id = st.selectbox("🖼️ Selecciona un Apartment ID para ver su imagen:",
@@ -1948,8 +1919,6 @@ def admin_dashboard():
             except Exception as e:
                 st.error(f"❌ Error al generar la certificación completa: {e}")
 
-
-
     # Opción: Viabilidades (En construcción)
     elif opcion == "Viabilidades":
         st.header("✔️ Viabilidades")
@@ -1989,8 +1958,6 @@ def admin_dashboard():
         if st.button("Generar Informe"):
             informe = generar_informe(str(fecha_inicio), str(fecha_fin))
             st.dataframe(informe)
-
-
 
     # Opción: Gestionar Usuarios
     elif opcion == "Gestionar Usuarios":
@@ -2058,6 +2025,7 @@ def admin_dashboard():
                 if st.button("Eliminar Usuario"):
                     eliminar_usuario(eliminar_id)
 
+
     elif opcion == "Cargar Nuevos Datos":
         st.header("📤 Cargar Nuevos Datos")
         st.info(
@@ -2092,24 +2060,26 @@ def admin_dashboard():
                     )
                 else:
                     data_filtrada = data[columnas_requeridas].copy()
-                    # Convertimos LATITUD y LONGITUD a float, reemplazando comas por puntos
                     data_filtrada["LATITUD"] = data_filtrada["LATITUD"].astype(str).str.replace(",", ".").astype(float)
                     data_filtrada["LONGITUD"] = data_filtrada["LONGITUD"].astype(str).str.replace(",", ".").astype(
                         float)
-                    st.write(
-                        "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
+
+                    # --- Leer datos antiguos antes de borrar ---
                     conn = obtener_conexion()
+                    df_antiguos = pd.read_sql("SELECT * FROM datos_uis", conn)
+                    st.write(
+                        "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos..."
+                    )
+
                     cursor = conn.cursor()
                     # Eliminamos todos los registros de la tabla y reiniciamos el ID autoincremental
                     cursor.execute("DELETE FROM datos_uis")
                     cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
                     conn.commit()
                     total_registros = len(data_filtrada)
-                    # Extraemos los valores de forma vectorizada
                     insert_values = data_filtrada.values.tolist()
-                    # Barra de progreso y chunked insertion para mejorar el rendimiento
                     progress_bar = st.progress(0)
-                    chunk_size = 500  # Puedes ajustar el tamaño del chunk según tu dataset
+                    chunk_size = 500
                     num_chunks = (total_registros + chunk_size - 1) // chunk_size
                     query = """
                         INSERT INTO datos_uis (
@@ -2124,6 +2094,35 @@ def admin_dashboard():
                         cursor.executemany(query, chunk)
                         conn.commit()
                         progress_bar.progress(min((i + 1) / num_chunks, 1.0))
+
+                    # --- Aquí añadimos la comparación y envío de correos ---
+                    df_nuevos = data_filtrada
+                    # Detectamos nuevos apartment_id
+                    apt_antiguos = set(df_antiguos['apartment_id'].unique())
+                    apt_nuevos = set(df_nuevos['apartment_id'].unique())
+                    nuevos_apartment_id = apt_nuevos - apt_antiguos
+                    df_nuevos_filtrados = df_nuevos[df_nuevos['apartment_id'].isin(nuevos_apartment_id)]
+                    resumen = df_nuevos_filtrados.groupby('COMERCIAL').agg(
+                        total_nuevos=('apartment_id', 'count'),
+                        poblaciones_nuevas=('poblacion', lambda x: ', '.join(sorted(x.unique())))
+                    ).reset_index()
+                    for _, row in resumen.iterrows():
+                        comercial = row["COMERCIAL"]
+                        total_nuevos = row["total_nuevos"]
+                        poblaciones_nuevas = row["poblaciones_nuevas"]
+                        cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial,))
+                        resultado = cursor.fetchone()
+                        if resultado:
+                            email = resultado[0]
+                            correo_nuevas_zonas_comercial(
+                                destinatario=email,
+                                nombre_comercial=comercial,
+                                total_nuevos=total_nuevos,
+                                poblaciones_nuevas=poblaciones_nuevas
+                            )
+                            st.write(f"📧 Notificación enviada a {comercial} ({email})")
+                        else:
+                            st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
                     conn.close()
                     progress_bar.progress(1.0)
                     st.success(f"🎉 Datos reemplazados exitosamente. Total registros cargados: {total_registros}")
@@ -2133,8 +2132,6 @@ def admin_dashboard():
                         "Cargar Nuevos Datos",
                         f"El admin reemplazó los datos existentes con {total_registros} nuevos registros."
                     )
-            except Exception as e:
-                st.error(f"❌ Error al cargar el archivo: {e}")
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
 
@@ -2208,11 +2205,9 @@ def admin_dashboard():
             except Exception as e:
                 st.error(f"❌ Error al cargar la trazabilidad: {e}")
 
-
     elif opcion == "Control de versiones":
         log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
         mostrar_control_versiones()
-
 
 def generar_informe(fecha_inicio, fecha_fin):
     # Conectar a la base de datos y realizar cada consulta

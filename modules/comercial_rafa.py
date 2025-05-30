@@ -400,12 +400,12 @@ def comercial_dashboard():
 
         try:
             conn = get_db_connection()
-            # Consulta SQL con filtro por comercial logueado (primera tabla: comercial_rafa)
+            # Consulta SQL con filtro por comercial logueado (primera tabla: comercial_rafa) LOWER(Contrato) = 'sí'
+            #             AND
             query_ofertas = """
             SELECT *
             FROM comercial_rafa
-            WHERE LOWER(Contrato) = 'sí' 
-            AND LOWER(comercial) = LOWER(?)
+            WHERE LOWER(comercial) = LOWER(?)
             """
 
             df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
@@ -436,7 +436,7 @@ def comercial_dashboard():
             if df_ofertas.empty:
                 st.warning(f"⚠️ No hay ofertas con contrato activo para el comercial '{comercial_usuario}'.")
             else:
-                st.subheader("📋 Tabla de Ofertas con Contrato Activo")
+                st.subheader("📋 Tabla de Visitas/Ofertas")
                 st.dataframe(df_ofertas, use_container_width=True)
 
             # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
@@ -933,35 +933,44 @@ def mostrar_formulario(click_data):
             cursor = conn.cursor()
             cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin', 'comercial_jefe')")
             emails_admin = [fila[0] for fila in cursor.fetchall()]
+
+            # Obtener email del comercial desde sesión o base de datos
+            nombre_comercial = st.session_state.get("username", "N/D")
+            email_comercial = st.session_state.get("email", None)  # <- Asegúrate que esto esté definido al hacer login
+
             conn.close()
 
-            nombre_comercial = st.session_state.get("username", "N/D")
+            descripcion_oferta = (
+                f"🆕 Se ha añadido una nueva oferta para el apartamento con ID {apartment_id}.<br><br>"
+                f"📑 <strong>Detalles de la oferta realizada por el comercial {nombre_comercial}:</strong><br>"
+                f"🌍 <strong>Provincia:</strong> {provincia}<br>"
+                f"📌 <strong>Municipio:</strong> {municipio}<br>"
+                f"🏡 <strong>Población:</strong> {poblacion}<br>"
+                f"🛣️ <strong>Vial:</strong> {vial}<br>"
+                f"🔢 <strong>Número:</strong> {numero}<br>"
+                f"🔠 <strong>Letra:</strong> {letra}<br>"
+                f"📮 <strong>Código Postal:</strong> {cp}<br>"
+                f"📅 <strong>Fecha:</strong> {oferta_data['fecha']}<br>"
+                f"📱 <strong>Teléfono:</strong> {phone}<br>"
+                f"🏘️ <strong>Tipo Vivienda:</strong> {oferta_data['Tipo_Vivienda']}<br>"
+                f"✅ <strong>Contratado:</strong> {contrato}<br>"
+                f"🔧 <strong>Servicio:</strong> {es_serviciable}<br>"
+                f"⚠️ <strong>Incidencia:</strong> {contiene_incidencias}<br>"
+                f"💬 <strong>Observaciones:</strong> {observations}<br><br>"
+                f"ℹ️ Por favor, revise los detalles de la oferta y asegúrese de que toda la información sea correcta."
+            )
 
             if emails_admin:
-                descripcion_oferta = (
-                    f"🆕 Se ha añadido una nueva oferta para el apartamento con ID {apartment_id}.<br><br>"
-                    f"📑 <strong>Detalles de la oferta realizada por el comercial {nombre_comercial}:</strong><br>"
-                    f"🌍 <strong>Provincia:</strong> {provincia}<br>"
-                    f"📌 <strong>Municipio:</strong> {municipio}<br>"
-                    f"🏡 <strong>Población:</strong> {poblacion}<br>"
-                    f"🛣️ <strong>Vial:</strong> {vial}<br>"
-                    f"🔢 <strong>Número:</strong> {numero}<br>"
-                    f"🔠 <strong>Letra:</strong> {letra}<br>"
-                    f"📮 <strong>Código Postal:</strong> {cp}<br>"
-                    f"📅 <strong>Fecha:</strong> {oferta_data['fecha']}<br>"
-                    f"📱 <strong>Teléfono:</strong> {phone}<br>"
-                    f"🏘️ <strong>Tipo Vivienda:</strong> {oferta_data['Tipo_Vivienda']}<br>"
-                    f"✅ <strong>Contratado:</strong> {contrato}<br>"
-                    f"🔧 <strong>Servicio:</strong> {es_serviciable}<br>"
-                    f"⚠️ <strong>Incidencia:</strong> {contiene_incidencias}<br>"
-                    f"💬 <strong>Observaciones:</strong> {observations}<br><br>"
-                    f"ℹ️ Por favor, revise los detalles de la oferta y asegúrese de que toda la información sea correcta."
-                )
                 for email in emails_admin:
                     correo_oferta_comercial(email, apartment_id, descripcion_oferta)
 
+                # Enviar copia al comercial
+                if email_comercial:
+                    correo_oferta_comercial(email_comercial, apartment_id, descripcion_oferta)
+
                 st.success("✅ Oferta enviada con éxito")
-                st.info(f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)}")
+                st.info(
+                    f"📧 Se ha enviado una notificación a: {', '.join(emails_admin + ([email_comercial] if email_comercial else []))}")
             else:
                 st.warning("⚠️ No se encontró ningún email de administrador/gestor, no se pudo enviar la notificación.")
 
