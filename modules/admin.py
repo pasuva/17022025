@@ -785,12 +785,12 @@ def viabilidades_seccion():
 
             conn.close()
 
-        # Al final, tras mostrar_formulario(selected_viabilidad):
+        # Mostrar si hay ticket seleccionado
         if st.session_state["selected_ticket"]:
             st.markdown("---")
             st.subheader(f"💰 Generar Presupuesto para Ticket {st.session_state['selected_ticket']}")
 
-            # 1️⃣ Cargo baremos desde la BD
+            # 1️⃣ Cargar baremos desde la BD
             @st.cache_data
             def load_baremos():
                 conn = obtener_conexion()
@@ -802,19 +802,65 @@ def viabilidades_seccion():
 
             baremos_df = load_baremos()
 
-            # 2️⃣ Selección de códigos y unidades
+            # 2️⃣ Selección de conceptos desde baremo
             seleccion = st.multiselect(
                 "Selecciona conceptos",
                 options=baremos_df.index,
                 format_func=lambda i: f"{baremos_df.at[i, 'codigo']} – {baremos_df.at[i, 'descripcion']}"
             )
+
+            if not seleccion:
+                st.info("Selecciona al menos un concepto.")
+                st.stop()
+
             unidades = {
                 idx: st.number_input(f"Unidades para {baremos_df.at[idx, 'codigo']}", min_value=0.0, step=1.0,
                                      key=f"uds_{idx}")
                 for idx in seleccion
             }
 
-            # 3️⃣ Construir DataFrame de líneas
+            # 3️⃣ Opción para añadir líneas libres múltiples
+            st.markdown("### ➕ Líneas adicionales manuales (opcionales)")
+            add_manual = st.checkbox("¿Añadir líneas libres especiales?")
+
+            lineas_libres = []
+
+            if add_manual:
+                st.markdown("Introduce una o más líneas libres en la tabla:")
+
+                if "lineas_libres_df" not in st.session_state:
+                    st.session_state["lineas_libres_df"] = pd.DataFrame(
+                        columns=["DESCRIPCIÓN", "UDS.", "P UNITARIO (€)"])
+
+                lineas_editadas = st.data_editor(
+                    st.session_state["lineas_libres_df"],
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key="lineas_libres_editor"
+                )
+
+                # Guardar en sesión para persistencia
+                st.session_state["lineas_libres_df"] = lineas_editadas.copy()
+
+                # Validar y construir líneas libres válidas
+                for _, row in lineas_editadas.iterrows():
+                    try:
+                        descripcion = str(row["DESCRIPCIÓN"]).strip()
+                        uds = float(row["UDS."])
+                        precio = float(row["P UNITARIO (€)"])
+                        if descripcion and uds > 0 and precio > 0:
+                            total = uds * precio
+                            lineas_libres.append({
+                                "UDS.": uds,
+                                "CÓDIGO": " ",
+                                "DESCRIPCIÓN": descripcion,
+                                "P UNITARIO (€)": precio,
+                                "P TOTAL (€)": total
+                            })
+                    except:
+                        continue
+
+            # 4️⃣ Construcción del DataFrame del presupuesto
             lineas = []
             for idx, uds in unidades.items():
                 if uds > 0:
@@ -827,16 +873,21 @@ def viabilidades_seccion():
                         "P UNITARIO (€)": row["precio"],
                         "P TOTAL (€)": total
                     })
+
+            # Añadir las líneas libres al total
+            lineas.extend(lineas_libres)
+
             if not lineas:
-                st.info("Selecciona al menos un concepto con unidades > 0.")
-                return
+                st.warning("Debes añadir al menos una línea válida (baremo o libre).")
+                st.stop()
 
             presu_df = pd.DataFrame(lineas)
             subtotal = presu_df["P TOTAL (€)"].sum()
 
             st.dataframe(presu_df, use_container_width=True)
             st.markdown(f"**Subtotal:** {subtotal:,.2f} €  \n*(IVA no incluido)*")
-            # 5️⃣ Guardar en base de datos en dos tablas
+
+            # 5️⃣ Guardar presupuesto completo en la BBDD
             with st.expander("💾 Guardar Presupuesto en Base de Datos"):
                 proyecto = st.text_input("Proyecto", value=f"Ticket {st.session_state['selected_ticket']}")
                 observaciones = st.text_area("Observaciones generales")
@@ -847,20 +898,34 @@ def viabilidades_seccion():
                         conn = obtener_conexion()
                         cursor = conn.cursor()
 
-                        # Insertar en presupuestos_viabilidades
+                        # Insertar cabecera presupuesto
                         cursor.execute("""
                             INSERT INTO presupuestos_viabilidades (ticket, fecha, proyecto, observaciones, subtotal)
                             VALUES (?, ?, ?, ?, ?)
-                        """, (st.session_state["selected_ticket"],fecha,proyecto,observaciones,subtotal))
-                        id_presupuesto = cursor.lastrowid  # recuperamos el ID insertado
+                        """, (st.session_state["selected_ticket"], fecha, proyecto, observaciones, subtotal))
+                        id_presupuesto = cursor.lastrowid
 
-                        # Insertar en lineas_presupuesto_viabilidad
+                        # Actualizar coste en viabilidades
+                        cursor.execute("""
+                            UPDATE viabilidades
+                            SET coste = ?
+                            WHERE ticket = ?
+                        """, (subtotal, st.session_state["selected_ticket"]))
+
+                        # Insertar líneas
                         for linea in lineas:
                             cursor.execute("""
                                 INSERT INTO lineas_presupuesto_viabilidad (
                                     id_presupuesto, concepto_codigo, concepto_descripcion, unidades, precio_unitario, precio_total
                                 ) VALUES (?, ?, ?, ?, ?, ?)
-                            """, (id_presupuesto,linea["CÓDIGO"],linea["DESCRIPCIÓN"],linea["UDS."],linea["P UNITARIO (€)"],linea["P TOTAL (€)"]))
+                            """, (
+                                id_presupuesto,
+                                linea["CÓDIGO"],
+                                linea["DESCRIPCIÓN"],
+                                linea["UDS."],
+                                linea["P UNITARIO (€)"],
+                                linea["P TOTAL (€)"]
+                            ))
 
                         conn.commit()
                         conn.close()
@@ -868,6 +933,7 @@ def viabilidades_seccion():
                     except Exception as e:
                         st.error(f"❌ Error al guardar el presupuesto: {e}")
 
+            # 6️⃣ Descarga Excel
             if st.button("📥 Descargar Presupuesto .xlsx"):
                 fecha_str = pd.Timestamp.now().strftime("%d%m%Y")
                 buffer = BytesIO()
@@ -925,53 +991,43 @@ def viabilidades_seccion():
                     })
 
                     # 🟢 Línea 1: Vacía
-                    ws.write_blank("A2", "", normal_cell)  ######
+                    ws.write_blank("A2", "", normal_cell)
 
-                    # Inserta el logo en la celda A1 (justo a la izquierda de "PRESUPUESTO")
-                    logo_path = "img/logo_symtel.png"  # Asegúrate de que el logo esté en la carpeta correcta
-                    ws.insert_image("A1", logo_path,
-                                    {'x_scale': 1, 'y_scale': 0.8})  # Ajusta el tamaño si es necesario
-
-                    # 🟢 Línea 2: Título centrado sobre columna "DESCRIPCIÓN" (columna B = 1)
+                    # Logo y título
+                    logo_path = "img/logo_symtel.png"
+                    ws.insert_image("A1", logo_path, {'x_scale': 1, 'y_scale': 0.8})
                     ws.merge_range("B2:E2", "PRESUPUESTO", titulo_format)
 
-                    # 🟢 Línea 3: Vacía
-                    start_row = 3
-
                     # PROYECTO y FECHA
+                    start_row = 3
                     ws.write(start_row, 0, "PROYECTO", verde_fondo)
                     ws.merge_range(start_row, 1, start_row, 2, proyecto, normal_cell)
                     ws.write(start_row, 3, "FECHA", verde_fondo)
                     ws.write(start_row, 4, pd.Timestamp.now().strftime("%d/%m/%Y"), normal_cell)
 
-                    # 🟢 Línea 4: Vacía (la que me había olvidado)
-                    start_row += 1
-
-                    # 🟢 Línea 5: Vacía antes de las cabeceras
-                    start_row += 1
+                    # Líneas vacías antes de cabeceras
+                    start_row += 2
 
                     # Cabeceras
                     for col_num, value in enumerate(presu_df.columns.str.upper()):
                         ws.write(start_row, col_num, value, verde_fondo)
 
-                    # Datos con borde
+                    # Datos
                     for row_num, row_data in enumerate(presu_df.values, start=start_row + 1):
                         for col_num, cell_value in enumerate(row_data):
                             ws.write(row_num, col_num, cell_value, data_format)
 
-                    # Subtotal justo después
+                    # Subtotal
                     fila_fin_datos = start_row + 1 + len(presu_df)
                     ws.write(fila_fin_datos, 3, "SUBTOTAL", verde_fondo)
                     ws.write(fila_fin_datos, 4, subtotal, subtotal_bold)
                     ws.write(fila_fin_datos + 1, 3, "(IVA no incluido)", normal_cell)
 
-                    # OBSERVACIONES GENERALES (título ocupa toda la línea)
+                    # Observaciones
                     ws.merge_range(fila_fin_datos + 3, 0, fila_fin_datos + 3, len(presu_df.columns) - 1,
                                    "OBSERVACIONES GENERALES", verde_fondo)
-
-                    # Observaciones en celdas combinadas desde la columna "A" hasta la última columna
-                    ws.merge_range(fila_fin_datos + 4, 0, fila_fin_datos + 4, len(presu_df.columns) - 1, observaciones,
-                                   observ_format)
+                    ws.merge_range(fila_fin_datos + 4, 0, fila_fin_datos + 4, len(presu_df.columns) - 1,
+                                   observaciones, observ_format)
 
                 buffer.seek(0)
                 st.download_button(
@@ -980,6 +1036,7 @@ def viabilidades_seccion():
                     file_name=f"presupuesto_{proyecto}_{fecha_str}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
 
 def mostrar_formulario(click_data):
     """Muestra el formulario para editar los datos de la viabilidad y guarda los cambios en la base de datos."""
