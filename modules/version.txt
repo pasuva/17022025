@@ -53,4 +53,5 @@ v2.3.1 - Corrección de color verde para aquellas UUII que sean serviciables y t
 v2.3.2 - Ahora se puede hacer certificación mensual a través de la app, desde el panel de administrador. Añadido diccionario de categorías, técnicas fuzzy y NPL para categorizar, automáticamente, las observaciones de los comerciales, de cara a hacer más comoda la certificación mensual.
 v2.3.3 - Modificación del tipo de tabla. Usamos AgGrid para poder tener filtros complejos.
 v2.3.4 - Ahora comerciales ven absolutamente todos los datos de sus visitas realizadas. Comerciales NEO ahora reciben también una copia del correo de su propia visita con los resultados obtenidos. Cuando se cargan nuevos datos, se notifica al comercial sobre el total de UUII añadidas y las zonas nuevas.
-v2.3.5 - Creación de presupuestos mejorada. Casilla de costes de viabilidad se rellena automaticamente.
+v2.3.5 - Creación de presupuestos mejorada. Casilla de costes de viabilidad se rellena automáticamente.
+v2.3.6 - Ahora el responsable de los comerciales puede asignar a más de un comercial a la misma zona. El sistema repartirá automáticamente y de forma equitativa todos los puntos de la zona elegida, entre el total de comerciales asignados.

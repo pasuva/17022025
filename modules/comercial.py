@@ -214,8 +214,8 @@ def comercial_dashboard():
                     return
 
                 # Si el comercial es Nestor, cargamos los datos de Roberto
-                if comercial.lower() == "nestor":
-                     comercial = "roberto"
+                #if comercial.lower() == "nestor":
+                #     comercial = "roberto"
 
                 query = "SELECT * FROM datos_uis WHERE LOWER(COMERCIAL) = LOWER(?)"
                 df = pd.read_sql(query, conn, params=(comercial,))

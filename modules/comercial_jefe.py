@@ -151,7 +151,9 @@ def mapa_dashboard():
             if municipio_sel:
                 poblaciones = sorted(datos_uis[datos_uis['municipio'] == municipio_sel]['poblacion'].dropna().unique())
                 poblacion_sel = st.selectbox("Seleccione Población", poblaciones, key="poblacion_sel")
-            comercial_elegido = st.radio("Asignar a:", ["jose ramon", "rafaela"], key="comercial_elegido")
+            comerciales_disponibles = ["jose ramon", "rafaela", "nestor", "roberto"]
+            comerciales_seleccionados = st.multiselect("Asignar equitativamente a:", comerciales_disponibles,
+                                                       key="comerciales_seleccionados")
 
             if municipio_sel and poblacion_sel:
                 # Verificar asignación previa
@@ -164,134 +166,228 @@ def mapa_dashboard():
                 if count_assigned > 0:
                     st.warning("🚫 Esta zona ya ha sido asignada.")
                 else:
-                    if st.button("Asignar Zona"):
+                    if municipio_sel and poblacion_sel and comerciales_seleccionados:
+                        # Verificar asignación previa
                         conn = get_db_connection()
                         cursor = conn.cursor()
-                        cursor.execute("""
-                            INSERT INTO comercial_rafa (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
-                            SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, ?, 'Pendiente'
-                            FROM datos_uis
-                            WHERE municipio = ? AND poblacion = ? AND comercial = 'RAFA SANZ'
-                        """, (comercial_elegido, municipio_sel, poblacion_sel))
-                        conn.commit()
+                        cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
+                                       (municipio_sel, poblacion_sel))
+                        count_assigned = cursor.fetchone()[0]
+                        conn.close()
 
-                        try:
-                            cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_elegido,))
-                            email_comercial = cursor.fetchone()
-                            destinatario_comercial = email_comercial[
-                                0] if email_comercial else "patricia@redytelcomputer.com"
-                            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
-                            emails_admins = [fila[0] for fila in cursor.fetchall()]
-                            conn.close()
+                        if count_assigned > 0:
+                            st.warning("🚫 Esta zona ya ha sido asignada.")
+                        else:
+                            if st.button("Asignar Zona"):
+                                conn = get_db_connection()
+                                cursor = conn.cursor()
 
-                            descripcion_asignacion = (
-                                f"📍 Se le ha asignado la zona {municipio_sel} - {poblacion_sel}.<br><br>"
-                                "💼 Ya puede comenzar a gestionar las tareas correspondientes en esta zona.<br>"
-                                "🔑 Esté a cargo de todas las actividades y gestiones.<br>"
-                                "ℹ️ Revise su panel de usuario para más detalles.<br><br>"
-                                "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
-                            )
+                                # Obtener todos los puntos por esa población
+                                cursor.execute("""
+                                    SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
+                                    FROM datos_uis
+                                    WHERE municipio = ? AND poblacion = ? AND comercial = 'RAFA SANZ'
+                                """, (municipio_sel, poblacion_sel))
+                                puntos = cursor.fetchall()
 
-                            descripcion_admin = (
-                                f"📢 Nueva asignación de zona.<br><br>"
-                                f"📌 Zona Asignada: {municipio_sel} - {poblacion_sel}<br>"
-                                f"👤 Asignado a: {comercial_elegido}<br>"
-                                f"🕵️ Asignado por: {st.session_state['username']}<br><br>"
-                                "ℹ️ Revise los detalles en la plataforma.<br>"
-                                "⚡ Realice cambios desde administración si es necesario.<br>"
-                                "📞 Contacte con el equipo ante cualquier duda.<br>🔧 Gracias por su gestión."
-                            )
+                                if not puntos:
+                                    st.warning("⚠️ No se encontraron puntos con comercial RAFA SANZ.")
+                                    conn.close()
+                                else:
+                                    total_puntos = len(puntos)
+                                    num_comerciales = len(comerciales_seleccionados)
+                                    puntos_por_comercial = total_puntos // num_comerciales
+                                    resto = total_puntos % num_comerciales
 
-                            # Enviar notificaciones
-                            correo_asignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel,
-                                                             descripcion_asignacion)
-                            for email_admin in emails_admins:
-                                correo_asignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
-                                                                  descripcion_admin)
+                                    indice = 0
+                                    for i, comercial in enumerate(comerciales_seleccionados):
+                                        asignar_count = puntos_por_comercial + (1 if i < resto else 0)
+                                        for _ in range(asignar_count):
+                                            if indice >= total_puntos:
+                                                break
+                                            punto = puntos[indice]
+                                            cursor.execute("""
+                                                INSERT INTO comercial_rafa (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')
+                                            """, (*punto, comercial))
+                                            indice += 1
 
-                            st.success("✅ Zona asignada correctamente y notificaciones enviadas.")
-                            st.info(f"📧 Se notificó a {comercial_elegido} y a los administradores.")
+                                    conn.commit()
 
-                            log_trazabilidad(st.session_state["username"], "Asignación",
-                                             f"Asignó zona {municipio_sel} - {poblacion_sel} a {comercial_elegido}")
-                        except Exception as e:
-                            st.error(f"❌ Error al enviar la notificación: {e}")
-                        finally:
-                            conn.close()
+                                    # Enviar notificaciones (mismo sistema, ahora por cada comercial)
+                                    for comercial in comerciales_seleccionados:
+                                        try:
+                                            cursor.execute("SELECT email FROM usuarios WHERE username = ?",
+                                                           (comercial,))
+                                            email_comercial = cursor.fetchone()
+                                            destinatario_comercial = email_comercial[
+                                                0] if email_comercial else "patricia@redytelcomputer.com"
+
+                                            descripcion_asignacion = (
+                                                f"📍 Se le ha asignado la zona {municipio_sel} - {poblacion_sel}.<br><br>"
+                                                "💼 Ya puede comenzar a gestionar las tareas correspondientes.<br>"
+                                                "ℹ️ Revise su panel de usuario para más detalles.<br><br>"
+                                                "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
+                                            )
+                                            correo_asignacion_administracion(destinatario_comercial, municipio_sel,
+                                                                             poblacion_sel, descripcion_asignacion)
+                                        except Exception as e:
+                                            st.error(f"❌ Error al notificar a {comercial}: {e}")
+
+                                    # Notificar a admins
+                                    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                                    emails_admins = [fila[0] for fila in cursor.fetchall()]
+                                    descripcion_admin = (
+                                        f"📢 Nueva asignación de zona.\n\n"
+                                        f"📌 Zona Asignada: {municipio_sel} - {poblacion_sel}\n"
+                                        f"👥 Asignado a: {', '.join(comerciales_seleccionados)}\n"
+                                        f"🕵️ Asignado por: {st.session_state['username']}"
+                                    )
+                                    for email_admin in emails_admins:
+                                        correo_asignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
+                                                                          descripcion_admin)
+
+                                    st.success("✅ Zona asignada correctamente y notificaciones enviadas.")
+                                    st.info(f"📧 Se notificó a: {', '.join(comerciales_seleccionados)}")
+                                    log_trazabilidad(st.session_state["username"], "Asignación múltiple",
+                                                     f"Zona {municipio_sel}-{poblacion_sel} repartida entre {', '.join(comerciales_seleccionados)}")
+                                    conn.close()
+
+
 
         elif accion == "Desasignar Zona":
+
             conn = get_db_connection()
-            assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
+
+            assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion FROM comercial_rafa", conn)
+
             conn.close()
+
             if assigned_zones.empty:
+
                 st.warning("No hay zonas asignadas para desasignar.")
+
             else:
+
                 assigned_zones['zona'] = assigned_zones['municipio'] + " - " + assigned_zones['poblacion']
+
                 zonas_list = sorted(assigned_zones['zona'].unique())
+
                 zona_seleccionada = st.selectbox("Seleccione la zona asignada a desasignar", zonas_list,
                                                  key="zona_seleccionada")
+
                 if zona_seleccionada:
+
                     municipio_sel, poblacion_sel = zona_seleccionada.split(" - ")
-                    if st.button("Desasignar Zona"):
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT comercial FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
-                                       (municipio_sel, poblacion_sel))
-                        comercial_asignado = cursor.fetchone()[0]
-                        conn.close()
 
-                        # Borrar asignación
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM comercial_rafa WHERE municipio = ? AND poblacion = ?",
-                                       (municipio_sel, poblacion_sel))
-                        conn.commit()
-                        conn.close()
+                    # Obtener comerciales asignados a esa zona
 
-                        try:
+                    conn = get_db_connection()
+
+                    query = """
+
+                                SELECT DISTINCT comercial FROM comercial_rafa 
+
+                                WHERE municipio = ? AND poblacion = ?
+
+                            """
+
+                    comerciales_asignados = pd.read_sql(query, conn, params=(municipio_sel, poblacion_sel))
+
+                    conn.close()
+
+                    if comerciales_asignados.empty:
+
+                        st.warning("No hay comerciales asignados a esta zona.")
+
+                    else:
+
+                        comercial_a_eliminar = st.selectbox("Seleccione el comercial a desasignar",
+                                                            comerciales_asignados["comercial"].tolist())
+
+                        if st.button("Desasignar Comercial de Zona"):
+
                             conn = get_db_connection()
+
                             cursor = conn.cursor()
-                            cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_asignado,))
+
+                            cursor.execute("""
+
+                                        DELETE FROM comercial_rafa 
+
+                                        WHERE municipio = ? AND poblacion = ? AND comercial = ?
+
+                                    """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
+
+                            conn.commit()
+
+                            # Buscar correo del comercial
+
+                            cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_a_eliminar,))
+
                             email_comercial = cursor.fetchone()
+
                             destinatario_comercial = email_comercial[
                                 0] if email_comercial else "patricia@redytelcomputer.com"
+
+                            # Correos admin
+
                             cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+
                             emails_admins = [fila[0] for fila in cursor.fetchall()]
+
                             conn.close()
 
+                            # Notificaciones
+
                             descripcion_desasignacion = (
+
                                 f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel}.<br>"
+
                                 "🔄 Este cambio puede deberse a ajustes en las zonas asignadas.<br>"
+
                                 "⚠️ Ya no estará a cargo de las tareas de esta zona.<br>"
+
                                 "ℹ️ Revise su asignación actualizada en el sistema.<br><br>"
+
                                 "📞 Si tiene dudas, contacte con administración.<br>"
+
                                 "💬 Estamos aquí para ayudarle."
+
                             )
 
                             descripcion_admin = (
+
                                 f"📢 Se ha realizado una desasignación de zona.<br><br>"
+
                                 f"📌 Zona Desasignada: {municipio_sel} - {poblacion_sel}<br>"
-                                f"👤 Comercial afectado: {comercial_asignado}<br>"
+
+                                f"👤 Comercial afectado: {comercial_a_eliminar}<br>"
+
                                 f"🕵️ Desasignado por: {st.session_state['username']}<br><br>"
+
                                 "ℹ️ Revise los detalles en la plataforma.<br>"
+
                                 "⚡ Ajuste la asignación desde administración si es necesario.<br>"
+
                                 "🔧 Gracias por su gestión."
+
                             )
 
-                            # Enviar notificaciones
                             correo_desasignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel,
                                                                 descripcion_desasignacion)
+
                             for email_admin in emails_admins:
                                 correo_desasignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
                                                                      descripcion_admin)
 
-                            st.success("✅ Zona desasignada correctamente y notificaciones enviadas.")
-                            st.info(f"📧 Se notificó a {comercial_asignado} y a los administradores.")
+                            st.success(f"✅ Se desasignó la zona a {comercial_a_eliminar} correctamente.")
+
+                            st.info(f"📧 Se notificó a {comercial_a_eliminar} y a los administradores.")
 
                             log_trazabilidad(st.session_state["username"], "Desasignación",
-                                             f"Desasignó zona {municipio_sel} - {poblacion_sel}")
-                        except Exception as e:
-                            st.error(f"❌ Error al enviar la notificación: {e}")
+
+                                             f"Desasignó zona {municipio_sel} - {poblacion_sel} del comercial {comercial_a_eliminar}")
 
         # Mostrar tabla de zonas asignadas en el panel de asignación
         conn = get_db_connection()
@@ -395,7 +491,7 @@ def mapa_dashboard():
             comentarios_comercial, fecha_viabilidad, ticket, apartment_id, 
             nombre_cliente, telefono, usuario
         FROM viabilidades 
-        WHERE usuario = 'jose ramon' OR usuario = 'rafaela'
+        WHERE usuario = 'jose ramon' OR usuario = 'rafaela' OR usuario = 'nestor' OR usuario = 'roberto'
     """, conn)
     conn.close()
     st.info("ℹ️ Viabilidades: Visualización del total de viabilidades y su estado actual")

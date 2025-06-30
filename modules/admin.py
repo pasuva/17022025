@@ -1138,7 +1138,7 @@ def mostrar_formulario(click_data):
         col19, col20 = st.columns([1, 1])
         with col19:
             # Campo editable: Coste con valor precargado
-            coste = st.number_input("💰 Coste", value=float(click_data.get("coste", 0.0)), step=0.01, key="coste_input")
+            coste = st.number_input("💰 Coste (Se actualiza automáticamente al crear un presupuesto)", value=float(click_data.get("coste", 0.0)), step=0.01, key="coste_input")
         with col20:
             # Campo editable: Comentarios Internos con valor precargado (si existe)
             comentarios_internos = st.text_area("📄 Comentarios Internos", value=click_data.get("comentarios_internos", ""), key="comentarios_internos_input")
