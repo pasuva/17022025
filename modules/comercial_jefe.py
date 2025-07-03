@@ -199,7 +199,10 @@ def mapa_dashboard():
                                     puntos_por_comercial = total_puntos // num_comerciales
                                     resto = total_puntos % num_comerciales
 
+                                    progress_bar = st.progress(0)
+                                    total_asignados = 0
                                     indice = 0
+
                                     for i, comercial in enumerate(comerciales_seleccionados):
                                         asignar_count = puntos_por_comercial + (1 if i < resto else 0)
                                         for _ in range(asignar_count):
@@ -211,8 +214,11 @@ def mapa_dashboard():
                                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')
                                             """, (*punto, comercial))
                                             indice += 1
+                                            total_asignados += 1
+                                            progress_bar.progress(total_asignados / total_puntos)
 
                                     conn.commit()
+                                    progress_bar.empty()
 
                                     # Enviar notificaciones (mismo sistema, ahora por cada comercial)
                                     for comercial in comerciales_seleccionados:
@@ -253,138 +259,90 @@ def mapa_dashboard():
                                                      f"Zona {municipio_sel}-{poblacion_sel} repartida entre {', '.join(comerciales_seleccionados)}")
                                     conn.close()
 
-
-
         elif accion == "Desasignar Zona":
-
             conn = get_db_connection()
-
             assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion FROM comercial_rafa", conn)
-
             conn.close()
 
             if assigned_zones.empty:
-
                 st.warning("No hay zonas asignadas para desasignar.")
 
             else:
+                # Convertir a string y llenar NaN antes de concatenar
+                assigned_zones['municipio'] = assigned_zones['municipio'].fillna('').astype(str)
+                assigned_zones['poblacion'] = assigned_zones['poblacion'].fillna('').astype(str)
 
+                # Filtrar zonas completas
+                assigned_zones = assigned_zones[
+                    (assigned_zones['municipio'] != '') & (assigned_zones['poblacion'] != '')]
                 assigned_zones['zona'] = assigned_zones['municipio'] + " - " + assigned_zones['poblacion']
-
                 zonas_list = sorted(assigned_zones['zona'].unique())
-
                 zona_seleccionada = st.selectbox("Seleccione la zona asignada a desasignar", zonas_list,
                                                  key="zona_seleccionada")
 
                 if zona_seleccionada:
-
                     municipio_sel, poblacion_sel = zona_seleccionada.split(" - ")
 
                     # Obtener comerciales asignados a esa zona
-
                     conn = get_db_connection()
-
                     query = """
-
                                 SELECT DISTINCT comercial FROM comercial_rafa 
-
                                 WHERE municipio = ? AND poblacion = ?
-
                             """
-
                     comerciales_asignados = pd.read_sql(query, conn, params=(municipio_sel, poblacion_sel))
-
                     conn.close()
 
                     if comerciales_asignados.empty:
-
                         st.warning("No hay comerciales asignados a esta zona.")
-
                     else:
-
                         comercial_a_eliminar = st.selectbox("Seleccione el comercial a desasignar",
                                                             comerciales_asignados["comercial"].tolist())
-
                         if st.button("Desasignar Comercial de Zona"):
-
                             conn = get_db_connection()
-
                             cursor = conn.cursor()
-
                             cursor.execute("""
-
                                         DELETE FROM comercial_rafa 
-
                                         WHERE municipio = ? AND poblacion = ? AND comercial = ?
-
                                     """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
-
                             conn.commit()
 
                             # Buscar correo del comercial
 
                             cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_a_eliminar,))
-
                             email_comercial = cursor.fetchone()
-
                             destinatario_comercial = email_comercial[
                                 0] if email_comercial else "patricia@redytelcomputer.com"
 
                             # Correos admin
-
                             cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
-
                             emails_admins = [fila[0] for fila in cursor.fetchall()]
-
                             conn.close()
 
                             # Notificaciones
-
                             descripcion_desasignacion = (
-
                                 f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel}.<br>"
-
                                 "🔄 Este cambio puede deberse a ajustes en las zonas asignadas.<br>"
-
                                 "⚠️ Ya no estará a cargo de las tareas de esta zona.<br>"
-
                                 "ℹ️ Revise su asignación actualizada en el sistema.<br><br>"
-
                                 "📞 Si tiene dudas, contacte con administración.<br>"
-
                                 "💬 Estamos aquí para ayudarle."
-
                             )
-
                             descripcion_admin = (
-
                                 f"📢 Se ha realizado una desasignación de zona.<br><br>"
-
                                 f"📌 Zona Desasignada: {municipio_sel} - {poblacion_sel}<br>"
-
                                 f"👤 Comercial afectado: {comercial_a_eliminar}<br>"
-
                                 f"🕵️ Desasignado por: {st.session_state['username']}<br><br>"
-
                                 "ℹ️ Revise los detalles en la plataforma.<br>"
-
                                 "⚡ Ajuste la asignación desde administración si es necesario.<br>"
-
                                 "🔧 Gracias por su gestión."
-
                             )
-
                             correo_desasignacion_administracion(destinatario_comercial, municipio_sel, poblacion_sel,
                                                                 descripcion_desasignacion)
-
                             for email_admin in emails_admins:
                                 correo_desasignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
                                                                      descripcion_admin)
-
                             st.success(f"✅ Se desasignó la zona a {comercial_a_eliminar} correctamente.")
-
                             st.info(f"📧 Se notificó a {comercial_a_eliminar} y a los administradores.")
-
                             log_trazabilidad(st.session_state["username"], "Desasignación",
 
                                              f"Desasignó zona {municipio_sel} - {poblacion_sel} del comercial {comercial_a_eliminar}")
