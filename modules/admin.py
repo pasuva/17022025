@@ -824,6 +824,113 @@ def viabilidades_seccion():
         except Exception as e:
             st.error(f"❌ Error al cargar el historial de envíos: {e}")
 
+    DB_URL = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+
+    with st.expander("📤 Subir Excel de Viabilidades para actualizar base de datos"):
+        uploaded_file = st.file_uploader("Selecciona un archivo Excel (.xlsx)", type=["xlsx"])
+
+        if uploaded_file is not None:
+            try:
+                # Leer Excel en DataFrame
+                df = pd.read_excel(io.BytesIO(uploaded_file.read()))
+
+                # Normalizar latitud, longitud y coste
+                for col in ["latitud", "longitud", "PRESUPUESTO"]:
+                    if col in df.columns:
+                        df[col] = df[col].astype(str).str.replace(",", ".").astype(float)
+
+                # Mapeo Excel → BD
+                mapa_columnas = {
+                    "ticket": "ticket",
+                    "SOLICITANTE": "usuario",
+                    "Nueva Promoción": "nuevapromocion",
+                    "RESULTADO": "resultado",
+                    "JUSTIFICACIÓN": "justificacion",
+                    "PRESUPUESTO": "coste",
+                    "UUII": "zona_estudio",
+                    "CONTRATOS": "contratos",
+                    "latitud": "latitud",
+                    "longitud": "longitud",
+                    "provincia": "provincia",
+                    "municipio": "municipio",
+                    "poblacion": "poblacion",
+                    "vial": "vial",
+                    "numero": "numero",
+                    "letra": "letra",
+                    "cp": "cp",
+                    "olt": "olt",
+                    "cto_admin": "cto_admin",
+                    "id_cto": "id_cto",
+                    "fecha_viabilidad": "fecha_viabilidad",
+                    "apartment_id": "apartment_id",
+                    "nombre_cliente": "nombre_cliente",
+                    "telefono": "telefono",
+                    "comentarios_internos": "comentarios_internos",
+                    "ESTADO": "estado",
+                    "comentarios_comercial": "comentarios_comercial"
+                }
+
+                # Renombrar columnas válidas
+                df = df.rename(columns={col: mapa_columnas[col] for col in df.columns if col in mapa_columnas})
+
+                # Conectar a la base de datos
+                conn = sqlitecloud.connect(DB_URL)
+                cursor = conn.cursor()
+
+                # Obtener columnas existentes en la tabla viabilidades
+                cursor.execute("PRAGMA table_info(viabilidades);")
+                columnas_bd = {row[1] for row in cursor.fetchall()}
+
+                insertados = 0
+                errores = []
+
+                for _, fila in df.iterrows():
+                    datos_validos = {col: fila[col] for col in fila.index if col in columnas_bd and pd.notna(fila[col])}
+
+                    if not datos_validos:
+                        continue
+
+                    columnas_sql = ", ".join(datos_validos.keys())
+                    placeholders = ", ".join(["?"] * len(datos_validos))
+                    valores = list(datos_validos.values())
+
+                    sql = f"INSERT OR REPLACE INTO viabilidades ({columnas_sql}) VALUES ({placeholders})"
+
+                    try:
+                        cursor.execute(sql, valores)
+                        insertados += 1
+                    except Exception as e:
+                        errores.append(f"❌ Error al insertar ticket {fila.get('ticket')}: {e}")
+
+                conn.commit()
+                conn.close()
+
+                # Mostrar resultados al usuario
+                st.success(f"✅ Registros insertados correctamente: {insertados}")
+                if errores:
+                    st.error(f"❌ Se encontraron {len(errores)} errores durante la inserción.")
+                    for e in errores:
+                        st.write(e)
+
+                # Comparar columnas esperadas y recibidas
+                columnas_excel_original = set(mapa_columnas.keys())
+                columnas_recibidas = set(df.columns)
+                columnas_omitidas = columnas_excel_original - columnas_recibidas
+                columnas_no_existentes = [col for col in df.columns if col not in columnas_bd]
+
+                if columnas_omitidas:
+                    st.warning("⚠️ Columnas esperadas en Excel pero que no llegaron:")
+                    for c in columnas_omitidas:
+                        st.write(f" - {c}")
+
+                if columnas_no_existentes:
+                    st.warning("⚠️ Columnas en Excel ignoradas porque no existen en la base de datos:")
+                    for c in columnas_no_existentes:
+                        st.write(f" - {c}")
+
+            except Exception as e:
+                st.error(f"❌ Error al procesar el archivo: {e}")
+
 
 def mostrar_formulario(click_data):
     """Muestra el formulario para editar los datos de la viabilidad y guarda los cambios en la base de datos."""
@@ -898,6 +1005,47 @@ def mostrar_formulario(click_data):
                 "📝 Comentarios Comerciales",
                 value=click_data.get("comentarios_comercial", ""),
                 key="comentarios_comercial_input"
+            )
+
+        col_nueva1, col_nueva2 = st.columns([1, 1])
+        with col_nueva1:
+            opciones_promocion = ["SI", "NO"]
+            nueva_promocion_val = click_data.get("nuevapromocion", "NO")
+            if nueva_promocion_val not in opciones_promocion:
+                nueva_promocion_val = "NO"  # valor por defecto
+
+            nueva_promocion = st.selectbox(
+                "🏗️ Nueva Promoción",
+                opciones_promocion,
+                index=opciones_promocion.index(nueva_promocion_val),
+                key="nueva_promocion_input"
+            )
+        with col_nueva2:
+            contratos = st.text_input(
+                "📑 Contratos",
+                value=click_data.get("contratos", ""),
+                key="contratos_input"
+            )
+
+        col_nueva3, col_nueva4 = st.columns([1, 1])
+        with col_nueva3:
+            opciones_resultado = ["Viable", "No viable", "Pendiente", "Rechazado"]
+            resultado_val = click_data.get("resultado", "Viable")
+
+            if resultado_val not in opciones_resultado:
+                resultado_val = "Viable"  # valor por defecto si viene None o no válido
+
+            resultado = st.selectbox(
+                "✅ Resultado",
+                opciones_resultado,
+                index=opciones_resultado.index(resultado_val),
+                key="resultado_input"
+            )
+        with col_nueva4:
+            justificacion = st.text_area(
+                "📌 Justificación",
+                value=click_data.get("justificacion", ""),
+                key="justificacion_input"
             )
 
         col15, col16, col17 = st.columns([1, 1, 1])
@@ -998,12 +1146,15 @@ def mostrar_formulario(click_data):
             cursor.execute("""
                 UPDATE viabilidades
                 SET apartment_id = ?, direccion_id = ?, olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
-                    coste = ?, comentarios_comercial = ?, comentarios_internos = ?, zona_estudio = ?, estado = ?
+                    coste = ?, comentarios_comercial = ?, comentarios_internos = ?, zona_estudio = ?, estado = ?,
+                    nuevapromocion = ?, resultado = ?, justificacion = ?, contratos = ?
                 WHERE ticket = ?
             """, (
                 apartment_id_clean, direccion_id, olt, cto_admin, id_cto, municipio_admin,
                 serviciable, coste, comentarios_comercial, comentarios_internos,
-                zona_estudio, estado, ticket
+                zona_estudio, estado,
+                nueva_promocion, resultado, justificacion, contratos,
+                ticket
             ))
 
             cursor.execute("""
