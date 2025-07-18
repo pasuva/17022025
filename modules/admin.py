@@ -1140,21 +1140,29 @@ def mostrar_formulario(click_data):
 
         col15, col16, col17 = st.columns([1, 1, 1])
         with col15:
+            apartment_id_raw = click_data.get("apartment_id", "")
+            if apartment_id_raw is None:
+                apartment_id_raw = ""
+
             apartment_id_input = st.text_area(
                 "🏠 Apartment_id (separa con comas)",
-                value=click_data.get("apartment_id", ""),
+                value=apartment_id_raw,
                 key="apartment_id_input"
             )
+
             # Limpiar y parsear IDs
             apartment_ids = [aid.strip() for aid in apartment_id_input.split(",") if aid.strip()]
 
-            # Mostrar etiquetas visuales
-            tags_html = " ".join(
-                f'<span style="display:inline-block; background:#3b82f6; color:white; padding:3px 8px; border-radius:12px; margin:2px;">{aid}</span>'
-                for aid in apartment_ids
-            )
-            st.markdown("Apartment IDs detectados:")
-            st.markdown(tags_html, unsafe_allow_html=True)
+            # Mostrar etiquetas visuales solo si hay datos
+            if apartment_ids:
+                tags_html = " ".join(
+                    f'<span style="display:inline-block; background:#3b82f6; color:white; padding:3px 8px; border-radius:12px; margin:2px;">{aid}</span>'
+                    for aid in apartment_ids
+                )
+                st.markdown("Apartment IDs detectados:")
+                st.markdown(tags_html, unsafe_allow_html=True)
+            else:
+                st.markdown("⚠️ No se han detectado Apartment IDs.")
 
             direccion_id = st.text_input(
                 "📍 Dirección ID",
@@ -1166,7 +1174,7 @@ def mostrar_formulario(click_data):
                 opciones_olt[0]
             )
             opcion_olt = st.selectbox("⚡ OLT", opciones_olt, index=opciones_olt.index(default_olt), key="olt_input")
-            olt = map_olt[opcion_olt]
+            olt = opcion_olt # cambio olt = map_olt[opcion_olt] a lo que hay ahora para guardar numero - nombre y no solo el numero
         with col16:
             cto_admin = st.text_input("⚙️ Cto Admin", value=click_data.get("cto_admin", ""), key="cto_admin_input")
             municipio_admin = st.text_input("🌍 Municipio Admin", value=click_data.get("municipio_admin", ""),
@@ -1192,6 +1200,29 @@ def mostrar_formulario(click_data):
                 value=click_data.get("comentarios_internos", ""),
                 key="comentarios_internos_input"
             )
+        col21, col22 = st.columns([1, 1])
+        with col21:
+            zona_estudio = st.text_input(
+                "🗺️ Zona de estudio",
+                value=click_data.get("zona_estudio", ""),
+                key="zona_estudio_input"
+            )
+        with col22:
+            opciones_estado = [
+                "Presupuesto enviado",
+                "Aceptado",
+                "Rechazado",
+                "Cerrar",
+                "Pasado a zona de estudio"
+            ]
+            estado_val = click_data.get("estado", "Presupuesto enviado")
+            index_estado = opciones_estado.index(estado_val) if estado_val in opciones_estado else 0
+            estado = st.selectbox(
+                "📌 Estado",
+                opciones_estado,
+                index=index_estado,
+                key="estado_input"
+            )
 
         submit = st.form_submit_button(f"💾 Guardar cambios para el Ticket {ticket}")
 
@@ -1202,15 +1233,15 @@ def mostrar_formulario(click_data):
 
             apartment_id_clean = ",".join(apartment_ids)  # Guardamos limpio, sin espacios sobrantes
 
-            query = """
+            cursor.execute("""
                 UPDATE viabilidades
                 SET apartment_id = ?, direccion_id = ?, olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
-                    coste = ?, comentarios_comercial = ?, comentarios_internos = ?
+                    coste = ?, comentarios_comercial = ?, comentarios_internos = ?, zona_estudio = ?, estado = ?
                 WHERE ticket = ?
-            """
-            cursor.execute(query, (
+            """, (
                 apartment_id_clean, direccion_id, olt, cto_admin, id_cto, municipio_admin,
-                serviciable, coste, comentarios_comercial, comentarios_internos, ticket
+                serviciable, coste, comentarios_comercial, comentarios_internos,
+                zona_estudio, estado, ticket
             ))
 
             cursor.execute("""

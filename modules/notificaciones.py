@@ -135,4 +135,45 @@ def correo_nuevas_zonas_comercial(destinatario, nombre_comercial, total_nuevos, 
     }
     enviar_notificacion(destinatario, asunto, contenido)
 
+def correo_confirmacion_viab_admin(destinatario, id_viab, comercial_orig):
+    asunto = f"✔️ Viabilidad {id_viab} confirmada"
+    contenido = {
+        "mensaje": (
+            f"La viabilidad <strong>#{id_viab}</strong>, enviada por "
+            f"<strong>{comercial_orig}</strong>, ha sido confirmada por Rafa."
+        ),
+        "Descripción": (
+            "Ya está lista para continuar su flujo de trabajo."
+        )
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+
+
+def correo_reasignacion_saliente(destinatario, id_viab, nuevo_comercial):
+    asunto = f"⚠️ Viabilidad {id_viab} reasignada"
+    contenido = {
+        "mensaje": (
+            f"La viabilidad <strong>#{id_viab}</strong> ha sido reasignada a "
+            f"<strong>{nuevo_comercial}</strong>."
+        ),
+        "Descripción": (
+            "Ya no estás a cargo de ella. "
+            "Si tienes dudas, contacta con administración."
+        )
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+
+
+def correo_reasignacion_entrante(destinatario, id_viab, comercial_orig):
+    asunto = f"📥 Nueva viabilidad asignada (ID {id_viab})"
+    contenido = {
+        "mensaje": (
+            f"Se te ha asignado la viabilidad <strong>#{id_viab}</strong>."
+        ),
+        "Descripción": (
+            f"Fue reportada originalmente por <strong>{comercial_orig}</strong>."
+            "<br>Revisa tu panel para gestionarla."
+        )
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
 
