@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import smtplib
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.header import Header
 from modules import plantilla_email
+from datetime import datetime
 
 # Función para limpiar las cadenas y eliminar saltos de línea problemáticos
 def limpiar_texto(texto):
@@ -176,4 +178,40 @@ def correo_reasignacion_entrante(destinatario, id_viab, comercial_orig):
         )
     }
     enviar_notificacion(destinatario, asunto, contenido)
+
+# 8. Envío manual de presupuesto adjunto
+def correo_envio_presupuesto_manual(destinatario, proyecto, mensaje_usuario, archivo_bytes, nombre_archivo):
+    fecha_envio = datetime.now().strftime("%d/%m/%Y")
+
+    asunto = f"Presupuesto enviado: {proyecto}"
+
+    contenido = {
+        "mensaje": f"Se ha enviado un presupuesto para el proyecto <strong>{proyecto}</strong>.",
+        "Fecha de envío": fecha_envio,
+        "Comentario del remitente": mensaje_usuario
+    }
+
+    try:
+        html_content = plantilla_email.generar_html(asunto, contenido)
+
+        msg = MIMEMultipart()
+        msg['From'] = 'noreply.verdetuoperador@gmail.com'
+        msg['To'] = destinatario
+        msg['Subject'] = str(Header(asunto, 'utf-8'))
+        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+
+        # Adjuntar el archivo
+        part = MIMEApplication(archivo_bytes, Name=nombre_archivo)
+        part['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+        msg.attach(part)
+
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login('noreply.verdetuoperador@gmail.com', 'mwht uuwd slzc renq')
+        server.sendmail('noreply.verdetuoperador@gmail.com', destinatario, msg.as_string())
+        server.quit()
+
+        print(f"✅ Correo con presupuesto enviado a {destinatario}")
+    except Exception as e:
+        print(f"❌ Error al enviar correo con presupuesto: {e}")
 

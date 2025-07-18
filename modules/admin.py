@@ -2,7 +2,7 @@ import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial
+from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
@@ -722,345 +722,107 @@ def viabilidades_seccion():
         st.subheader(f"📝 Formulario para Ticket: {st.session_state['selected_ticket']}")
         mostrar_formulario(selected_viabilidad)
 
-        # 👇 Mostrar presupuestos guardados
-        with st.expander("📁 Presupuestos guardados", expanded=False):  # Hacemos que esta sección sea desplegable
+        if st.session_state.get("selected_ticket"):
+            st.markdown("---")
+            st.subheader(f"📎 Subir y Enviar Presupuesto para Ticket {st.session_state['selected_ticket']}")
 
-            conn = obtener_conexion()
-            presupuestos = pd.read_sql("SELECT * FROM presupuestos_viabilidades ORDER BY fecha DESC", conn)
+            archivo = st.file_uploader("📁 Sube el archivo Excel del presupuesto", type=["xlsx"])
 
-            if not presupuestos.empty:
-                # Filtro por ticket
-                tickets_disponibles = presupuestos["ticket"].unique()
+            if archivo:
+                st.success("✅ Archivo cargado correctamente.")
 
-                # Si hay un ticket seleccionado previamente, lo usaremos como valor por defecto
-                ticket_por_defecto = st.session_state.get("selected_ticket", None)
+                proyecto = st.text_input("🔖 Proyecto / Nombre del presupuesto",
+                                         value=f"Ticket {st.session_state['selected_ticket']}")
+                mensaje = st.text_area("📝 Mensaje para los destinatarios",
+                                       value="Adjunto presupuesto para su revisión.")
 
-                # Mostrar el selectbox para elegir un ticket
-                if ticket_por_defecto in tickets_disponibles:
-                    # Si el ticket seleccionado previamente está disponible en la lista, lo usamos
-                    ticket_seleccionado = st.selectbox(
-                        "Filtrar por ticket",
-                        options=tickets_disponibles,
-                        index=list(tickets_disponibles).index(ticket_por_defecto)
-                    )
-                else:
-                    # Si no hay un ticket seleccionado previamente o no existe en la lista, usamos el primero de la lista
-                    ticket_seleccionado = st.selectbox(
-                        "Filtrar por ticket",
-                        options=tickets_disponibles
-                    )
+                # Define los destinatarios disponibles
+                destinatarios_posibles = {
+                    "Rafa Sanz": "rafasanz9@gmail.com",
+                    "Juan AsturPhone": "admin@asturphone.com",
+                    "Correo para pruebas": "patricia@verdetuoperador.com"
+                }
 
-                # Filtrar los presupuestos según el ticket seleccionado
-                presupuestos_filtrados = presupuestos[presupuestos["ticket"] == ticket_seleccionado]
+                seleccionados = st.multiselect("👥 Selecciona destinatarios", list(destinatarios_posibles.keys()))
 
-                if not presupuestos_filtrados.empty:
-                    st.write("Presupuestos encontrados:")
-                    st.dataframe(presupuestos_filtrados, use_container_width=True)
+                if seleccionados and st.button("🚀 Enviar presupuesto por correo"):
+                    try:
+                        archivo_bytes = archivo.read()
+                        nombre_archivo = archivo.name
 
-                    # Selección de un presupuesto para ver su detalle
-                    id_presupuesto_sel = st.selectbox("Selecciona un presupuesto para ver el detalle",
-                                                      presupuestos_filtrados["id_presupuesto"])
+                        for nombre in seleccionados:
+                            correo = destinatarios_posibles[nombre]
 
-                    detalle = pd.read_sql(f"""
-                            SELECT 
-                                concepto_codigo AS Código, 
-                                concepto_descripcion AS Descripción, 
-                                unidades AS 'Unidades', 
-                                precio_unitario AS 'P. Unitario (€)', 
-                                precio_total AS 'P. Total (€)' 
-                            FROM lineas_presupuesto_viabilidad 
-                            WHERE id_presupuesto = {id_presupuesto_sel}
-                        """, conn)
+                            # Enviar correo
+                            correo_envio_presupuesto_manual(
+                                destinatario=correo,
+                                proyecto=proyecto,
+                                mensaje_usuario=mensaje,
+                                archivo_bytes=archivo_bytes,
+                                nombre_archivo=nombre_archivo
+                            )
 
-                    st.markdown("### 🧾 Detalle del presupuesto")
-                    st.dataframe(detalle, use_container_width=True)
-                else:
-                    # Mensaje si no hay presupuestos para el ticket seleccionado
-                    st.warning(
-                        f"No hay presupuestos guardados para el ticket {ticket_seleccionado}. Mostrando el primer ticket disponible.")
+                            # Registrar envío en la BBDD
+                            try:
+                                conn = obtener_conexion()
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    INSERT INTO envios_presupuesto_viabilidad (ticket, destinatario, proyecto, fecha_envio, archivo_nombre)
+                                    VALUES (?, ?, ?, ?, ?)
+                                """, (
+                                    st.session_state["selected_ticket"],
+                                    correo,
+                                    proyecto,
+                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    nombre_archivo
+                                ))
+                                conn.commit()
+                                conn.close()
+                            except Exception as db_error:
+                                st.warning(
+                                    f"⚠️ Correo enviado a {correo}, pero no se registró en la base de datos: {db_error}")
 
-                    # Mostrar el primer ticket disponible como valor por defecto en el selectbox
-                    ticket_seleccionado = tickets_disponibles[0]
-                    # Filtrar de nuevo los presupuestos para este primer ticket
-                    presupuestos_filtrados = presupuestos[presupuestos["ticket"] == ticket_seleccionado]
+                        # ✅ Marcar en la base de datos que se ha enviado
+                        try:
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE viabilidades
+                                SET presupuesto_enviado = 1
+                                WHERE ticket = ?
+                            """, (st.session_state["selected_ticket"],))
+                            conn.commit()
+                            conn.close()
+                            st.info("🗂️ Se ha registrado en la BBDD que el presupuesto ha sido enviado.")
+                        except Exception as db_error:
+                            st.warning(
+                                f"⚠️ El correo fue enviado, pero hubo un error al actualizar la BBDD: {db_error}")
 
-                    st.write("Presupuestos encontrados para el primer ticket disponible:")
-                    st.dataframe(presupuestos_filtrados, use_container_width=True)
-
-                    # Selección de un presupuesto para ver su detalle
-                    id_presupuesto_sel = st.selectbox("Selecciona un presupuesto para ver el detalle",
-                                                      presupuestos_filtrados["id_presupuesto"])
-
-                    detalle = pd.read_sql(f"""
-                            SELECT 
-                                concepto_codigo AS Código, 
-                                concepto_descripcion AS Descripción, 
-                                unidades AS 'Unidades', 
-                                precio_unitario AS 'P. Unitario (€)', 
-                                precio_total AS 'P. Total (€)' 
-                            FROM lineas_presupuesto_viabilidad 
-                            WHERE id_presupuesto = {id_presupuesto_sel}
-                        """, conn)
-
-                    st.markdown("### 🧾 Detalle del presupuesto")
-                    st.dataframe(detalle, use_container_width=True)
+                        st.success("✅ Presupuesto enviado correctamente.")
+                    except Exception as e:
+                        st.error(f"❌ Error al enviar el presupuesto: {e}")
             else:
-                # Si la tabla de presupuestos está vacía
-                st.info("Todavía no hay presupuestos guardados.")
+                st.info("📎 Sube un archivo Excel para poder enviarlo.")
 
+    with st.expander("📜 Historial de Envíos de Presupuesto"):
+        try:
+            conn = obtener_conexion()
+            df_historial = pd.read_sql_query("""
+                SELECT fecha_envio, destinatario, proyecto, archivo_nombre
+                FROM envios_presupuesto_viabilidad
+                WHERE ticket = ?
+                ORDER BY datetime(fecha_envio) DESC
+            """, conn, params=(st.session_state["selected_ticket"],))
             conn.close()
 
-        # Mostrar si hay ticket seleccionado
-        if st.session_state["selected_ticket"]:
-            st.markdown("---")
-            st.subheader(f"💰 Generar Presupuesto para Ticket {st.session_state['selected_ticket']}")
+            if df_historial.empty:
+                st.info("No se han registrado envíos de presupuesto aún.")
+            else:
+                df_historial["fecha_envio"] = pd.to_datetime(df_historial["fecha_envio"]).dt.strftime("%d/%m/%Y %H:%M")
+                st.dataframe(df_historial, use_container_width=True)
 
-            # 1️⃣ Cargar baremos desde la BD
-            @st.cache_data
-            def load_baremos():
-                conn = obtener_conexion()
-                df = pd.read_sql(
-                    "SELECT codigo, descripcion, unidades, precio, tipo FROM baremos_viabilidades ORDER BY codigo",
-                    conn)
-                conn.close()
-                return df
-
-            baremos_df = load_baremos()
-
-            # 2️⃣ Selección de conceptos desde baremo
-            seleccion = st.multiselect(
-                "Selecciona conceptos",
-                options=baremos_df.index,
-                format_func=lambda i: f"{baremos_df.at[i, 'codigo']} – {baremos_df.at[i, 'descripcion']}"
-            )
-
-            if not seleccion:
-                st.info("Selecciona al menos un concepto.")
-                st.stop()
-
-            unidades = {
-                idx: st.number_input(f"Unidades para {baremos_df.at[idx, 'codigo']}", min_value=0.0, step=1.0,
-                                     key=f"uds_{idx}")
-                for idx in seleccion
-            }
-
-            # 3️⃣ Opción para añadir líneas libres múltiples
-            st.markdown("### ➕ Líneas adicionales manuales (opcionales)")
-            add_manual = st.checkbox("¿Añadir líneas libres especiales?")
-
-            lineas_libres = []
-
-            if add_manual:
-                st.markdown("Introduce una o más líneas libres en la tabla:")
-
-                if "lineas_libres_df" not in st.session_state:
-                    st.session_state["lineas_libres_df"] = pd.DataFrame(
-                        columns=["DESCRIPCIÓN", "UDS.", "P UNITARIO (€)"])
-
-                lineas_editadas = st.data_editor(
-                    st.session_state["lineas_libres_df"],
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    key="lineas_libres_editor"
-                )
-
-                # Guardar en sesión para persistencia
-                st.session_state["lineas_libres_df"] = lineas_editadas.copy()
-
-                # Validar y construir líneas libres válidas
-                for _, row in lineas_editadas.iterrows():
-                    try:
-                        descripcion = str(row["DESCRIPCIÓN"]).strip()
-                        uds = float(row["UDS."])
-                        precio = float(row["P UNITARIO (€)"])
-                        if descripcion and uds > 0 and precio > 0:
-                            total = uds * precio
-                            lineas_libres.append({
-                                "UDS.": uds,
-                                "CÓDIGO": " ",
-                                "DESCRIPCIÓN": descripcion,
-                                "P UNITARIO (€)": precio,
-                                "P TOTAL (€)": total
-                            })
-                    except:
-                        continue
-
-            # 4️⃣ Construcción del DataFrame del presupuesto
-            lineas = []
-            for idx, uds in unidades.items():
-                if uds > 0:
-                    row = baremos_df.loc[idx].copy()
-                    total = uds * row["precio"]
-                    lineas.append({
-                        "UDS.": uds,
-                        "CÓDIGO": row["codigo"],
-                        "DESCRIPCIÓN": row["descripcion"],
-                        "P UNITARIO (€)": row["precio"],
-                        "P TOTAL (€)": total
-                    })
-
-            # Añadir las líneas libres al total
-            lineas.extend(lineas_libres)
-
-            if not lineas:
-                st.warning("Debes añadir al menos una línea válida (baremo o libre).")
-                st.stop()
-
-            presu_df = pd.DataFrame(lineas)
-            subtotal = presu_df["P TOTAL (€)"].sum()
-
-            st.dataframe(presu_df, use_container_width=True)
-            st.markdown(f"**Subtotal:** {subtotal:,.2f} €  \n*(IVA no incluido)*")
-
-            # 5️⃣ Guardar presupuesto completo en la BBDD
-            with st.expander("💾 Guardar Presupuesto en Base de Datos"):
-                proyecto = st.text_input("Proyecto", value=f"Ticket {st.session_state['selected_ticket']}")
-                observaciones = st.text_area("Observaciones generales")
-                fecha = pd.Timestamp.now().strftime("%Y-%m-%d")
-
-                if st.button("✅ Guardar Presupuesto"):
-                    try:
-                        conn = obtener_conexion()
-                        cursor = conn.cursor()
-
-                        # Insertar cabecera presupuesto
-                        cursor.execute("""
-                            INSERT INTO presupuestos_viabilidades (ticket, fecha, proyecto, observaciones, subtotal)
-                            VALUES (?, ?, ?, ?, ?)
-                        """, (st.session_state["selected_ticket"], fecha, proyecto, observaciones, subtotal))
-                        id_presupuesto = cursor.lastrowid
-
-                        # Actualizar coste en viabilidades
-                        cursor.execute("""
-                            UPDATE viabilidades
-                            SET coste = ?
-                            WHERE ticket = ?
-                        """, (subtotal, st.session_state["selected_ticket"]))
-
-                        # Insertar líneas
-                        for linea in lineas:
-                            cursor.execute("""
-                                INSERT INTO lineas_presupuesto_viabilidad (
-                                    id_presupuesto, concepto_codigo, concepto_descripcion, unidades, precio_unitario, precio_total
-                                ) VALUES (?, ?, ?, ?, ?, ?)
-                            """, (
-                                id_presupuesto,
-                                linea["CÓDIGO"],
-                                linea["DESCRIPCIÓN"],
-                                linea["UDS."],
-                                linea["P UNITARIO (€)"],
-                                linea["P TOTAL (€)"]
-                            ))
-
-                        conn.commit()
-                        conn.close()
-                        st.success(f"✅ Presupuesto guardado correctamente con ID: {id_presupuesto}")
-                    except Exception as e:
-                        st.error(f"❌ Error al guardar el presupuesto: {e}")
-
-            # 6️⃣ Descarga Excel
-            if st.button("📥 Descargar Presupuesto .xlsx"):
-                fecha_str = pd.Timestamp.now().strftime("%d%m%Y")
-                buffer = BytesIO()
-
-                with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-                    # 🟩 Hoja de baremos
-                    baremos_df.to_excel(writer, sheet_name="baremos", index=False)
-                    wb = writer.book
-                    ws_baremos = writer.sheets["baremos"]
-
-                    header_format = wb.add_format({
-                        'bold': True,
-                        'bg_color': '#D9EAD3',
-                        'font_color': '#274E13',
-                        'border': 1,
-                        'align': 'center',
-                        'valign': 'vcenter'
-                    })
-
-                    tipo_format = wb.add_format({
-                        'bold': True,
-                        'bg_color': '#8E7CC3',
-                        'font_color': '#FFFFFF',
-                        'border': 1,
-                        'align': 'center',
-                        'valign': 'vcenter'
-                    })
-
-                    for col_num, column_name in enumerate(baremos_df.columns):
-                        formato = tipo_format if column_name.upper() == "TIPO" else header_format
-                        ws_baremos.write(0, col_num, column_name.upper(), formato)
-
-                    # 🧾 Hoja de presupuesto
-                    ws = wb.add_worksheet("presupuesto")
-                    writer.sheets["presupuesto"] = ws
-
-                    # 🎨 Formatos
-                    verde_fondo = wb.add_format({
-                        "bold": True, "bg_color": "#D9EAD3", "font_color": "#000000", "align": "center",
-                        "valign": "vcenter"
-                    })
-                    normal_cell = wb.add_format({"align": "left", "valign": "vcenter"})
-                    subtotal_bold = wb.add_format({"bold": True})
-                    observ_format = wb.add_format({
-                        "text_wrap": True, "align": "left", "valign": "top"
-                    })
-                    titulo_format = wb.add_format({
-                        "bold": True, "font_color": "#274E13", "font_size": 16,
-                        "align": "center", "valign": "vcenter"
-                    })
-                    data_format = wb.add_format({
-                        'border': 1,
-                        'valign': 'vcenter',
-                        'align': 'left'
-                    })
-
-                    # 🟢 Línea 1: Vacía
-                    ws.write_blank("A2", "", normal_cell)
-
-                    # Logo y título
-                    logo_path = "img/logo_symtel.png"
-                    ws.insert_image("A1", logo_path, {'x_scale': 1, 'y_scale': 0.8})
-                    ws.merge_range("B2:E2", "PRESUPUESTO", titulo_format)
-
-                    # PROYECTO y FECHA
-                    start_row = 3
-                    ws.write(start_row, 0, "PROYECTO", verde_fondo)
-                    ws.merge_range(start_row, 1, start_row, 2, proyecto, normal_cell)
-                    ws.write(start_row, 3, "FECHA", verde_fondo)
-                    ws.write(start_row, 4, pd.Timestamp.now().strftime("%d/%m/%Y"), normal_cell)
-
-                    # Líneas vacías antes de cabeceras
-                    start_row += 2
-
-                    # Cabeceras
-                    for col_num, value in enumerate(presu_df.columns.str.upper()):
-                        ws.write(start_row, col_num, value, verde_fondo)
-
-                    # Datos
-                    for row_num, row_data in enumerate(presu_df.values, start=start_row + 1):
-                        for col_num, cell_value in enumerate(row_data):
-                            ws.write(row_num, col_num, cell_value, data_format)
-
-                    # Subtotal
-                    fila_fin_datos = start_row + 1 + len(presu_df)
-                    ws.write(fila_fin_datos, 3, "SUBTOTAL", verde_fondo)
-                    ws.write(fila_fin_datos, 4, subtotal, subtotal_bold)
-                    ws.write(fila_fin_datos + 1, 3, "(IVA no incluido)", normal_cell)
-
-                    # Observaciones
-                    ws.merge_range(fila_fin_datos + 3, 0, fila_fin_datos + 3, len(presu_df.columns) - 1,
-                                   "OBSERVACIONES GENERALES", verde_fondo)
-                    ws.merge_range(fila_fin_datos + 4, 0, fila_fin_datos + 4, len(presu_df.columns) - 1,
-                                   observaciones, observ_format)
-
-                buffer.seek(0)
-                st.download_button(
-                    label="Descargar .xlsx",
-                    data=buffer,
-                    file_name=f"presupuesto_{proyecto}_{fecha_str}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        except Exception as e:
+            st.error(f"❌ Error al cargar el historial de envíos: {e}")
 
 
 def mostrar_formulario(click_data):
