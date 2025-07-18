@@ -584,7 +584,7 @@ def viabilidades_seccion():
         viabilidades_df['tiene_presupuesto'] = viabilidades_df['ticket'].isin(presupuestos_df['ticket'])
 
     except Exception as e:
-        st.warning(f"No se pudo verificar si hay presupuestos: {e}")
+        #st.warning(f"No se pudo verificar si hay presupuestos: {e}")
         viabilidades_df['tiene_presupuesto'] = False
 
     def highlight_duplicates(val):
@@ -1011,8 +1011,9 @@ def mostrar_formulario(click_data):
         with col_nueva1:
             opciones_promocion = ["SI", "NO"]
             nueva_promocion_val = click_data.get("nuevapromocion", "NO")
+
             if nueva_promocion_val not in opciones_promocion:
-                nueva_promocion_val = "NO"  # valor por defecto
+                nueva_promocion_val = "NO"  # valor por defecto si el dato no está o es inválido
 
             nueva_promocion = st.selectbox(
                 "🏗️ Nueva Promoción",
@@ -1029,11 +1030,11 @@ def mostrar_formulario(click_data):
 
         col_nueva3, col_nueva4 = st.columns([1, 1])
         with col_nueva3:
-            opciones_resultado = ["Viable", "No viable", "Pendiente", "Rechazado"]
-            resultado_val = click_data.get("resultado", "Viable")
+            opciones_resultado = ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"]
+            resultado_val = click_data.get("resultado", "")
 
             if resultado_val not in opciones_resultado:
-                resultado_val = "Viable"  # valor por defecto si viene None o no válido
+                resultado_val = opciones_resultado[0]  # asignar la primera opción como valor por defecto
 
             resultado = st.selectbox(
                 "✅ Resultado",
@@ -1042,9 +1043,25 @@ def mostrar_formulario(click_data):
                 key="resultado_input"
             )
         with col_nueva4:
-            justificacion = st.text_area(
+            opciones_justificacion = [
+                "ZONA SUBVENCIONADA",
+                "INVIABLE",
+                "MAS PREVENTA",
+                "RESERVADA WHL",
+                "PDTE. RAFA FIN DE OBRA"
+            ]
+
+            justificacion_val = click_data.get("justificacion", opciones_justificacion[
+                0])  # si no hay, poner la primera opción por defecto
+
+            # Para evitar error si el valor en BD no está en las opciones, hacemos un fallback seguro:
+            if justificacion_val not in opciones_justificacion:
+                justificacion_val = opciones_justificacion[0]
+
+            justificacion = st.selectbox(
                 "📌 Justificación",
-                value=click_data.get("justificacion", ""),
+                opciones_justificacion,
+                index=opciones_justificacion.index(justificacion_val),
                 key="justificacion_input"
             )
 
