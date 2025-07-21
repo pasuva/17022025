@@ -2667,8 +2667,7 @@ def create_tipo_vivienda_distribution_graph():
     # Usamos `fillna` para poner 'Asignado - No visitado' en los tipos de vivienda que no tengan datos en la tabla comercial_rafa
     df_comercial_rafa['Tipo_Vivienda'] = df_comercial_rafa['Tipo_Vivienda'].fillna('Asignado - No visitado')
 
-    # Fusionar los DataFrames por la columna 'Tipo_Vivienda'
-    df = pd.merge(df_comercial_rafa, on="Tipo_Vivienda", how="outer").fillna(0)
+    df = df_comercial_rafa.copy()
 
     # Si hay valores en 'Count_comercial_rafa' como 0, los cambiamos a 'Asignado - No visitado'
     df['Tipo_Vivienda'] = df['Tipo_Vivienda'].apply(
