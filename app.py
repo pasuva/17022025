@@ -1,6 +1,6 @@
 import streamlit as st
 st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
-from modules import login, admin, supervisor, comercial, comercial_jefe, comercial_rafa
+from modules import login, admin, supervisor, comercial_jefe, comercial_rafa
 
 # Inicializar el estado de sesión si no existe
 if "login_ok" not in st.session_state:
@@ -16,8 +16,6 @@ else:
         admin.admin_dashboard()
     elif rol == "supervisor":
         supervisor.supervisor_dashboard()
-    elif rol == "comercial":
-        comercial.comercial_dashboard()
     elif rol == "comercial_jefe":
         comercial_jefe.mapa_dashboard()
     elif rol == "comercial_rafa":

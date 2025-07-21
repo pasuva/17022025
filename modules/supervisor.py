@@ -58,26 +58,16 @@ def load_ofertas_comercial():
     try:
         conn = get_db_connection()
         # Crear índices en las tablas
-        create_index_if_not_exists_for_table(conn, "ofertas_comercial", "apartment_id")
         create_index_if_not_exists_for_table(conn, "comercial_rafa", "apartment_id")
 
-        query_ofertas_comercial = "SELECT * FROM ofertas_comercial"
         query_comercial_rafa = "SELECT * FROM comercial_rafa"
-        ofertas_comercial_data = pd.read_sql(query_ofertas_comercial, conn)
         comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
 
         conn.close()
 
-        # Comprobar si ambas tablas tienen datos y unirlos
-        if ofertas_comercial_data.empty and comercial_rafa_data.empty:
-            st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
-            return None
-
         comercial_rafa_data_filtrada = comercial_rafa_data[comercial_rafa_data['serviciable'].notna()]
         if not comercial_rafa_data_filtrada.empty:
-            combined_data = pd.concat([ofertas_comercial_data, comercial_rafa_data_filtrada], ignore_index=True)
-        else:
-            combined_data = ofertas_comercial_data
+            combined_data = pd.concat([comercial_rafa_data_filtrada], ignore_index=True)
 
         return combined_data
     except Exception as e:

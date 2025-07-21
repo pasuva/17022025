@@ -10,9 +10,9 @@ from streamlit_cookies_controller import CookieController  # Se importa localmen
 from folium.plugins import MarkerCluster, Geocoder
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
-from io import BytesIO
 from rapidfuzz import fuzz
 from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
+from io import BytesIO
 
 cookie_name = "my_app"
 
@@ -189,7 +189,7 @@ def eliminar_usuario(id):
         st.error("Usuario no encontrado.")
 
 def cargar_datos_uis():
-    """Carga y cachea los datos de las tablas 'datos_uis', 'ofertas_comercial' y 'comercial_rafa'."""
+    """Carga y cachea los datos de las tablas 'datos_uis', 'comercial_rafa'."""
     conn = obtener_conexion()
 
     # Consulta de datos_uis
@@ -199,15 +199,6 @@ def cargar_datos_uis():
         FROM datos_uis
     """
     datos_uis = pd.read_sql(query_datos_uis, conn)
-
-    # Consulta de ofertas_comercial
-    #query_ofertas = """
-    #    SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
-    #           motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
-    #           telefono, direccion_alternativa, observaciones, comercial, comentarios
-    #    FROM ofertas_comercial
-    #"""
-    #ofertas_df = pd.read_sql(query_ofertas, conn)
 
     # Consulta de comercial_rafa
     query_rafa = """
@@ -244,13 +235,6 @@ def cargar_datos_por_provincia(provincia):
     """
     datos_uis = pd.read_sql(query_datos_uis, conn, params=(provincia,))
 
-    query_ofertas = """
-        SELECT * 
-        FROM ofertas_comercial
-        WHERE provincia = ?
-    """
-    ofertas_df = pd.read_sql(query_ofertas, conn, params=(provincia,))
-
     query_comercial_rafa = """
         SELECT * 
         FROM comercial_rafa
@@ -259,7 +243,7 @@ def cargar_datos_por_provincia(provincia):
     comercial_rafa_df = pd.read_sql(query_comercial_rafa, conn, params=(provincia,))
 
     conn.close()
-    return datos_uis, ofertas_df, comercial_rafa_df
+    return datos_uis, comercial_rafa_df
 
 
 def mapa_seccion():
@@ -283,9 +267,8 @@ def mapa_seccion():
 
     # —— Si se busca por ID, cargamos todos sin filtrar y aislamos ese registro
     if apartment_search:
-        datos_uis, ofertas_df, comercial_rafa_df = cargar_datos_uis()
+        datos_uis, comercial_rafa_df = cargar_datos_uis()
         datos_filtrados = datos_uis[datos_uis["apartment_id"].astype(str) == apartment_search]
-        ofertas_filtradas = ofertas_df[ofertas_df["apartment_id"].astype(str) == apartment_search]
         comercial_rafa_filtradas = comercial_rafa_df[comercial_rafa_df["apartment_id"].astype(str) == apartment_search]
 
         if datos_filtrados.empty:
@@ -301,7 +284,7 @@ def mapa_seccion():
             return
 
         with st.spinner("⏳ Cargando datos..."):
-            datos_uis, ofertas_df, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
+            datos_uis, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
 
         if datos_uis.empty:
             st.error("❌ No se encontraron datos para la provincia seleccionada.")
@@ -311,7 +294,6 @@ def mapa_seccion():
         municipios = sorted(datos_uis['municipio'].dropna().unique())
         municipio_sel = col2.selectbox("Municipio", ["Todas"] + municipios)
         datos_filtrados = datos_uis if municipio_sel == "Todas" else datos_uis[datos_uis["municipio"] == municipio_sel]
-        ofertas_filtradas = ofertas_df if municipio_sel == "Todas" else ofertas_df[ofertas_df["municipio"] == municipio_sel]
         comercial_rafa_filtradas = comercial_rafa_df if municipio_sel == "Todas" else comercial_rafa_df[comercial_rafa_df["municipio"] == municipio_sel]
 
         # 🔹 Filtros de Población
@@ -319,7 +301,6 @@ def mapa_seccion():
         poblacion_sel = col3.selectbox("Población", ["Todas"] + poblaciones)
         if poblacion_sel != "Todas":
             datos_filtrados = datos_filtrados[datos_filtrados["poblacion"] == poblacion_sel]
-            ofertas_filtradas = ofertas_filtradas[ofertas_filtradas["poblacion"] == poblacion_sel]
             comercial_rafa_filtradas = comercial_rafa_filtradas[comercial_rafa_filtradas["poblacion"] == poblacion_sel]
 
     # 🔹 Filtramos datos sin coordenadas y convertimos tipos
@@ -330,7 +311,7 @@ def mapa_seccion():
         return
 
     # 🔹 Unificar la información comercial de ambas fuentes
-    ofertas_combinadas = pd.concat([ofertas_filtradas, comercial_rafa_filtradas], ignore_index=True)
+    ofertas_combinadas = pd.concat([comercial_rafa_filtradas], ignore_index=True)
     serviciable_dict = ofertas_combinadas.set_index("apartment_id")["serviciable"].str.strip().str.lower().to_dict()
     contrato_dict    = ofertas_combinadas.set_index("apartment_id")["Contrato"].str.strip().str.lower().to_dict()
     incidencia_dict  = ofertas_combinadas.set_index("apartment_id")["incidencia"].str.strip().str.lower().to_dict()
@@ -407,12 +388,11 @@ def mapa_seccion():
         if selected_apartment:
             mostrar_info_apartamento(selected_apartment,
                                      datos_filtrados,
-                                     ofertas_filtradas,
                                      comercial_rafa_df)
 
 def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_df):
     """ Muestra la información del apartamento clickeado, junto con un campo para comentarios.
-        Se actualiza el campo 'comentarios' en la tabla (ofertas_comercial o comercial_rafa) donde se encuentre el registro.
+        Se actualiza el campo 'comentarios' en la tabla (comercial_rafa) donde se encuentre el registro.
     """
     st.subheader(f"🏠 **Información del Apartament ID {apartment_id}**")
 
@@ -460,13 +440,10 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
     tabla_objetivo = None  # Variable para determinar qué tabla actualizar.
     if not ofertas_info.empty:
         fuente = ofertas_info
-        tabla_objetivo = "ofertas_comercial"  # o la variable/objeto que uses para actualizar esta tabla
-    elif not comercial_rafa_info.empty:
-        fuente = comercial_rafa_info
         tabla_objetivo = "comercial_rafa"
     else:
         with col2:
-            st.warning("❌ **No se encontraron datos para el apartamento en `ofertas_comercial` ni en `comercial_rafa`.**")
+            st.warning("❌ **No se encontraron datos para el apartamento en `comercial_rafa`.**")
 
     if fuente is not None:
         with col2:
@@ -654,6 +631,63 @@ def viabilidades_seccion():
 
         if st.button("🔄 Refrescar Tabla"):
             st.rerun()
+
+        # Orden y renombrado de columnas
+        orden_columnas_excel = [
+            "ticket", "usuario", "nuevapromocion", "resultado", "justificacion",
+            "coste", "zona_estudio", "contratos", "latitud", "longitud",
+            "provincia", "municipio", "poblacion", "vial", "numero", "letra",
+            "cp", "olt", "cto_admin", "id_cto", "fecha_viabilidad",
+            "apartment_id", "nombre_cliente", "telefono", "comentarios_internos"
+        ]
+
+        nombres_excel = {
+            "usuario": "SOLICITANTE",
+            "nuevapromocion": "Nueva Promoción",
+            "zona_estudio": "UUII",
+            "coste": "PRESUPUESTO",
+            "nombre_cliente": "nombre cliente",
+            "comentarios_internos": "comentarios internos",
+            "fecha_viabilidad": "fecha viabilidad",
+            "apartment_id": "apartment id"
+        }
+
+        # Limpiar y preparar DataFrame
+        df_export = viabilidades_df.copy()
+
+        # Duplicar filas por múltiples apartment_id
+        def expand_apartments(df):
+            rows = []
+            for _, row in df.iterrows():
+                ids = str(row.get("apartment_id", "")).split(",")
+                for apt in ids:
+                    new_row = row.copy()
+                    new_row["apartment_id"] = apt.strip()
+                    rows.append(new_row)
+            return pd.DataFrame(rows)
+
+        df_export = expand_apartments(df_export)
+
+        # Filtrar columnas existentes y reordenar
+        columnas_presentes = [col for col in orden_columnas_excel if col in df_export.columns]
+        df_export = df_export[columnas_presentes]
+
+        # Renombrar columnas para Excel
+        df_export = df_export.rename(columns=nombres_excel)
+
+        # Convertir a Excel en memoria
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df_export.to_excel(writer, index=False, sheet_name="Viabilidades")
+        output.seek(0)
+
+        # Botón de descarga
+        st.download_button(
+            label="📥 Descargar Excel",
+            data=output,
+            file_name="viabilidades_export.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     with col1:
         st.subheader("🗺️ Mapa de Viabilidades")
@@ -1588,7 +1622,7 @@ def admin_dashboard():
                 except Exception as e:
                     st.error(f"❌ Error al cargar registros existentes: {e}")
 
-    # Opción: Visualizar datos de la tabla ofertas_comercial y comercial_rafa
+    # Opción: Visualizar datos de la tabla comercial_rafa
     elif opcion == "Ofertas Comerciales":
         st.header("📊 Visualizar Ofertas Comerciales")
         st.info(
@@ -1603,14 +1637,12 @@ def admin_dashboard():
             try:
                 conn = obtener_conexion()
                 # Consultar ambas tablas
-                query_ofertas_comercial = "SELECT * FROM ofertas_comercial"
                 query_comercial_rafa = "SELECT * FROM comercial_rafa"
 
-                ofertas_comercial_data = pd.read_sql(query_ofertas_comercial, conn)
                 comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
                 conn.close()
 
-                if ofertas_comercial_data.empty and comercial_rafa_data.empty:
+                if comercial_rafa_data.empty:
                     st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
                     return
 
@@ -1619,9 +1651,7 @@ def admin_dashboard():
 
                 # Unir ambas tablas en un solo DataFrame
                 if not comercial_rafa_data_filtrada.empty:
-                    combined_data = pd.concat([ofertas_comercial_data, comercial_rafa_data_filtrada], ignore_index=True)
-                else:
-                    combined_data = ofertas_comercial_data
+                    combined_data = pd.concat([comercial_rafa_data_filtrada], ignore_index=True)
 
             except Exception as e:
                 st.error(f"❌ Error al cargar datos de la base de datos: {e}")
@@ -1725,12 +1755,10 @@ def admin_dashboard():
                     # Conexión a la base de datos
                     conn = obtener_conexion()
 
-                    # Ejecutar la eliminación en ambas tablas (ofertas_comercial y comercial_rafa)
-                    query_delete_oferta = f"DELETE FROM ofertas_comercial WHERE apartment_id = '{selected_apartment_id}'"
+                    # Ejecutar la eliminación en ambas tablas (comercial_rafa)
                     query_delete_comercial = f"DELETE FROM comercial_rafa WHERE apartment_id = '{selected_apartment_id}'"
 
                     # Ejecutar las consultas
-                    conn.execute(query_delete_oferta)
                     conn.execute(query_delete_comercial)
 
                     # Confirmar eliminación
@@ -1817,8 +1845,6 @@ def admin_dashboard():
                     datos.cto
                 FROM (
                     SELECT * FROM comercial_rafa WHERE contrato IS NULL OR LOWER(TRIM(contrato)) != 'pendiente'
-                    UNION ALL
-                    SELECT * FROM ofertas_comercial WHERE contrato IS NULL OR LOWER(TRIM(contrato)) != 'pendiente'
                 ) AS ofertas_unificadas
                 LEFT JOIN datos_uis datos ON ofertas_unificadas.apartment_id = datos.apartment_id
                 """
@@ -1830,8 +1856,6 @@ def admin_dashboard():
                     SELECT DISTINCT apartment_id
                     FROM (
                         SELECT apartment_id FROM comercial_rafa
-                        UNION
-                        SELECT apartment_id FROM ofertas_comercial
                     )
                 )
                 SELECT
@@ -2302,7 +2326,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_visitados = """
         SELECT COUNT(DISTINCT d.apartment_id)
         FROM datos_uis d
-        INNER JOIN ofertas_comercial o 
+        INNER JOIN comercial_rafa o 
             ON d.apartment_id = o.apartment_id
     """
     total_visitados = ejecutar_consulta(query_visitados)
@@ -2311,7 +2335,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_ventas = """
         SELECT COUNT(DISTINCT d.apartment_id)
         FROM datos_uis d
-        INNER JOIN ofertas_comercial o 
+        INNER JOIN comercial_rafa o 
             ON d.apartment_id = o.apartment_id
         WHERE LOWER(o.contrato) = 'sí'
     """
@@ -2321,7 +2345,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_incidencias = """
         SELECT COUNT(DISTINCT d.apartment_id)
         FROM datos_uis d
-        INNER JOIN ofertas_comercial o 
+        INNER JOIN comercial_rafa o 
             ON d.apartment_id = o.apartment_id
         WHERE LOWER(o.incidencia) = 'sí'
     """
@@ -2330,7 +2354,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     # 🔹 5️⃣ Cantidad de viviendas no serviciables (donde serviciable = 'No')
     query_no_serviciables = """
         SELECT COUNT(DISTINCT apartment_id)
-        FROM ofertas_comercial
+        FROM comercial_rafa
         WHERE LOWER(serviciable) = 'no'
     """
     total_no_serviciables = ejecutar_consulta(query_no_serviciables)
@@ -2612,7 +2636,7 @@ def create_serviciable_graph():
 def create_incidencias_graph(cursor):
     cursor.execute("""
         SELECT provincia, COUNT(*) AS total_incidencias
-        FROM ofertas_comercial
+        FROM comercial_rafa
         WHERE incidencia = 'Sí'
         GROUP BY provincia;
     """)
@@ -2629,15 +2653,6 @@ def create_incidencias_graph(cursor):
 
 # Gráfico Distribución de Tipos de Vivienda
 def create_tipo_vivienda_distribution_graph():
-    # Conectar y obtener datos de la tabla ofertas_comercial
-    conn = obtener_conexion()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT Tipo_Vivienda, COUNT(*) FROM ofertas_comercial GROUP BY Tipo_Vivienda;")
-    ofertas_comercial_data = cursor.fetchall()  # Obtener todos los resultados
-    conn.close()
-
-    # Conectar y obtener datos de la tabla comercial_rafa
     conn = obtener_conexion()
     cursor = conn.cursor()
 
@@ -2646,7 +2661,6 @@ def create_tipo_vivienda_distribution_graph():
     conn.close()
 
     # Convertir los datos de ambas tablas en DataFrames
-    df_ofertas_comercial = pd.DataFrame(ofertas_comercial_data, columns=["Tipo_Vivienda", "Count_ofertas_comercial"])
     df_comercial_rafa = pd.DataFrame(comercial_rafa_data, columns=["Tipo_Vivienda", "Count_comercial_rafa"])
 
     # Reemplazar los valores nulos o vacíos con "Asignado - No visitado" en la tabla comercial_rafa
@@ -2654,7 +2668,7 @@ def create_tipo_vivienda_distribution_graph():
     df_comercial_rafa['Tipo_Vivienda'] = df_comercial_rafa['Tipo_Vivienda'].fillna('Asignado - No visitado')
 
     # Fusionar los DataFrames por la columna 'Tipo_Vivienda'
-    df = pd.merge(df_ofertas_comercial, df_comercial_rafa, on="Tipo_Vivienda", how="outer").fillna(0)
+    df = pd.merge(df_comercial_rafa, on="Tipo_Vivienda", how="outer").fillna(0)
 
     # Si hay valores en 'Count_comercial_rafa' como 0, los cambiamos a 'Asignado - No visitado'
     df['Tipo_Vivienda'] = df['Tipo_Vivienda'].apply(
@@ -2662,7 +2676,7 @@ def create_tipo_vivienda_distribution_graph():
     )
 
     # Crear gráfico de barras con Plotly
-    fig = px.bar(df, x="Tipo_Vivienda", y=["Count_ofertas_comercial", "Count_comercial_rafa"],
+    fig = px.bar(df, x="Tipo_Vivienda", y=["Count_comercial_rafa"],
                  title="Distribución de Tipo de Vivienda",
                  labels={"Tipo_Vivienda": "Tipo de Vivienda", "value": "Cantidad"},
                  color="Tipo_Vivienda", barmode="group", height=400)

@@ -61,3 +61,4 @@ v2.3.9 - Corregido error por el cual solo se guardaba en la base de datos el nú
 v2.4.0 - Ahora los comerciales jefes, deberán dar un OK primero antes de que desde oficina se pueda estudiar la viabilidad. Nuevo flujo generado. Notificaciones actualizadas. Añadida también la opción de zona de estudio y de número de UUIIs.
 v2.4.1 - Actualización de los baremos de viabilidades.
 v2.5.2 - Cambiado sistema de presupuestado, se envían por correo directos por la app.
+v2.6.2 - Limpieza de código, mantenimiento aplicación. Modificaciones en la lógica de descargar de ficheros de viabilidades.
