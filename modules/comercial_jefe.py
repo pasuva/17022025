@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import folium, io, sqlitecloud
 from streamlit_folium import st_folium
+from streamlit_option_menu import option_menu
+
 from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion, \
     correo_asignacion_administracion2, correo_reasignacion_saliente, \
     correo_reasignacion_entrante, correo_confirmacion_viab_admin
@@ -52,25 +54,39 @@ def cargar_datos():
     conn.close()
     return datos_uis, comercial_rafa
 
+def cargar_total_ofertas():
+    conn = get_db_connection()
+    # comerciales_excluir es una lista o tupla de strings
+    query_total_ofertas = f"""
+        SELECT DISTINCT *
+        FROM comercial_rafa
+    """
+    try:
+        total_ofertas = pd.read_sql(query_total_ofertas, conn)
+        return total_ofertas
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error cargando total_ofertas: {e}")
+        return pd.DataFrame()
+
+def cargar_viabilidades():
+    conn = get_db_connection()
+    # comerciales_excluir es una lista o tupla de strings
+    query_viabilidades = f"""
+        SELECT DISTINCT *
+        FROM viabilidades
+    """
+    try:
+        viabilidades = pd.read_sql(query_viabilidades, conn)
+        return viabilidades
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error cargando total_ofertas: {e}")
+        return pd.DataFrame()
 
 def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
     controller = CookieController(key="cookies")
-    st.sidebar.title("📍 Mapa de Ubicaciones")
-
-    # Descripción de íconos y colores
-    st.markdown("""
-        **Iconos:**
-        🏠 **Oferta con Proyecto:** Icono de casa azul.
-        ℹ️ **Oferta sin Proyecto:** Icono de información azul.
-        \n
-        **Colores:**
-        🟢 **Serviciable (Sí - Finalizado)**
-        🔴 **No Serviciable (No)**
-        🟠 **Oferta (Contrato: Sí)**
-        ⚫ **Oferta (Contrato: No Interesado)**
-        🔵 **No Visitado**
-    """)
 
     # Panel lateral de bienvenida y cierre de sesión
     st.sidebar.markdown("""
@@ -109,12 +125,60 @@ def mapa_dashboard():
             st.session_state["session_id"] = ""
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("Filtros generales UUIIs")
+        st.sidebar.markdown("---")
 
-    # Filtros por fecha
-    fecha_min = st.sidebar.date_input("Fecha mínima", value=pd.to_datetime("2024-01-01"))
-    fecha_max = st.sidebar.date_input("Fecha máxima", value=pd.to_datetime("2030-12-31"))
+        # Por ejemplo, aquí cargas o creas los DataFrames:
+        datos_uis, comercial_rafa = cargar_datos() # función que devuelve DataFrame datos_uis
+        total_ofertas = cargar_total_ofertas()  # función que devuelve total_ofertas
+        viabilidades = cargar_viabilidades()  # función que devuelve viabilidades
+
+        opcion = option_menu(
+            menu_title=None,  # Título del menú oculto
+            options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Descargar Datos"],
+            icons=["globe", "check-circle", "bar-chart", "download"],  # Íconos de Bootstrap
+            menu_icon="list",
+            default_index=0,
+            styles={
+                "container": {"padding": "0px", "background-color": "#262730"},  # Sin fondo ni márgenes
+                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos oscuros
+                "nav-link": {
+                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
+                },  # Texto en negro sin margen extra
+                "nav-link-selected": {
+                    "background-color": "#0073e6", "color": "white"
+                },  # Opción seleccionada resaltada en azul
+            }
+        )
+    if opcion == "Mapa Asignaciones":
+        mostrar_mapa_de_asignaciones()
+    elif opcion == "Viabilidades":
+        mostrar_viabilidades()  # función que crearás después
+    elif opcion == "Ver Datos":
+        mostrar_descarga_datos()  # función que crearás después
+    elif opcion == "Descargar Datos":
+        download_datos(datos_uis, total_ofertas, viabilidades)
+
+def mostrar_mapa_de_asignaciones():
+    st.title("📍 Mapa Asignaciones")
+
+    # Descripción de íconos y colores
+    st.markdown("""
+            **Iconos:**
+            🏠 **Oferta con Proyecto:** Icono de casa azul.
+            ℹ️ **Oferta sin Proyecto:** Icono de información azul.
+            \n
+            **Colores:**
+            🟢 **Serviciable (Sí - Finalizado)**
+            🔴 **No Serviciable (No)**
+            🟠 **Oferta (Contrato: Sí)**
+            ⚫ **Oferta (Contrato: No Interesado)**
+            🔵 **No Visitado**
+        """)
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_min = st.date_input("Fecha mínima", value=pd.to_datetime("2024-01-01"))
+    with col2:
+        fecha_max = st.date_input("Fecha máxima", value=pd.to_datetime("2030-12-31"))
 
     # Cargar datos con spinner
     with st.spinner("Cargando datos..."):
@@ -147,7 +211,7 @@ def mapa_dashboard():
 
     # Filtro por provincia
     provincias = datos_uis['provincia'].unique()
-    provincia_seleccionada = st.sidebar.selectbox("Selecciona una provincia", provincias)
+    provincia_seleccionada = st.selectbox("Selecciona una provincia", provincias)
     datos_uis = datos_uis[datos_uis["provincia"] == provincia_seleccionada]
 
     # Limpiar latitud y longitud
@@ -366,6 +430,9 @@ def mapa_dashboard():
                             log_trazabilidad(st.session_state["username"], "Desasignación múltiple",
                                              f"Zona {municipio_sel}-{poblacion_sel} desasignada de {comercial_a_eliminar}")
 
+        st.info("Para revisar las asignaciones ya realizadas, dirigeté al menú ver datos. En el verás que hay 3 tablas, la primera son las asignaciones realizadas, "
+                "la segunda son las ofertas y visitas realizadas por los comerciales y su estado y la última tabla son las viabilidades reportadas por los comerciales.")
+
     # --- Generar el mapa (columna izquierda) ---
     with col1:
         with st.spinner("⏳ Cargando mapa... (Puede tardar según la cantidad de puntos)"):
@@ -428,6 +495,9 @@ def mapa_dashboard():
                 ).add_to(marker_cluster)
             st_folium(m, height=500, width=700)
 
+def mostrar_descarga_datos():
+    st.title("📊 Ver Datos")
+
     conn = get_db_connection()
 
     # Usuarios a excluir para Juan
@@ -477,6 +547,30 @@ def mapa_dashboard():
     log_trazabilidad(st.session_state["username"], "Visualización de mapa", "Usuario visualizó el mapa de Rafa Sanz.")
     st.info("ℹ️ Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
     st.dataframe(total_ofertas, use_container_width=True)
+
+    # 🔎 Consulta general de TODAS las viabilidades
+    conn = get_db_connection()
+    viabilidades = pd.read_sql("""
+         SELECT *
+         FROM viabilidades
+         ORDER BY id DESC
+     """, conn)
+    conn.close()
+
+    # 🔒 Filtro por usuario
+    username = st.session_state.get("username", "").strip().lower()
+
+    if username == "juan":
+        # Excluir ciertos comerciales
+        comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela"]
+        viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
+        viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
+
+    # 📋 Mostrar tabla resultante
+    st.info("ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
+    st.dataframe(viabilidades, use_container_width=True)
+
+def mostrar_viabilidades():
 
     # 🔗 Conexión única al iniciar la sección
     conn = get_db_connection()
@@ -632,27 +726,27 @@ def mapa_dashboard():
         comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela"]
         viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
         viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
-        #st.info("🔒 Estás viendo solo viabilidades de comerciales distintos a Roberto, José Ramón, Néstor y Rafaela.")
 
     # 📋 Mostrar tabla resultante
     st.markdown("---")
-    st.subheader("📒 Listado completo de viabilidades")
+    st.subheader("📒Listado completo de viabilidades")
     st.dataframe(viabilidades, use_container_width=True)
 
-    # Sección de descarga de datos
-    st.subheader("Descargar Datos")
+def download_datos(datos_uis, total_ofertas, viabilidades):
 
-    # Opciones de descarga
+    st.subheader("📥 Descargar Datos")
+
     dataset_opcion = st.selectbox("¿Qué deseas descargar?", ["Datos", "Ofertas asignadas", "Viabilidades", "Todo"])
     formato_opcion = st.radio("Formato de descarga:", ["CSV", "Excel"])
     nombre_base = st.text_input("Nombre base del archivo:", "datos")
 
-    # Fecha para incluir en el nombre del archivo
     fecha_actual = datetime.now().strftime("%Y-%m-%d")
     nombre_archivo_final = f"{nombre_base}_{fecha_actual}"
 
-    # Funciones auxiliares
     def descargar_csv(df, nombre_archivo):
+        if not isinstance(df, pd.DataFrame):
+            st.warning(f"No hay datos válidos para descargar en {nombre_archivo} (esperado DataFrame).")
+            return
         st.download_button(
             label=f"Descargar {nombre_archivo} como CSV",
             data=df.to_csv(index=False).encode(),
@@ -661,6 +755,12 @@ def mapa_dashboard():
         )
 
     def descargar_excel(dfs_dict, nombre_archivo):
+        # Comprobar que cada valor en el dict sea DataFrame
+        for sheet_name, df in dfs_dict.items():
+            if not isinstance(df, pd.DataFrame):
+                st.warning(f"No hay datos válidos para descargar en la hoja '{sheet_name}'.")
+                return
+
         with io.BytesIO() as output:
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 for sheet_name, df in dfs_dict.items():
@@ -673,7 +773,6 @@ def mapa_dashboard():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-    # Mostrar botón según selección
     if dataset_opcion == "Datos":
         log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó los datos.")
         if formato_opcion == "CSV":
@@ -705,6 +804,7 @@ def mapa_dashboard():
             }, nombre_archivo_final)
         else:
             st.warning("⚠️ Para descargar todo junto, selecciona el formato Excel.")
+
     st.info("Dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
 if __name__ == "__main__":
     mapa_dashboard()

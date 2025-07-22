@@ -62,3 +62,4 @@ v2.4.0 - Ahora los comerciales jefes, deberán dar un OK primero antes de que de
 v2.4.1 - Actualización de los baremos de viabilidades.
 v2.5.2 - Cambiado sistema de presupuestado, se envían por correo directos por la app.
 v2.6.2 - Limpieza de código, mantenimiento aplicación. Modificaciones en la lógica de descargar de ficheros de viabilidades.
+v2.7.0 - Cambio visual completo a la interfaz de comercial jefe. Ahora en lugar de ser una única pantalla, está dividido por secciones en un menú lateral izquierdo. Esto hace que la carga de datos sea mas rápida y eficiente, y también añade claridad al contenido del panel.
