@@ -7,6 +7,9 @@ from email.header import Header
 from modules import plantilla_email
 from datetime import datetime
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 # Función para limpiar las cadenas y eliminar saltos de línea problemáticos
 def limpiar_texto(texto):
     if texto is not None:

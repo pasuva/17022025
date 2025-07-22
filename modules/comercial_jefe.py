@@ -11,6 +11,12 @@ from folium.plugins import MarkerCluster
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 from datetime import datetime
 
+from branca.element import Template, MacroElement
+
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)
@@ -160,20 +166,6 @@ def mapa_dashboard():
 
 def mostrar_mapa_de_asignaciones():
     st.title("📍 Mapa Asignaciones")
-
-    # Descripción de íconos y colores
-    st.markdown("""
-            **Iconos:**
-            🏠 **Oferta con Proyecto:** Icono de casa azul.
-            ℹ️ **Oferta sin Proyecto:** Icono de información azul.
-            \n
-            **Colores:**
-            🟢 **Serviciable (Sí - Finalizado)**
-            🔴 **No Serviciable (No)**
-            🟠 **Oferta (Contrato: Sí)**
-            ⚫ **Oferta (Contrato: No Interesado)**
-            🔵 **No Visitado**
-        """)
 
     # Cargar datos con spinner
     with st.spinner("Cargando datos..."):
@@ -466,19 +458,24 @@ def mostrar_mapa_de_asignaciones():
                 oferta = comercial_rafa[comercial_rafa['apartment_id'] == apartment_id]
                 color = 'blue'
 
-                if serviciable_val == "si":
-                    color = 'green'  # 🟢 Serviciable desde datos_uis
-                elif serviciable_val == "no":
-                    color = 'red'  # 🔴 No serviciable desde datos_uis
-                elif not oferta.empty:
-                    oferta_serviciable = str(oferta.iloc[0].get('serviciable', '')).strip().lower()
-                    contrato = str(oferta.iloc[0].get('Contrato', '')).strip().lower()
-                    if oferta_serviciable == "no":
-                        color = 'red'
-                    elif contrato == "sí":
-                        color = 'orange'
-                    elif contrato == "no interesado":
-                        color = 'black'
+                # 🔄 Nueva lógica con prioridad para incidencia
+                if not oferta.empty:
+                    incidencia = str(oferta.iloc[0].get('incidencia', '')).strip().lower()
+                    if incidencia == 'Sí':
+                        color = 'purple'
+                    else:
+                        serviciable_val = str(row.get('serviciable', '')).strip().lower()
+                        oferta_serviciable = str(oferta.iloc[0].get('serviciable', '')).strip().lower()
+                        contrato = str(oferta.iloc[0].get('Contrato', '')).strip().lower()
+
+                        if serviciable_val == "si":
+                            color = 'green'
+                        elif serviciable_val == "no" or oferta_serviciable == "no":
+                            color = 'red'
+                        elif contrato == "sí":
+                            color = 'orange'
+                        elif contrato == "no interesado":
+                            color = 'black'
 
                 icon_name = 'home' if str(row.get('cto_con_proyecto', '')).strip().lower() == 'si' else 'info-sign'
                 popup_text = f"""
@@ -492,6 +489,36 @@ def mostrar_mapa_de_asignaciones():
                     icon=folium.Icon(icon=icon_name, color=color),
                     popup=folium.Popup(popup_text, max_width=300)
                 ).add_to(marker_cluster)
+            legend = """
+            {% macro html() %}
+            <div style="
+                position: fixed; 
+                bottom: 20px; left: 0px; width: 190px; 
+                z-index:9999; 
+                font-size:14px;
+                background-color: white;
+                color: black;
+                border:2px solid grey;
+                border-radius:8px;
+                padding: 10px;
+                box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+            ">
+            <b>Leyenda</b><br>
+            <i style="color:green;">●</i> Serviciable y Finalizado<br>
+            <i style="color:red;">●</i> No serviciable<br>
+            <i style="color:orange;">●</i> Contrato Sí<br>
+            <i style="color:black;">●</i> No interesado<br>
+            <i style="color:purple;">●</i> Incidencia<br>
+            <i style="color:blue;">●</i> No Visitado<br>
+            <i>🏠</i> Con proyecto<br>
+            <i>ℹ️</i> Sin proyecto
+            </div>
+            {% endmacro %}
+            """
+
+            macro = MacroElement()
+            macro._template = Template(legend)
+            m.get_root().add_child(macro)
             st_folium(m, height=500, width=700)
 
 def mostrar_descarga_datos():

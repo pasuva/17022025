@@ -12,6 +12,9 @@ from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_co
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)

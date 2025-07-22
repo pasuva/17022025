@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 # -*- coding: utf-8 -*-
 def generar_html(asunto, contenido):
     """

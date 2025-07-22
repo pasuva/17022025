@@ -14,6 +14,11 @@ from rapidfuzz import fuzz
 from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 from io import BytesIO
 
+from branca.element import Template, MacroElement
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos
@@ -250,16 +255,6 @@ def mapa_seccion():
     """Muestra un mapa interactivo con los datos de serviciabilidad y ofertas,
        con un filtro siempre visible por Apartment ID."""
 
-    # 🔹 LEYENDA DE COLORES
-    st.markdown("""
-       🟢 **Serviciable (Finalizado)** 
-       🟠 **Oferta (Contrato: Sí)** 
-       ⚫ **Oferta (No Interesado)** 
-       🔵 **Sin Oferta** 
-       🔴 **No Serviciable** 
-       🟣 **Incidencia reportada** 
-    """)
-
     # 🔍 FILTRO OPCIONAL SIEMPRE VISIBLE: Apartment ID
     apartment_search = st.text_input("🔍 Buscar por Apartment ID (opcional)")
 
@@ -383,6 +378,34 @@ def mapa_seccion():
             ).add_to(cluster_layer)
 
         # renderizar y captura de click
+        legend = """
+                    {% macro html() %}
+                    <div style="
+                        position: fixed; 
+                        bottom: 20px; left: 0px; width: 190px; 
+                        z-index:9999; 
+                        font-size:14px;
+                        background-color: white;
+                        color: black;
+                        border:2px solid grey;
+                        border-radius:8px;
+                        padding: 10px;
+                        box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+                    ">
+                    <b>Leyenda</b><br>
+                    <i style="color:green;">●</i> Serviciable y Finalizado<br>
+                    <i style="color:red;">●</i> No serviciable<br>
+                    <i style="color:orange;">●</i> Contrato Sí<br>
+                    <i style="color:black;">●</i> No interesado<br>
+                    <i style="color:purple;">●</i> Incidencia<br>
+                    <i style="color:blue;">●</i> No Visitado<br>
+                    </div>
+                    {% endmacro %}
+                    """
+
+        macro = MacroElement()
+        macro._template = Template(legend)
+        m.get_root().add_child(macro)
         map_data = st_folium(m, height=500, use_container_width=True)
         selected_apartment = map_data.get("last_object_clicked_tooltip")
         if selected_apartment:
@@ -390,15 +413,14 @@ def mapa_seccion():
                                      datos_filtrados,
                                      comercial_rafa_df)
 
-def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_df):
-    """ Muestra la información del apartamento clickeado, junto con un campo para comentarios.
+def mostrar_info_apartamento(apartment_id, datos_df, comercial_rafa_df):
+    """ Muestra la información del apartamento clicado, junto con un campo para comentarios.
         Se actualiza el campo 'comentarios' en la tabla (comercial_rafa) donde se encuentre el registro.
     """
     st.subheader(f"🏠 **Información del Apartament ID {apartment_id}**")
 
     # Obtener los datos de cada DataFrame usando el apartment_id
     datos_info = datos_df[datos_df["apartment_id"] == apartment_id]
-    ofertas_info = ofertas_df[ofertas_df["apartment_id"] == apartment_id]
     comercial_rafa_info = comercial_rafa_df[comercial_rafa_df["apartment_id"] == apartment_id]
 
     # Layout con dos columnas para mostrar las tablas
@@ -438,8 +460,8 @@ def mostrar_info_apartamento(apartment_id, datos_df, ofertas_df, comercial_rafa_
     # Tabla de Datos Comerciales (prioridad a ofertas_info, luego comercial_rafa_info)
     fuente = None
     tabla_objetivo = None  # Variable para determinar qué tabla actualizar.
-    if not ofertas_info.empty:
-        fuente = ofertas_info
+    if not comercial_rafa_info.empty:
+        fuente = comercial_rafa_info
         tabla_objetivo = "comercial_rafa"
     else:
         with col2:
@@ -729,6 +751,34 @@ def viabilidades_seccion():
             return m
 
         m_to_show = draw_map(viabilidades_df, st.session_state["map_center"], st.session_state["map_zoom"])
+        legend = """
+                            {% macro html() %}
+                            <div style="
+                                position: fixed; 
+                                bottom: 20px; left: 0px; width: 150px; 
+                                z-index:9999; 
+                                font-size:14px;
+                                background-color: white;
+                                color: black;
+                                border:2px solid grey;
+                                border-radius:8px;
+                                padding: 10px;
+                                box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+                            ">
+                            <b>Leyenda</b><br>
+                            <i style="color:green;">●</i> Serviciado<br>
+                            <i style="color:red;">●</i> No serviciable<br>
+                            <i style="color:orange;">●</i> Presupuesto Sí<br>
+                            <i style="color:black;">●</i> No interesado<br>
+                            <i style="color:purple;">●</i> Incidencia<br>
+                            <i style="color:blue;">●</i> Sin estudio<br>
+                            </div>
+                            {% endmacro %}
+                            """
+
+        macro = MacroElement()
+        macro._template = Template(legend)
+        m_to_show.get_root().add_child(macro)
         map_output = st_folium(m_to_show, height=500, width=700, key="main_map",
                                returned_objects=["last_object_clicked"])
 
@@ -2018,12 +2068,6 @@ def admin_dashboard():
             "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
             "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
             " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos.")
-        st.markdown("""**Leyenda:**
-                     🔵 Viabilidad aún sin estudio
-                     🟢 Viabilidad serviciable y con Apartment ID ya asociado
-                     🔴 Viabilidad no serviciable
-                     🟠 Viabilidad con presupuesto asociado
-                    """)
         viabilidades_seccion()
 
         # Opción: Viabilidades (En construcción)
@@ -2142,8 +2186,8 @@ def admin_dashboard():
                 columnas_requeridas = [
                     "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
                     "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
-                    "apartment_operational_state", "cto_id", "olt", "cto", "LATITUD", "LONGITUD",
-                    "cto_con_proyecto", "UNICO24", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
+                    "apartment_operational_state", "cto_id", "olt", "cto", "lat", "lng",
+                    "cto_con_proyecto", "CERTIFICABLE", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
                 ]
                 columnas_faltantes = [col for col in columnas_requeridas if col not in data.columns]
                 if columnas_faltantes:
@@ -2152,11 +2196,9 @@ def admin_dashboard():
                     )
                 else:
                     data_filtrada = data[columnas_requeridas].copy()
-                    data_filtrada["LATITUD"] = data_filtrada["LATITUD"].astype(str).str.replace(",", ".").astype(float)
-                    data_filtrada["LONGITUD"] = data_filtrada["LONGITUD"].astype(str).str.replace(",", ".").astype(
-                        float)
-                    data_filtrada["LATITUD"] = data_filtrada["LATITUD"].round(7)
-                    data_filtrada["LONGITUD"] = data_filtrada["LONGITUD"].round(7)
+                    # Usar campos 'lat' y 'lng' del Excel para llenar LATITUD y LONGITUD
+                    data_filtrada["LATITUD"] = data["lat"].astype(str).str.replace(",", ".").astype(float).round(7)
+                    data_filtrada["LONGITUD"] = data["lng"].astype(str).str.replace(",", ".").astype(float).round(7)
 
                     # --- Leer datos antiguos antes de borrar ---
                     conn = obtener_conexion()
@@ -2179,7 +2221,7 @@ def admin_dashboard():
                         INSERT INTO datos_uis (
                             id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
                             parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, 
-                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, UNICO24, COMERCIAL, ZONA, FECHA, 
+                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, CERTIFICABLE, COMERCIAL, ZONA, FECHA, 
                             SERVICIABLE, MOTIVO, contrato_uis
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """

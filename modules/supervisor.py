@@ -5,6 +5,9 @@ from datetime import datetime
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 cookie_name = "my_app"
 
 # Función para conectar a la base de datos
