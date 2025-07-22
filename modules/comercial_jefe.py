@@ -174,11 +174,6 @@ def mostrar_mapa_de_asignaciones():
             ⚫ **Oferta (Contrato: No Interesado)**
             🔵 **No Visitado**
         """)
-    col1, col2 = st.columns(2)
-    with col1:
-        fecha_min = st.date_input("Fecha mínima", value=pd.to_datetime("2024-01-01"))
-    with col2:
-        fecha_max = st.date_input("Fecha máxima", value=pd.to_datetime("2030-12-31"))
 
     # Cargar datos con spinner
     with st.spinner("Cargando datos..."):
@@ -203,12 +198,8 @@ def mostrar_mapa_de_asignaciones():
             st.warning("⚠️ No hay datos disponibles para mostrar.")
             st.stop()
 
-    # Convertir 'fecha' y filtrar por rango
-    datos_uis['fecha'] = pd.to_datetime(datos_uis['fecha'], errors='coerce')
-    fecha_min = pd.to_datetime(fecha_min)
-    fecha_max = pd.to_datetime(fecha_max)
-    datos_uis = datos_uis[(datos_uis["fecha"] >= fecha_min) & (datos_uis["fecha"] <= fecha_max)]
-
+    st.info("🔦 Por cuestiones de eficiencia en la carga de de datos, cuando hay una alta concentración de puntos, el mapa solo mostrará los puntos relativos a los filtros elegidos por el usuario. "
+            "Usa el filtro de Provincia, Municipio y Población para poder ver los puntos que necesites.")
     # Filtro por provincia
     provincias = datos_uis['provincia'].unique()
     provincia_seleccionada = st.selectbox("Selecciona una provincia", provincias)
@@ -451,10 +442,18 @@ def mostrar_mapa_de_asignaciones():
                 tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
                 attr="Google"
             )
-            marker_cluster = MarkerCluster(disableClusteringAtZoom=16, maxClusterRadius=50,
+            marker_cluster = MarkerCluster(disableClusteringAtZoom=18, maxClusterRadius=70,
                                            spiderfyOnMaxZoom=True).add_to(m)
 
-            for _, row in datos_uis.iterrows():
+            if "municipio_sel" in st.session_state and "poblacion_sel" in st.session_state:
+                datos_filtrados = datos_uis[
+                    (datos_uis["municipio"] == st.session_state["municipio_sel"]) &
+                    (datos_uis["poblacion"] == st.session_state["poblacion_sel"])
+                    ]
+            else:
+                datos_filtrados = datos_uis.head(0)  # No mostrar ningún punto si no hay filtros
+
+            for _, row in datos_filtrados.iterrows():
                 lat, lon = row['latitud'], row['longitud']
                 apartment_id = row['apartment_id']
                 vial = row.get('vial', 'No Disponible')

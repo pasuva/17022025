@@ -60,6 +60,7 @@ v2.3.8 - Nuevo rol de usuario, nuevos filtros para los puntos, novedades prepara
 v2.3.9 - Corregido error por el cual solo se guardaba en la base de datos el número de la OLT y no el nombre. Corregido error por el cual cuando en las viabilidades no había apartment id mostraba un error y no dejaba modificar el formulario desde administración.
 v2.4.0 - Ahora los comerciales jefes, deberán dar un OK primero antes de que desde oficina se pueda estudiar la viabilidad. Nuevo flujo generado. Notificaciones actualizadas. Añadida también la opción de zona de estudio y de número de UUIIs.
 v2.4.1 - Actualización de los baremos de viabilidades.
-v2.5.2 - Cambiado sistema de presupuestado, se envían por correo directos por la app.
+v2.5.2 - Cambiado sistema de presupuestado, se envían por correo, directos por la app.
 v2.6.2 - Limpieza de código, mantenimiento aplicación. Modificaciones en la lógica de descargar de ficheros de viabilidades.
 v2.7.0 - Cambio visual completo a la interfaz de comercial jefe. Ahora en lugar de ser una única pantalla, está dividido por secciones en un menú lateral izquierdo. Esto hace que la carga de datos sea mas rápida y eficiente, y también añade claridad al contenido del panel.
+v2.7.1 - Cambios en la eficiencia y carga de los puntos de los planos, se ahorra tiempo de carga y de renderizado de mapa.
