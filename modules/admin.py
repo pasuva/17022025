@@ -888,8 +888,6 @@ def viabilidades_seccion():
                         st.success("✅ Presupuesto enviado correctamente.")
                     except Exception as e:
                         st.error(f"❌ Error al enviar el presupuesto: {e}")
-            else:
-                st.info("📎 Sube un archivo Excel para poder enviarlo.")
 
     with st.expander("📜 Historial de Envíos de Presupuesto"):
         try:
@@ -1360,7 +1358,7 @@ def admin_dashboard():
             menu_title=None,
             options=[
                 "Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades",
-                "Mapa UUIIs", "Cargar Nuevos Datos", "Generador de informes",
+                "Mapa UUIIs", "Cargar Nuevos Datos", "Generar Informe",
                 "Trazabilidad y logs", "Gestionar Usuarios", "Control de versiones"
             ],
             icons=[
@@ -1373,6 +1371,7 @@ def admin_dashboard():
                 "container": {
                     "padding": "0px",
                     "background-color": "#F0F7F2",  # Coincide con secondaryBackgroundColor
+                    "border-radius": "0px",
                 },
                 "icon": {
                     "color": "#2C5A2E",  # Verde oscuro
@@ -1382,7 +1381,9 @@ def admin_dashboard():
                     "color": "#2C5A2E",
                     "font-size": "16px",
                     "text-align": "left",
-                    "margin": "0px"
+                    "margin": "0px",
+                    "--hover-color": "#66B032",
+                    "border-radius": "0px",
                 },
                 "nav-link-selected": {
                     "background-color": "#66B032",  # Verde principal de marca
@@ -2098,8 +2099,8 @@ def admin_dashboard():
         mapa_seccion()
 
     # Opción: Generar Informes
-    elif opcion == "Generador de informes":
-        st.header("Generador de Informes")
+    elif opcion == "Generar Informe":
+        st.header("Generar Informe")
         st.info("ℹ️ Aquí puedes generar informes basados en los datos disponibles.")
         log_trazabilidad(st.session_state["username"], "Generar Informe", "El admin accedió al generador de informes.")
 
@@ -2793,6 +2794,7 @@ def home_page():
         st.error(f"Hubo un error al cargar los gráficos: {e}")
     finally:
         conn.close()  # No olvides cerrar la conexión al final
+
 
 if __name__ == "__main__":
     admin_dashboard()

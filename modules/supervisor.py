@@ -165,10 +165,12 @@ def supervisor_dashboard():
                     "font-size": "18px"
                 },
                 "nav-link": {
-                    "color": "#2C5A2E",  # Mismo verde para enlaces normales
+                    "color": "#2C5A2E",
                     "font-size": "16px",
                     "text-align": "left",
-                    "margin": "0px"
+                    "margin": "0px",
+                    "--hover-color": "#66B032",
+                    "border-radius": "0px",
                 },
                 "nav-link-selected": {
                     "background-color": "#66B032",  # Verde principal de selección
