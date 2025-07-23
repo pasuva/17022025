@@ -94,6 +94,8 @@ def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
     controller = CookieController(key="cookies")
 
+    st.sidebar.title("Panel de Gestor")
+
     # Panel lateral de bienvenida y cierre de sesión
     st.sidebar.markdown("""
         <style>
@@ -139,22 +141,34 @@ def mapa_dashboard():
         viabilidades = cargar_viabilidades()  # función que devuelve viabilidades
 
         opcion = option_menu(
-            menu_title=None,  # Título del menú oculto
+            menu_title=None,
             options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Descargar Datos"],
-            icons=["globe", "check-circle", "bar-chart", "download"],  # Íconos de Bootstrap
+            icons=["globe", "check-circle", "bar-chart", "download"],
             menu_icon="list",
             default_index=0,
             styles={
-                "container": {"padding": "0px", "background-color": "#262730"},  # Sin fondo ni márgenes
-                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos oscuros
+                "container": {
+                    "padding": "0px",
+                    "background-color": "#F0F7F2"  # Fondo claro coherente con el tema
+                },
+                "icon": {
+                    "color": "#2C5A2E",  # Íconos en verde oscuro
+                    "font-size": "18px"
+                },
                 "nav-link": {
-                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
-                },  # Texto en negro sin margen extra
+                    "color": "#2C5A2E",  # Texto en verde oscuro
+                    "font-size": "16px",
+                    "text-align": "left",
+                    "margin": "0px"
+                },
                 "nav-link-selected": {
-                    "background-color": "#0073e6", "color": "white"
-                },  # Opción seleccionada resaltada en azul
+                    "background-color": "#66B032",  # Verde principal corporativo
+                    "color": "white",
+                    "font-weight": "bold"
+                }
             }
         )
+
     if opcion == "Mapa Asignaciones":
         mostrar_mapa_de_asignaciones()
     elif opcion == "Viabilidades":
@@ -165,7 +179,7 @@ def mapa_dashboard():
         download_datos(datos_uis, total_ofertas, viabilidades)
 
 def mostrar_mapa_de_asignaciones():
-    st.title("📍 Mapa Asignaciones")
+    st.title("Mapa Asignaciones")
 
     # Cargar datos con spinner
     with st.spinner("Cargando datos..."):
@@ -522,7 +536,7 @@ def mostrar_mapa_de_asignaciones():
             st_folium(m, height=500, width=700)
 
 def mostrar_descarga_datos():
-    st.title("📊 Ver Datos")
+    st.title("Ver Datos")
 
     conn = get_db_connection()
 
@@ -624,7 +638,6 @@ def mostrar_viabilidades():
               AND LOWER(usuario) NOT IN ({placeholders})
         """
         df_viab = pd.read_sql(query, conn, params=[c.lower() for c in excluir_para_juan])
-        #st.info("🔒 Solo estás viendo viabilidades de usuarios permitidos.")
     else:
         df_viab = pd.read_sql("""
             SELECT id,
@@ -646,7 +659,7 @@ def mostrar_viabilidades():
         "SELECT email FROM usuarios WHERE role = 'admin'", conn
     )["email"].tolist()
 
-    st.subheader("📋Viabilidades pendientes de confirmación")
+    st.subheader("Viabilidades pendientes de confirmación")
 
     if df_viab.empty:
         st.success("🎉No hay viabilidades pendientes.")
@@ -668,7 +681,7 @@ def mostrar_viabilidades():
                     unsafe_allow_html=True
                 )
 
-                # 🌍Link GoogleMaps
+                # Link GoogleMaps
                 if pd.notna(row.latitud) and pd.notna(row.longitud):
                     maps_url = (
                         f"https://www.google.com/maps/search/?api=1"
@@ -755,12 +768,12 @@ def mostrar_viabilidades():
 
     # 📋 Mostrar tabla resultante
     st.markdown("---")
-    st.subheader("📒Listado completo de viabilidades")
+    st.subheader("Listado completo de viabilidades")
     st.dataframe(viabilidades, use_container_width=True)
 
 def download_datos(datos_uis, total_ofertas, viabilidades):
 
-    st.subheader("📥 Descargar Datos")
+    st.subheader("Descargar Datos")
 
     dataset_opcion = st.selectbox("¿Qué deseas descargar?", ["Datos", "Ofertas asignadas", "Viabilidades", "Todo"])
     formato_opcion = st.radio("Formato de descarga:", ["CSV", "Excel"])

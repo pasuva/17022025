@@ -103,7 +103,7 @@ def login():
 
         st.markdown(
             """
-            <h1 style="text-align: center; font-size: 50px; color: white;">
+            <h1 style="text-align: center; font-size: 50px; color: #2C5A2E;">
                 <img src="data:image/png;base64,{}" style="vertical-align: middle; width: 40px; height: 40px; margin-right: 10px;" />
                 VERDE SUITE
             </h1>

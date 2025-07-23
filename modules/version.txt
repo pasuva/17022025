@@ -65,3 +65,5 @@ v2.6.2 - Limpieza de código, mantenimiento aplicación. Modificaciones en la l�
 v2.7.0 - Cambio visual completo a la interfaz de comercial jefe. Ahora en lugar de ser una única pantalla, está dividido por secciones en un menú lateral izquierdo. Esto hace que la carga de datos sea mas rápida y eficiente, y también añade claridad al contenido del panel.
 v2.7.1 - Cambios en la eficiencia y carga de los puntos de los planos, se ahorra tiempo de carga y de renderizado de mapa.
 v2.8.1 - Cambiadas las leyendas, ahora aparecen en el interior de los mapas para ahorrar espacio y datos que cargar en el panel por defecto.
+v2.8.2 - Actualización de la version de Streamlit de la 1.43 a la 1.47 y actualización de Python de pip 25.0.1 a pip 25.1.1.
+v3.0.0 - Cambios de diseño, uso de colores corporativos.

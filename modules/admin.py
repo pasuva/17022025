@@ -595,7 +595,6 @@ def viabilidades_seccion():
     col1, col2 = st.columns([3, 3])
 
     with col2:
-        st.subheader("📋 Tabla de Viabilidades")
 
         # Reordenamos para que 'ticket' quede primero
         cols = viabilidades_df.columns.tolist()
@@ -651,9 +650,6 @@ def viabilidades_seccion():
         st.session_state["map_center"] = [selected_viabilidad["latitud"], selected_viabilidad["longitud"]]
         st.session_state["map_zoom"] = 14
 
-        if st.button("🔄 Refrescar Tabla"):
-            st.rerun()
-
         # Orden y renombrado de columnas
         orden_columnas_excel = [
             "ticket", "usuario", "nuevapromocion", "resultado", "justificacion",
@@ -703,16 +699,23 @@ def viabilidades_seccion():
             df_export.to_excel(writer, index=False, sheet_name="Viabilidades")
         output.seek(0)
 
-        # Botón de descarga
-        st.download_button(
-            label="📥 Descargar Excel",
-            data=output,
-            file_name="viabilidades_export.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        # Botones lado a lado
+        # Botones alineados a los extremos
+        col_b1, _, col_b2 = st.columns([1, 2.3, 1])  # Usamos una columna vacía en medio para separar
+
+        with col_b1:
+            if st.button("🔄 Refrescar Tabla"):
+                st.rerun()
+
+        with col_b2:
+            st.download_button(
+                label="📥 Descargar Excel",
+                data=output,
+                file_name="viabilidades_export.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     with col1:
-        st.subheader("🗺️ Mapa de Viabilidades")
 
         def draw_map(df, center, zoom):
             m = folium.Map(location=center, zoom_start=zoom,
@@ -808,7 +811,7 @@ def viabilidades_seccion():
 
         if st.session_state.get("selected_ticket"):
             st.markdown("---")
-            st.subheader(f"📎 Subir y Enviar Presupuesto para Ticket {st.session_state['selected_ticket']}")
+            st.subheader(f"Subir y Enviar Presupuesto para Ticket {st.session_state['selected_ticket']}")
 
             archivo = st.file_uploader("📁 Sube el archivo Excel del presupuesto", type=["xlsx"])
 
@@ -1149,12 +1152,10 @@ def mostrar_formulario(click_data):
                 key="justificacion_input"
             )
 
+        # Fila 1: apartment_id, direccion_id, olt
         col15, col16, col17 = st.columns([1, 1, 1])
         with col15:
-            apartment_id_raw = click_data.get("apartment_id", "")
-            if apartment_id_raw is None:
-                apartment_id_raw = ""
-
+            apartment_id_raw = click_data.get("apartment_id", "") or ""
             apartment_id_input = st.text_area(
                 "🏠 Apartment_id (separa con comas)",
                 value=apartment_id_raw,
@@ -1163,62 +1164,70 @@ def mostrar_formulario(click_data):
 
             # Limpiar y parsear IDs
             apartment_ids = [aid.strip() for aid in apartment_id_input.split(",") if aid.strip()]
-
-            # Mostrar etiquetas visuales solo si hay datos
             if apartment_ids:
                 tags_html = " ".join(
                     f'<span style="display:inline-block; background:#3b82f6; color:white; padding:3px 8px; border-radius:12px; margin:2px;">{aid}</span>'
                     for aid in apartment_ids
                 )
-                st.markdown("Apartment IDs detectados:")
-                st.markdown(tags_html, unsafe_allow_html=True)
+                st.markdown(f"**Apartment IDs detectados:** {tags_html}", unsafe_allow_html=True)
             else:
                 st.markdown("⚠️ No se han detectado Apartment IDs.")
 
+        with col16:
             direccion_id = st.text_input(
                 "📍 Dirección ID",
                 value=click_data.get("direccion_id", ""),
                 key="direccion_id_input"
             )
+
+        with col17:
             default_olt = next(
                 (op for op in opciones_olt if op.startswith(f"{click_data.get('olt', '')} -")),
                 opciones_olt[0]
             )
             opcion_olt = st.selectbox("⚡ OLT", opciones_olt, index=opciones_olt.index(default_olt), key="olt_input")
-            olt = opcion_olt # cambio olt = map_olt[opcion_olt] a lo que hay ahora para guardar numero - nombre y no solo el numero
-        with col16:
+            olt = opcion_olt  # Guardar como texto completo
+
+        # Fila 2: cto_admin, municipio_admin, id_cto
+        col18, col19, col20 = st.columns([1, 1, 1])
+        with col18:
             cto_admin = st.text_input("⚙️ Cto Admin", value=click_data.get("cto_admin", ""), key="cto_admin_input")
+        with col19:
             municipio_admin = st.text_input("🌍 Municipio Admin", value=click_data.get("municipio_admin", ""),
                                             key="municipio_admin_input")
-        with col17:
+        with col20:
             id_cto = st.text_input("🔧 ID Cto", value=click_data.get("id_cto", ""), key="id_cto_input")
+
+        # Fila 3: serviciable, coste, comentarios_internos
+        col21, col22, col23 = st.columns([1, 1, 2])
+        with col21:
             serviciable_val = click_data.get("serviciable", "Sí")
             index_serviciable = 0 if serviciable_val == "Sí" else 1
             serviciable = st.selectbox("🔍 ¿Es Serviciable?", ["Sí", "No"], index=index_serviciable,
                                        key="serviciable_input")
-
-        col19, col20 = st.columns([1, 1])
-        with col19:
+        with col22:
             coste = st.number_input(
-                "💰 Coste (Se actualiza automáticamente al crear un presupuesto)",
+                "💰 Coste",
                 value=float(click_data.get("coste", 0.0)),
                 step=0.01,
                 key="coste_input"
             )
-        with col20:
+        with col23:
             comentarios_internos = st.text_area(
                 "📄 Comentarios Internos",
                 value=click_data.get("comentarios_internos", ""),
                 key="comentarios_internos_input"
             )
-        col21, col22 = st.columns([1, 1])
-        with col21:
+
+        # Fila 4: zona_estudio, estado
+        col24, col25 = st.columns([1, 1])
+        with col24:
             zona_estudio = st.text_input(
                 "🗺️ Zona de estudio",
                 value=click_data.get("zona_estudio", ""),
                 key="zona_estudio_input"
             )
-        with col22:
+        with col25:
             opciones_estado = [
                 "Presupuesto enviado",
                 "Aceptado",
@@ -1319,7 +1328,7 @@ def admin_dashboard():
     """Panel del administrador."""
     controller = CookieController(key="cookies")
     # Personalizar la barra lateral
-    st.sidebar.title("📊 Panel de Administración")
+    st.sidebar.title("Panel de Administración")
 
     # Sidebar con opción de menú más moderno
     with st.sidebar:
@@ -1348,23 +1357,38 @@ def admin_dashboard():
         st.sidebar.markdown("---")
 
         opcion = option_menu(
-            menu_title=None,  # Título del menú oculto
-            options=["Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades", "Mapa UUIIs", "Cargar Nuevos Datos",
-                     "Generador de informes", "Trazabilidad y logs", "Gestionar Usuarios",
-                     "Control de versiones"],
-            icons=["house", "graph-up", "bar-chart", "check-circle", "globe", "upload",
-                   "file-earmark-text", "journal-text", "people", "arrow-clockwise"],  # Íconos de Bootstrap
+            menu_title=None,
+            options=[
+                "Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades",
+                "Mapa UUIIs", "Cargar Nuevos Datos", "Generador de informes",
+                "Trazabilidad y logs", "Gestionar Usuarios", "Control de versiones"
+            ],
+            icons=[
+                "house", "graph-up", "bar-chart", "check-circle", "globe", "upload",
+                "file-earmark-text", "journal-text", "people", "arrow-clockwise"
+            ],
             menu_icon="list",
             default_index=0,
             styles={
-                "container": {"padding": "0px","background-color":"#262730"},  # Sin fondo ni márgenes
-                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos oscuros
+                "container": {
+                    "padding": "0px",
+                    "background-color": "#F0F7F2",  # Coincide con secondaryBackgroundColor
+                },
+                "icon": {
+                    "color": "#2C5A2E",  # Verde oscuro
+                    "font-size": "18px"
+                },
                 "nav-link": {
-                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
-                },  # Texto en negro sin margen extra
+                    "color": "#2C5A2E",
+                    "font-size": "16px",
+                    "text-align": "left",
+                    "margin": "0px"
+                },
                 "nav-link-selected": {
-                    "background-color": "#0073e6", "color": "white"
-                },  # Opción seleccionada resaltada en azul
+                    "background-color": "#66B032",  # Verde principal de marca
+                    "color": "white",  # Contraste
+                    "font-weight": "bold"
+                }
             }
         )
 
@@ -1397,7 +1421,7 @@ def admin_dashboard():
     if opcion == "Home":
         home_page()
     elif opcion == "Ver Datos":
-        st.header("📊 Visualizar y gestionar datos (Datos UIS)")
+        st.header("Visualizar y gestionar datos (Datos UIS)")
         st.info("ℹ️ En esta sección puedes visualizar los datos en bruto de AMS, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
                 "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
                 "como prefieras visualizar el contenido de la tabla.")
@@ -1674,7 +1698,7 @@ def admin_dashboard():
 
     # Opción: Visualizar datos de la tabla comercial_rafa
     elif opcion == "Ofertas Comerciales":
-        st.header("📊 Visualizar Ofertas Comerciales")
+        st.header("Visualizar Ofertas Comerciales")
         st.info(
             "ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales, filtrar los datos por etiquetas, "
             "columnas, buscar elementos concretos y descargar los datos en Excel o CSV."
@@ -1876,7 +1900,7 @@ def admin_dashboard():
 
         # Nueva sección: Generar Certificación Completa
         st.markdown(
-            "##### 🧾 Generar Certificación Completa: Total de UUII visitadas, CTO a las que corresponden, total viviendas por cada CTO"
+            "##### Generar Certificación Completa: Total de UUII visitadas, CTO a las que corresponden, total viviendas por cada CTO"
         )
 
         with st.spinner("⏳ Cargando y procesando datos..."):
@@ -2007,13 +2031,8 @@ def admin_dashboard():
 
                 df_final["Categoría Observación"] = df_final["observaciones"].apply(clasificar_observacion)
 
-                # Auto-descubrimiento: top 20 observaciones sin clasificar
-                df_otros = df_final[df_final["Categoría Observación"] == "Otros / sin clasificar"]
-                top_otros = df_otros["observaciones"].value_counts().head(20)
-
-                st.markdown("####### 🔍 Top 20 observaciones no clasificadas (para ampliar patrones, en caso contrario la lista se muestra vacía)")
-                for obs, cnt in top_otros.items():
-                    st.write(f"- ({cnt}) {obs}")
+                st.info("ℹ️ Se muestran automaticamente clasificadas por categorias, todas las observaciones realizadas por los comerciales. Aquellas que no logran corresponder a una categoria "
+                        "concreta, aparecen sin clasificar.")
                 # ——————————————————————————————
 
                 st.session_state["df"] = df_final
@@ -2062,7 +2081,7 @@ def admin_dashboard():
 
     # Opción: Viabilidades (En construcción)
     elif opcion == "Viabilidades":
-        st.header("✔️ Viabilidades")
+        st.header("Viabilidades")
         st.info(
             "ℹ️ En esta sección puedes consultar y completar los tickets de viabilidades según el comercial, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
             "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
@@ -2072,7 +2091,6 @@ def admin_dashboard():
 
         # Opción: Viabilidades (En construcción)
     elif opcion == "Mapa UUIIs":
-        st.header("🌍 Mapa UUIIs")
         st.info(
             "ℹ️ En esta sección puedes ver todos los datos cruzados entre ams y las ofertas de los comerciales, así como su estado actual. Ten en cuenta que tienes dos tipos de filtros "
             "diferentes. Puedes buscar por Aparment ID y de forma independiente puedes buscar por Provincia, Municipio y Población. En el caso de haber utilizado el Apartment ID y querer usar "
@@ -2081,7 +2099,7 @@ def admin_dashboard():
 
     # Opción: Generar Informes
     elif opcion == "Generador de informes":
-        st.header("📑 Generador de Informes")
+        st.header("Generador de Informes")
         st.info("ℹ️ Aquí puedes generar informes basados en los datos disponibles.")
         log_trazabilidad(st.session_state["username"], "Generar Informe", "El admin accedió al generador de informes.")
 
@@ -2097,7 +2115,7 @@ def admin_dashboard():
 
     # Opción: Gestionar Usuarios
     elif opcion == "Gestionar Usuarios":
-        st.header("👥 Gestionar Usuarios")
+        st.header("Gestionar Usuarios")
         st.info(
             "ℹ️ Aquí puedes gestionar los usuarios registrados. Crea, edita o elimina usuarios en función de tus necesidades. "
             "El usuario afectado recibirá una notificación por correo electrónico con la información asociada a la acción que realices.")
@@ -2163,7 +2181,7 @@ def admin_dashboard():
 
 
     elif opcion == "Cargar Nuevos Datos":
-        st.header("📤 Cargar Nuevos Datos")
+        st.header("Cargar Nuevos Datos")
         st.info(
             "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión más moderna. "
             "¡ATENCIÓN! ¡Se eliminarán todos los datos actuales! Ten en cuenta que si realizas esta acción cualquier actualización realizada en la aplicación sobre "
@@ -2273,7 +2291,7 @@ def admin_dashboard():
 
     # Opción: Trazabilidad y logs
     elif opcion == "Trazabilidad y logs":
-        st.header("📜 Trazabilidad y logs")
+        st.header("Trazabilidad y logs")
         st.info(
             "ℹ️ Aquí se pueden visualizar los logs y la trazabilidad de las acciones realizadas. Puedes utilizar las etiquetas rojas para filtrar la tabla y "
             "descargar los datos relevantes en formato excel y csv.")
@@ -2614,7 +2632,7 @@ def mostrar_control_versiones():
             versiones = file.readlines()
 
         # Mostrar el encabezado de la sección
-        st.subheader("🔄 Control de versiones")
+        st.subheader("Control de versiones")
         st.info("ℹ️ Aquí puedes ver el historial de cambios y versiones de la aplicación. Cada entrada incluye el número de versión y una breve descripción de lo que se ha actualizado o modificado.")
 
         # Mostrar las versiones en formato de lista con número y descripción en la misma línea

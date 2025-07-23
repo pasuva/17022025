@@ -125,7 +125,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
     controller = CookieController(key="cookies")
-    st.sidebar.title("📍 Mapa de Ubicaciones")
+    st.sidebar.title("Mapa de Ubicaciones")
     with st.sidebar:
         st.sidebar.markdown("""
             <style>
@@ -153,20 +153,32 @@ def comercial_dashboard():
         menu_opcion = option_menu(
             menu_title=None,  # Título oculto
             options=["Ofertas Comerciales", "Viabilidades", "Visualización de Datos"],
-            icons=["bar-chart", "check-circle", "graph-up"],  # Íconos de Bootstrap
-            menu_icon="list",  # Ícono del menú
-            default_index=0,  # Opción seleccionada por defecto
+            icons=["bar-chart", "check-circle", "graph-up"],
+            menu_icon="list",
+            default_index=0,
             styles={
-                "container": {"padding": "0px", "background-color": "#262730"},  # Fondo oscuro
-                "icon": {"color": "#ffffff", "font-size": "18px"},  # Íconos blancos
+                "container": {
+                    "padding": "0px",
+                    "background-color": "#F0F7F2"  # Fondo claro corporativo
+                },
+                "icon": {
+                    "color": "#2C5A2E",  # Verde oscuro
+                    "font-size": "18px"
+                },
                 "nav-link": {
-                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
-                },  # Texto en blanco sin margen extra
+                    "color": "#2C5A2E",  # Texto en verde oscuro
+                    "font-size": "16px",
+                    "text-align": "left",
+                    "margin": "0px"
+                },
                 "nav-link-selected": {
-                    "background-color": "#0073e6", "color": "white"  # Resaltado azul en la opción seleccionada
+                    "background-color": "#66B032",  # Verde principal
+                    "color": "white",
+                    "font-weight": "bold"
                 }
             }
         )
+
     detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
 
@@ -392,7 +404,7 @@ def comercial_dashboard():
 
     # Sección de Visualización de datos
     elif menu_opcion == "Visualización de Datos":
-        st.subheader("📊 Datos de Ofertas con Contrato")
+        st.subheader("Datos de Ofertas con Contrato")
 
         # Verificar si el usuario ha iniciado sesión
         if "username" not in st.session_state:
@@ -556,7 +568,7 @@ def obtener_viabilidades():
 
 
 def viabilidades_section():
-    st.title("✔️ Viabilidades")
+    st.title("Viabilidades")
     st.markdown("""**Leyenda:**
                  ⚫ Viabilidad ya existente
                  🔵 Viabilidad nueva aún sin estudio
@@ -619,7 +631,6 @@ def viabilidades_section():
     # Mostrar el mapa y capturar clics
     Geocoder().add_to(m)
     map_data = st_folium(m, height=500, width=700)
-    #Geocoder().add_to(m)
 
     # Detectar el clic para agregar el marcador nuevo
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:

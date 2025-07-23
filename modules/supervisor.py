@@ -122,7 +122,7 @@ def download_data(data, columns, file_type="CSV"):
 def supervisor_dashboard():
     controller = CookieController(key="cookies")
 
-    st.sidebar.title("📁 Panel del Supervisor")
+    st.sidebar.title("Panel del Supervisor")
     with st.sidebar:
         st.sidebar.markdown(""" 
             <style> 
@@ -156,13 +156,24 @@ def supervisor_dashboard():
             menu_icon="list",
             default_index=0,
             styles={
-                "container": {"padding": "0px", "background-color": "#262730"},
-                "icon": {"color": "#ffffff", "font-size": "18px"},
+                "container": {
+                    "padding": "0px",
+                    "background-color": "#F0F7F2"  # Fondo suave como en el tema
+                },
+                "icon": {
+                    "color": "#2C5A2E",  # Verde oscuro (texto e íconos)
+                    "font-size": "18px"
+                },
                 "nav-link": {
-                    "color": "#ffffff", "font-size": "16px", "text-align": "left", "margin": "0px"
+                    "color": "#2C5A2E",  # Mismo verde para enlaces normales
+                    "font-size": "16px",
+                    "text-align": "left",
+                    "margin": "0px"
                 },
                 "nav-link-selected": {
-                    "background-color": "#0073e6", "color": "white"
+                    "background-color": "#66B032",  # Verde principal de selección
+                    "color": "white",
+                    "font-weight": "bold"
                 }
             }
         )
