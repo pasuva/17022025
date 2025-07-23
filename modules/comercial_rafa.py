@@ -125,7 +125,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
     controller = CookieController(key="cookies")
-    st.sidebar.title("Mapa de Ubicaciones")
+
     with st.sidebar:
         st.sidebar.markdown("""
             <style>
@@ -139,17 +139,29 @@ def comercial_dashboard():
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    margin-bottom: 30px;
+                    margin: 0 auto 10px auto;
                     text-align: center;
-                    margin-left: auto;
-                    margin-right: auto;
+                }
+                .user-info {
+                    text-align: center;
+                    font-size: 16px;
+                    color: #333;
+                    margin-bottom: 10px;
+                }
+                .welcome-msg {
+                    text-align: center;
+                    font-weight: bold;
+                    font-size: 18px;
+                    margin-top: 0;
                 }
             </style>
+
             <div class="user-circle">👤</div>
-            <div>Rol: Comercial</div>
-        """, unsafe_allow_html=True)
-        st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
-        st.sidebar.markdown("---")
+            <div class="user-info">Rol: Comercial</div>
+            <div class="welcome-msg">Bienvenido, <strong>{username}</strong></div>
+            <hr>
+            """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
+
         menu_opcion = option_menu(
             menu_title=None,  # Título oculto
             options=["Ofertas Comerciales", "Viabilidades", "Visualización de Datos"],

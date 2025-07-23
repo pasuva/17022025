@@ -2,7 +2,7 @@ import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual
+from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual, correo_nueva_version
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
@@ -1325,34 +1325,43 @@ def obtener_apartment_ids_existentes(cursor):
 def admin_dashboard():
     """Panel del administrador."""
     controller = CookieController(key="cookies")
-    # Personalizar la barra lateral
-    st.sidebar.title("Panel de Administración")
 
     # Sidebar con opción de menú más moderno
     with st.sidebar:
         st.sidebar.markdown("""
-                    <style>
-                        .user-circle {
-                            width: 100px;
-                            height: 100px;
-                            border-radius: 50%;
-                            background-color: #0073e6;
-                            color: white;
-                            font-size: 50px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            margin-bottom: 30px;
-                            text-align: center;
-                            margin-left: auto;
-                            margin-right: auto;
-                        }
-                    </style>
-                    <div class="user-circle">👤</div>
-                    <div>Rol: Administrador</div>
-                    """, unsafe_allow_html=True)
-        st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**!")
-        st.sidebar.markdown("---")
+            <style>
+                .user-circle {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50%;
+                    background-color: #0073e6;
+                    color: white;
+                    font-size: 50px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto 10px auto;
+                    text-align: center;
+                }
+                .user-info {
+                    text-align: center;
+                    font-size: 16px;
+                    color: #333;
+                    margin-bottom: 10px;
+                }
+                .welcome-msg {
+                    text-align: center;
+                    font-weight: bold;
+                    font-size: 18px;
+                    margin-top: 0;
+                }
+            </style>
+
+            <div class="user-circle">👤</div>
+            <div class="user-info">Rol: Administrador</div>
+            <div class="welcome-msg">¡Bienvenido, <strong>{username}</strong>!</div>
+            <hr>
+            """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
 
         opcion = option_menu(
             menu_title=None,
@@ -2628,35 +2637,68 @@ def generar_informe(fecha_inicio, fecha_fin):
 # Función para leer y mostrar el control de versiones
 def mostrar_control_versiones():
     try:
-        # Leer el archivo version.txt
-        with open("modules/version.txt", "r", encoding="utf-8") as file:
-            versiones = file.readlines()
+        # Conexión a la base de datos
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+        )
+        cursor = conn.cursor()
 
-        # Mostrar el encabezado de la sección
         st.subheader("Control de versiones")
         st.info("ℹ️ Aquí puedes ver el historial de cambios y versiones de la aplicación. Cada entrada incluye el número de versión y una breve descripción de lo que se ha actualizado o modificado.")
 
-        # Mostrar las versiones en formato de lista con número y descripción en la misma línea
-        for version in versiones:
-            version_info = version.strip().split(" - ")
-            if len(version_info) == 2:
+        # --- FORMULARIO PARA NUEVA VERSIÓN ---
+        with st.form("form_nueva_version"):
+            nueva_version = st.text_input("Versión (ej. v1.1.0)")
+            descripcion = st.text_area("Descripción de la versión")
+            enviar = st.form_submit_button("Agregar nueva versión")
+
+            if enviar:
+                if not nueva_version.strip() or not descripcion.strip():
+                    st.error("Por favor completa todos los campos.")
+                else:
+                    fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    # Insertar en base de datos
+                    cursor.execute(
+                        "INSERT INTO versiones (version, descripcion, fecha) VALUES (?, ?, ?)",
+                        (nueva_version.strip(), descripcion.strip(), fecha)
+                    )
+                    conn.commit()
+
+                    # Obtener todos los emails de usuarios para notificación
+                    cursor.execute("SELECT email FROM usuarios")
+                    usuarios = cursor.fetchall()
+
+                    for (email,) in usuarios:
+                        correo_nueva_version(email, nueva_version.strip(), descripcion.strip())
+
+                    st.success("Versión agregada y notificaciones enviadas.")
+                    st.rerun()  # Recarga para mostrar la nueva versión
+
+        # --- LISTADO DE VERSIONES ---
+        cursor.execute("SELECT version, descripcion, fecha FROM versiones ORDER BY id DESC")
+        versiones = cursor.fetchall()
+
+        if not versiones:
+            st.warning("No hay versiones registradas todavía.")
+        else:
+            for version, descripcion, fecha in versiones:
                 st.markdown(
-                    f"<div style='background-color: #f7f7f7; padding: 10px; border-radius: 8px; margin-bottom: 10px;'>"
-                    f"<p style='font-size: 14px; color: #666; margin: 0;'><strong style='color: #4CAF50; font-size: 16px;'>{version_info[0]}</strong> - {version_info[1]}</p>"
-                    f"</div>", unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    f"<div style='background-color: #f7f7f7; padding: 10px; border-radius: 8px; margin-bottom: 10px;'>"
-                    f"<p style='font-size: 14px; color: #666; margin: 0;'><strong style='color: #4CAF50; font-size: 16px;'>{version_info[0]}</strong> - Sin descripción disponible.</p>"
+                    f"<div style='background-color: #f7f7f7; padding: 10px; margin-bottom: 10px;'>"
+                    f"<p style='font-size: 14px; color: #666; margin: 0;'>"
+                    f"<strong style='color: #4CAF50; font-size: 16px;'>{version}</strong> "
+                    f"<em style='color: #999; font-size: 12px;'>({fecha})</em> - {descripcion}</p>"
                     f"</div>", unsafe_allow_html=True
                 )
 
-        # Nota técnica adicional para el admin
-        st.markdown("<br><i style='font-size: 14px; color: #888;'>Nota técnica: Esta sección muestra el historial completo de cambios aplicados al sistema. Asegúrese de revisar las versiones anteriores para comprender las mejoras y correcciones implementadas.</i>", unsafe_allow_html=True)
+        st.markdown(
+            "<br><i style='font-size: 14px; color: #888;'>"
+            "Nota técnica: Esta sección muestra el historial completo de cambios aplicados al sistema. "
+            "Asegúrese de revisar las versiones anteriores para comprender las mejoras y correcciones implementadas."
+            "</i>", unsafe_allow_html=True
+        )
 
-    except FileNotFoundError:
-        st.error("El archivo `version.txt` no se encuentra en el sistema.")
+        conn.close()
+
     except Exception as e:
         st.error(f"Ha ocurrido un error al cargar el control de versiones: {e}")
 

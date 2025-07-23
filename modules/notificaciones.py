@@ -218,3 +218,16 @@ def correo_envio_presupuesto_manual(destinatario, proyecto, mensaje_usuario, arc
     except Exception as e:
         print(f"❌ Error al enviar correo con presupuesto: {e}")
 
+def correo_nueva_version(destinatario, version, descripcion):
+    asunto = f"🚀 Nueva actualización: Versión {version}"
+    contenido = {
+        "mensaje": (
+            f"Se ha publicado una nueva versión <strong>{version}</strong>."
+        ),
+        "Descripción": (
+            f"{descripcion}<br>"
+            "Consulta el panel para más detalles."
+        )
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+

@@ -122,32 +122,41 @@ def download_data(data, columns, file_type="CSV"):
 def supervisor_dashboard():
     controller = CookieController(key="cookies")
 
-    st.sidebar.title("Panel del Supervisor")
     with st.sidebar:
-        st.sidebar.markdown(""" 
-            <style> 
-                .user-circle { 
-                    width: 100px; 
-                    height: 100px; 
-                    border-radius: 50%; 
-                    background-color: #28a745; 
-                    color: white; 
-                    font-size: 50px; 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    margin-bottom: 30px; 
-                    text-align: center; 
-                    margin-left: auto; 
-                    margin-right: auto; 
-                } 
-            </style> 
-            <div class="user-circle">👤</div> 
-            <div>Rol: Supervisor</div>
-        """, unsafe_allow_html=True)
+        st.sidebar.markdown("""
+            <style>
+                .user-circle {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50%;
+                    background-color: #28a745;
+                    color: white;
+                    font-size: 50px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto 10px auto;
+                    text-align: center;
+                }
+                .user-info {
+                    text-align: center;
+                    font-size: 16px;
+                    color: #333;
+                    margin-bottom: 10px;
+                }
+                .welcome-msg {
+                    text-align: center;
+                    font-weight: bold;
+                    font-size: 18px;
+                    margin-top: 0;
+                }
+            </style>
 
-        st.sidebar.write(f"Bienvenido, {st.session_state['username']}")
-        st.sidebar.markdown("---")
+            <div class="user-circle">👤</div>
+            <div class="user-info">Rol: Supervisor</div>
+            <div class="welcome-msg">Bienvenido, <strong>{username}</strong></div>
+            <hr>
+            """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
         # Menú lateral con las tres opciones
         menu_opcion = option_menu(
             menu_title=None,

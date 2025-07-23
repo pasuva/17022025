@@ -94,8 +94,6 @@ def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
     controller = CookieController(key="cookies")
 
-    st.sidebar.title("Panel de Gestor")
-
     # Panel lateral de bienvenida y cierre de sesión
     st.sidebar.markdown("""
         <style>
@@ -109,16 +107,27 @@ def mapa_dashboard():
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                margin-bottom: 30px;
+                margin: 0 auto 10px auto;
                 text-align: center;
-                margin-left: auto;
-                margin-right: auto;
+            }
+            .user-info {
+                text-align: center;
+                font-size: 16px;
+                color: #333;
+                margin-bottom: 10px;
+            }
+            .welcome-msg {
+                text-align: center;
+                font-weight: bold;
+                font-size: 18px;
+                margin-top: 0;
             }
         </style>
         <div class="user-circle">👤</div>
-        <div>Rol: Gestor Comercial</div>
-    """, unsafe_allow_html=True)
-    st.sidebar.markdown(f"¡Bienvenido, **{st.session_state['username']}**!")
+        <div class="user-info">Rol: Gestor Comercial</div>
+        <div class="welcome-msg">¡Bienvenido, <strong>{username}</strong>!</div>
+        <hr>
+    """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
 
     with st.sidebar:
         if st.button("Cerrar sesión"):
