@@ -51,6 +51,23 @@ def log_trazabilidad(usuario, accion, detalles):
     conn.commit()
     conn.close()
 
+def get_latest_version():
+    try:
+        conn = sqlitecloud.connect(DB_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT version FROM versiones ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            #print("[DEBUG] Última versión encontrada:", row[0])
+            return row[0]
+        else:
+            #print("[DEBUG] No se encontraron versiones.")
+            return "desconocido"
+    except Exception as e:
+        print("[ERROR] al obtener la última versión:", e)
+        return "desconocido"
+
 def login():
     # Se instancia localmente el controlador de cookies para que cada navegador administre sus propias cookies.
     controller = CookieController(key="cookies")
@@ -110,34 +127,45 @@ def login():
             """.format(base64.b64encode(open('img/Adobe_Express_file.png', 'rb').read()).decode()),
             unsafe_allow_html=True
         )
-        version_actual = get_latest_version()
 
-        if "last_seen_version" not in st.session_state or st.session_state["last_seen_version"] != version_actual:
-            st.info(f"🚀 Nueva versión disponible: **{version_actual}**")
+        # Crear columnas vacías a izquierda y derecha para centrar el contenido
+        col1, col2, col3 = st.columns([1, 2, 1])
 
-        st.success("🔐 Por favor, inicia sesión con tu usuario y tu contraseña.")
+        with col2:
+            st.success("🔐 Por favor, inicia sesión con tu usuario y tu contraseña.")
 
-        nombre = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
+            nombre = st.text_input("Usuario")
+            password = st.text_input("Contraseña", type="password")
 
-        if st.button("Iniciar sesión"):
-            rol = verify_user(nombre, password)
-            if rol:
-                st.session_state["login_ok"] = True
-                st.session_state["username"] = nombre
-                st.session_state["role"] = rol
-                st.session_state["session_id"] = session_id  # Guardamos el session_id
+            if st.button("Iniciar sesión"):
+                rol = verify_user(nombre, password)
+                if rol:
+                    st.session_state["login_ok"] = True
+                    st.session_state["username"] = nombre
+                    st.session_state["role"] = rol
+                    st.session_state["session_id"] = session_id  # Guardamos el session_id
 
-                st.success(f"Bienvenido, {nombre} ({rol})")
+                    st.success(f"Bienvenido, {nombre} ({rol})")
 
-                # Guardar las credenciales en cookies con un session_id único y persistente
-                if st.session_state.get("login_ok"):
-                    controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/', same_site='Lax', secure=True)
-                    controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/', same_site='Lax', secure=True )
-                    controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/', same_site='Lax', secure=True)
+                    # Guardar cookies
+                    if st.session_state.get("login_ok"):
+                        controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/',
+                                       same_site='Lax', secure=True)
+                        controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/',
+                                       same_site='Lax', secure=True)
+                        controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/', same_site='Lax',
+                                       secure=True)
 
-                detalles = f"Usuario '{nombre}' inició sesión en el sistema."
-                log_trazabilidad(nombre, "Inicio sesión", detalles)
-                st.rerun()
-            else:
-                st.error("Usuario o contraseña incorrectos")
+                    detalles = f"Usuario '{nombre}' inició sesión en el sistema."
+                    log_trazabilidad(nombre, "Inicio sesión", detalles)
+                    st.rerun()
+                else:
+                    st.error("Usuario o contraseña incorrectos")
+
+            # 🔽 Mostrar versión centrada abajo
+            version_actual = get_latest_version()
+            st.markdown(
+                f"<div style='text-align: center; margin-top: 50px;'>🔍 <strong>Versión actual:</strong> {version_actual}</div>",
+                unsafe_allow_html=True
+            )
+
