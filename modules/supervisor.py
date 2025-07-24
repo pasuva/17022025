@@ -94,29 +94,21 @@ def load_viabilidades():
         return None
 
 # Función para descargar los datos
-def download_data(data, columns, file_type="CSV"):
-    detalles = f"El supervisor descargó los datos en formato {file_type}."
+def download_data(data, columns):
+    detalles = "El supervisor descargó los datos en formato Excel."
     log_trazabilidad(st.session_state["username"], "Descarga de datos", detalles)
 
-    if file_type == "CSV":
+    with st.spinner("Generando archivo Excel..."):
+        towrite = io.BytesIO()
+        with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+            data[columns].to_excel(writer, index=False, sheet_name="Datos")
+        towrite.seek(0)
         st.download_button(
-            label="Descargar como CSV",
-            data=data[columns].to_csv(index=False).encode(),
-            file_name="datos_descargados.csv",
-            mime="text/csv"
+            label="📥 Descargar como Excel",
+            data=towrite,
+            file_name="datos_descargados.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    elif file_type == "Excel":
-        with st.spinner("Generando archivo Excel..."):
-            towrite = io.BytesIO()
-            with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data[columns].to_excel(writer, index=False, sheet_name="Datos")
-            towrite.seek(0)
-            st.download_button(
-                label="Descargar como Excel",
-                data=towrite,
-                file_name="datos_descargados.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
 
 # Función principal del dashboard
 def supervisor_dashboard():
@@ -193,7 +185,7 @@ def supervisor_dashboard():
     log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
 
     st.info(
-        "ℹ️ En este panel puedes visualizar los datos de Datos UIS, Ofertas Comerciales o Viabilidades, filtrar columnas, buscar elementos concretos y descargar los datos en CSV o Excel."
+        "ℹ️ En este panel puedes visualizar los datos de Datos UIS, Ofertas Comerciales o Viabilidades, filtrar columnas, buscar elementos concretos y descargar los datos en Excel."
     )
 
     with st.sidebar:
@@ -239,16 +231,15 @@ def supervisor_dashboard():
     if data.columns.duplicated().any():
         st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
         data = data.loc[:, ~data.columns.duplicated()]
-
     st.session_state["data"] = data
     st.subheader("Filtrar Columnas")
     columnas = st.multiselect("Selecciona las columnas a mostrar", data.columns.tolist(), default=data.columns.tolist())
     st.subheader("Datos Cargados")
     st.dataframe(data[columnas], use_container_width=True)
     st.subheader("Descargar Datos")
-    descarga_opcion = st.radio("¿Cómo quieres descargar los datos?", ["CSV", "Excel"])
-    download_data(data, columnas, descarga_opcion)
+    download_data(data, columnas)
     st.info("Recuerda que, dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
+
 
 if __name__ == "__main__":
     supervisor_dashboard()

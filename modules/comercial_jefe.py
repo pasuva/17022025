@@ -787,22 +787,10 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
     st.subheader("Descargar Datos")
 
     dataset_opcion = st.selectbox("¿Qué deseas descargar?", ["Datos", "Ofertas asignadas", "Viabilidades", "Todo"])
-    formato_opcion = st.radio("Formato de descarga:", ["CSV", "Excel"])
     nombre_base = st.text_input("Nombre base del archivo:", "datos")
 
     fecha_actual = datetime.now().strftime("%Y-%m-%d")
     nombre_archivo_final = f"{nombre_base}_{fecha_actual}"
-
-    def descargar_csv(df, nombre_archivo):
-        if not isinstance(df, pd.DataFrame):
-            st.warning(f"No hay datos válidos para descargar en {nombre_archivo} (esperado DataFrame).")
-            return
-        st.download_button(
-            label=f"Descargar {nombre_archivo} como CSV",
-            data=df.to_csv(index=False).encode(),
-            file_name=f"{nombre_archivo}.csv",
-            mime="text/csv"
-        )
 
     def descargar_excel(dfs_dict, nombre_archivo):
         # Comprobar que cada valor en el dict sea DataFrame
@@ -817,43 +805,32 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
                     df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
             output.seek(0)
             st.download_button(
-                label=f"Descargar {nombre_archivo} como Excel",
+                label=f"📥 Descargar {nombre_archivo} como Excel",
                 data=output,
                 file_name=f"{nombre_archivo}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+    # Lógica de descarga según la selección
     if dataset_opcion == "Datos":
         log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó los datos.")
-        if formato_opcion == "CSV":
-            descargar_csv(datos_uis, nombre_archivo_final)
-        else:
-            descargar_excel({"Datos Rafa Sanz": datos_uis}, nombre_archivo_final)
+        descargar_excel({"Datos Rafa Sanz": datos_uis}, nombre_archivo_final)
 
     elif dataset_opcion == "Ofertas asignadas":
         log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó ofertas asignadas.")
-        if formato_opcion == "CSV":
-            descargar_csv(total_ofertas, nombre_archivo_final)
-        else:
-            descargar_excel({"Ofertas Asignadas": total_ofertas}, nombre_archivo_final)
+        descargar_excel({"Ofertas Asignadas": total_ofertas}, nombre_archivo_final)
 
     elif dataset_opcion == "Viabilidades":
         log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó viabilidades.")
-        if formato_opcion == "CSV":
-            descargar_csv(viabilidades, nombre_archivo_final)
-        else:
-            descargar_excel({"Viabilidades": viabilidades}, nombre_archivo_final)
+        descargar_excel({"Viabilidades": viabilidades}, nombre_archivo_final)
 
     elif dataset_opcion == "Todo":
         log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó todos los datos.")
-        if formato_opcion == "Excel":
-            descargar_excel({
-                "Datos Rafa Sanz": datos_uis,
-                "Ofertas Asignadas": total_ofertas,
-                "Viabilidades": viabilidades
-            }, nombre_archivo_final)
-        else:
-            st.warning("⚠️ Para descargar todo junto, selecciona el formato Excel.")
+        descargar_excel({
+            "Datos Gestor": datos_uis,
+            "Ofertas Asignadas": total_ofertas,
+            "Viabilidades": viabilidades
+        }, nombre_archivo_final)
 
     st.info("Dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
 if __name__ == "__main__":

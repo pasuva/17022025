@@ -67,7 +67,7 @@ def generar_html(asunto, contenido):
             </div>
 
             <p>Saludos cordiales,</p>
-            <p><strong>Equipo de Administración</strong></p>
+            <p><strong>Equipo de IT y Sistemas</strong></p>
 
             <div class="footer">
                 <p>📧 Este es un correo automático, por favor no respondas a este mensaje.</p>

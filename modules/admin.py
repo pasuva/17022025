@@ -1431,75 +1431,107 @@ def admin_dashboard():
     if opcion == "Home":
         home_page()
     elif opcion == "Ver Datos":
-        st.header("Visualizar y gestionar datos (Datos UIS)")
-        st.info("ℹ️ En esta sección puedes visualizar los datos en bruto de AMS, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
-                "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
-                "como prefieras visualizar el contenido de la tabla.")
 
-        if "df" in st.session_state:
-            del st.session_state["df"]
+        sub_seccion = option_menu(
+            menu_title=None,  # Sin título encima del menú
+            options=["Visualizar Datos UIS", "Seguimiento de Contratos"],
+            icons=["table", "file-earmark-spreadsheet"],  # Puedes cambiar iconos
+            default_index=0,
+            orientation="horizontal",  # horizontal para que quede tipo pestañas arriba
+            styles={
+                "container": {
+                    "padding": "0px",
+                    "margin": "0px",
+                    "width": "100%",
+                    "background-color": "#F0F7F2",
+                    "border-radius": "0px"
+                },
+                "icon": {
+                    "color": "#2C5A2E",  # Íconos en verde oscuro
+                    "font-size": "25px"
+                },
+                "nav-link": {
+                    "color": "#2C5A2E",
+                    "font-size": "18px",
+                    "text-align": "center",
+                    "margin": "0px",
+                    "--hover-color": "#66B032",
+                    "border-radius": "0px",
+                },
+                "nav-link-selected": {
+                    "background-color": "#66B032",  # Verde principal corporativo
+                    "color": "white",
+                    "font-weight": "bold"
+                }
+            }
+        )
+        if sub_seccion == "Visualizar Datos UIS":
+            st.info("ℹ️ Aquí puedes visualizar, filtrar y descargar los datos UIS en formato Excel.")
 
-        with st.spinner("Cargando datos..."):
-            try:
-                conn = obtener_conexion()
-                query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
-                tables = pd.read_sql(query_tables, conn)
-                if 'datos_uis' not in tables['name'].values:
-                    st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
+            if "df" in st.session_state:
+                del st.session_state["df"]
+
+            with st.spinner("Cargando datos..."):
+                try:
+                    conn = obtener_conexion()
+                    query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
+                    tables = pd.read_sql(query_tables, conn)
+                    if 'datos_uis' not in tables['name'].values:
+                        st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
+                        conn.close()
+                        return
+                    query = "SELECT * FROM datos_uis"
+                    data = pd.read_sql(query, conn)
                     conn.close()
+                    if data.empty:
+                        st.error("❌ No se encontraron datos en la base de datos.")
+                        return
+                except Exception as e:
+                    st.error(f"❌ Error al cargar datos de la base de datos: {e}")
                     return
-                query = "SELECT * FROM datos_uis"
-                data = pd.read_sql(query, conn)
-                conn.close()
-                if data.empty:
-                    st.error("❌ No se encontraron datos en la base de datos.")
-                    return
-            except Exception as e:
-                st.error(f"❌ Error al cargar datos de la base de datos: {e}")
-                return
 
-        for col in data.select_dtypes(include=["object"]).columns:
-            data[col] = data[col].replace({'true': True, 'false': False})
-            data[col] = safe_convert_to_numeric(data[col])
+            for col in data.select_dtypes(include=["object"]).columns:
+                data[col] = data[col].replace({'true': True, 'false': False})
+                data[col] = safe_convert_to_numeric(data[col])
 
-        if data.columns.duplicated().any():
-            st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
-            data = data.loc[:, ~data.columns.duplicated()]
+            if data.columns.duplicated().any():
+                st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
+                data = data.loc[:, ~data.columns.duplicated()]
 
-        st.session_state["df"] = data
-        columnas = data.columns.tolist()
+            st.session_state["df"] = data
+            columnas = data.columns.tolist()
 
-        #st.dataframe(data[columnas], use_container_width=True)
-        # Construimos las opciones de AgGrid
-        gb = GridOptionsBuilder.from_dataframe(data[columnas])
-        gb.configure_default_column(
-            filter=True,
-            floatingFilter=True,  # muestro el input de filtro directamente bajo el header
-            sortable=True,
-            resizable=True,
-            minWidth=120,  # ancho mínimo en px
-            flex=1  # reparte espacio sobrante equitativamente
-        )
-        gridOptions = gb.build()
+            #st.dataframe(data[columnas], use_container_width=True)
+            # Construimos las opciones de AgGrid
+            gb = GridOptionsBuilder.from_dataframe(data[columnas])
+            gb.configure_default_column(
+                filter=True,
+                floatingFilter=True,  # muestro el input de filtro directamente bajo el header
+                sortable=True,
+                resizable=True,
+                minWidth=120,  # ancho mínimo en px
+                flex=1  # reparte espacio sobrante equitativamente
+            )
+            gridOptions = gb.build()
 
-        # Muestro la tabla con AgGrid en lugar de st.dataframe
-        AgGrid(
-            data[columnas],
-            gridOptions=gridOptions,
-            enable_enterprise_modules=False,  # filtros avanzados
-            update_mode=GridUpdateMode.NO_UPDATE,  # sólo lectura
-            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-            fit_columns_on_grid_load=True,
-            height=500,
-            theme='alpine-dark'
-        )
+            # Muestro la tabla con AgGrid en lugar de st.dataframe
+            AgGrid(
+                data[columnas],
+                gridOptions=gridOptions,
+                enable_enterprise_modules=False,
+                update_mode=GridUpdateMode.NO_UPDATE,
+                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                fit_columns_on_grid_load=True,
+                height=500,
+                theme='alpine-dark'
+            )
 
-        download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"])
-        if download_format == "Excel":
+            # 🔽 Botón de descarga en Excel
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
                 data[columnas].to_excel(writer, index=False, sheet_name='Datos')
             towrite.seek(0)
+
             with st.spinner("Preparando archivo Excel..."):
                 st.download_button(
                     label="📥 Descargar Excel",
@@ -1507,299 +1539,312 @@ def admin_dashboard():
                     file_name="datos.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-        elif download_format == "CSV":
-            csv = data[columnas].to_csv(index=False).encode()
-            with st.spinner("Preparando archivo CSV..."):
-                st.download_button(
-                    label="📥 Descargar CSV",
-                    data=csv,
-                    file_name="datos.csv",
-                    mime="text/csv"
-                )
-        # -----------------------------------------------------------
-        # NUEVO: Seguimiento de contratos
-        # -----------------------------------------------------------
-        st.header("📋 Seguimiento de Contratos")
-        st.info(
-            "ℹ️ En esta sección puedes visualizar y gestionar el seguimiento de contratos, filtrar por columnas, buscar por términos concretos "
-            "y descargar la información en formato Excel o CSV. Ten en cuenta que la carga y el guardado posterior son procesos independientes y cada uno de ellos "
-            "puede tardar un tiempo en función del tamaño del fichero que quieras cargar."
-        )
-        # Mapeo de columnas del Excel a la BD
-        column_mapping = {
-            'Nº CONTRATO': 'num_contrato',
-            'CLIENTE': 'cliente',
-            'DIRECCIÓN O COORDENADAS': 'coordenadas',
-            'ESTADO': 'estado',
-            'Fecha contrato': 'fecha_contrato',
-            'Fecha petición ADAMO': 'fecha_peticion_adamo',
-            '¿Quién solicita a ADAMO?': 'quien_solicita_a_adamo',
-            'FECHA INSTALACIÓN': 'fecha_instalacion',
-            'ID': 'apartment_id'
-        }
+        elif sub_seccion == "Seguimiento de Contratos":
+            st.info("ℹ️ Aquí puedes cargar contratos, mapear columnas, guardar en BD y sincronizar con datos UIS.")
+            # -----------------------------------------------------------
+            # NUEVO: Seguimiento de contratos
+            # -----------------------------------------------------------
+            # Mapeo de columnas del Excel a la BD
+            column_mapping = {
+                'Nº CONTRATO': 'num_contrato',
+                'CLIENTE': 'cliente',
+                'DIRECCIÓN O COORDENADAS': 'coordenadas',
+                'ESTADO': 'estado',
+                'Fecha contrato': 'fecha_contrato',
+                'Fecha petición ADAMO': 'fecha_peticion_adamo',
+                '¿Quién solicita a ADAMO?': 'quien_solicita_a_adamo',
+                'FECHA INSTALACIÓN': 'fecha_instalacion',
+                'ID': 'apartment_id'
+            }
 
-        uploaded = st.file_uploader(
-            label="Carga tu archivo de contratos",
-            type=["xlsx", "xls", "csv"],
-            help="El archivo debe tener columnas: " + ", ".join(column_mapping.keys())
-        )
+            uploaded = st.file_uploader(
+                label="Carga tu archivo de contratos",
+                type=["xlsx", "xls", "csv"],
+                help="El archivo debe tener columnas: " + ", ".join(column_mapping.keys())
+            )
 
-        if uploaded:
-            try:
-                df = pd.read_csv(uploaded) if uploaded.name.lower().endswith('.csv') else pd.read_excel(uploaded)
-                df.rename(columns=column_mapping, inplace=True)
-
-                # Convertir fechas a texto
-                for date_col in ['fecha_contrato', 'fecha_peticion_adamo', 'fecha_instalacion']:
-                    if date_col in df.columns:
-                        try:
-                            df[date_col] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
-                        except Exception:
-                            df[date_col] = df[date_col].astype(str)
-
-                st.success(f"✅ Archivo cargado y columnas mapeadas correctamente. Total filas: {len(df)}")
-
-                if st.button("💾 Guardar seguimiento en base de datos"):
-                    with st.spinner("Guardando datos en la base de datos..."):
-                        conn = obtener_conexion()
-                        cur = conn.cursor()
-
-                        # Crear tabla si no existe
-                        cur.execute(
-                            '''CREATE TABLE IF NOT EXISTS seguimiento_contratos (
-                                id INTEGER PRIMARY KEY,
-                                num_contrato TEXT,
-                                cliente TEXT,
-                                coordenadas TEXT,
-                                estado TEXT,
-                                fecha_contrato TEXT,
-                                fecha_peticion_adamo TEXT,
-                                quien_solicita_a_adamo TEXT,
-                                fecha_instalacion TEXT,
-                                apartment_id TEXT
-                            )'''
-                        )
-
-                        # Borrar registros anteriores
-                        cur.execute("SELECT COUNT(*) FROM seguimiento_contratos")
-                        count_old = cur.fetchone()[0]
-                        if count_old > 0:
-                            cur.execute("DELETE FROM seguimiento_contratos")
-                            conn.commit()
-                            cur.execute("DELETE FROM sqlite_sequence WHERE name='seguimiento_contratos'")
-                            conn.commit()
-                            st.info(
-                                f"ℹ️ Se han borrado {count_old} registros anteriores y reiniciado el contador de IDs.")
-
-                        # Insertar nuevas filas con padding en apartment_id
-                        total = len(df)
-                        progress = st.progress(0)
-                        insert_sql = '''INSERT INTO seguimiento_contratos (
-                                    num_contrato, cliente, coordenadas, estado, fecha_contrato,
-                                    fecha_peticion_adamo, quien_solicita_a_adamo, fecha_instalacion, apartment_id
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'''
-                        for i, row in df.iterrows():
-                            ap_id = row['apartment_id']
-                            try:
-                                ap_id_int = int(ap_id)
-                                padded_id = 'P' + str(ap_id_int).zfill(10)
-                            except (ValueError, TypeError):
-                                padded_id = None
-                            cur.execute(insert_sql, (
-                                row['num_contrato'], row['cliente'], row['coordenadas'], row['estado'],
-                                row['fecha_contrato'], row['fecha_peticion_adamo'], row['quien_solicita_a_adamo'],
-                                row['fecha_instalacion'], padded_id
-                            ))
-                            progress.progress((i + 1) / total)
-
-                        conn.commit()
-
-                        # 1. Actualizar estado
-                        with obtener_conexion() as conn:
-                            cur = conn.cursor()
-                            update_estado_sql = """
-                                UPDATE datos_uis
-                                SET estado = (
-                                    SELECT sc.estado
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.estado IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE estado IS NOT NULL
-                                )
-                            """
-                            cur.execute(update_estado_sql)
-                            updated_estado = cur.rowcount
-                            conn.commit()
-
-                        # 2. Actualizar contrato_uis
-                        with obtener_conexion() as conn:
-                            cur = conn.cursor()
-                            update_contrato_sql = """
-                                UPDATE datos_uis
-                                SET contrato_uis = (
-                                    SELECT sc.num_contrato
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.num_contrato IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE num_contrato IS NOT NULL
-                                )
-                            """
-                            cur.execute(update_contrato_sql)
-                            updated_contratos = cur.rowcount
-                            conn.commit()
-
-                        # 3. Marcar como 'serviciable = SI' si estado es FINALIZADO
-                        with obtener_conexion() as conn:
-                            cur = conn.cursor()
-                            update_serviciable_sql = """
-                                UPDATE datos_uis
-                                SET serviciable = 'SI'
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id
-                                    FROM seguimiento_contratos
-                                    WHERE TRIM(UPPER(estado)) = 'FINALIZADO'
-                                    AND apartment_id IS NOT NULL
-                                )
-                            """
-                            cur.execute(update_serviciable_sql)
-                            updated_serviciables = cur.rowcount
-                            conn.commit()
-
-                    # Dar feedback al usuario
-                    st.success(f"✅ Registros insertados correctamente en 'seguimiento_contratos'.")
-                    if updated_estado > 0:
-                        st.info(f"🔄 {updated_estado} registros actualizados con estado.")
-                    else:
-                        st.warning("⚠️ No se actualizó ninguna fila con estado. Revisa los datos.")
-
-                    if updated_contratos > 0:
-                        st.info(f"📝 {updated_contratos} registros actualizados con contrato_uis.")
-                    else:
-                        st.warning("⚠️ No se actualizó ninguna fila con contrato_uis.")
-
-                    if updated_serviciables > 0:
-                        st.info(f"✅ {updated_serviciables} viviendas marcadas como serviciables.")
-                    else:
-                        st.warning("⚠️ No se marcó ninguna vivienda como serviciable.")
-
-            except Exception as e:
-                st.error(f"❌ Error procesando el archivo: {e}")
-
-        if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
-            with st.spinner("Cargando registros de contratos..."):
+            if uploaded:
                 try:
-                    conn = obtener_conexion()
-                    existing = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
-                    conn.close()
-                    if existing.empty:
-                        st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
-                    else:
-                        cols = st.multiselect("Filtra columnas a mostrar", existing.columns, default=existing.columns,
-                                              key="cols_existing")
-                        st.dataframe(existing[cols], use_container_width=True)
+                    df = pd.read_csv(uploaded) if uploaded.name.lower().endswith('.csv') else pd.read_excel(uploaded)
+                    df.rename(columns=column_mapping, inplace=True)
+
+                    # Convertir fechas a texto
+                    for date_col in ['fecha_contrato', 'fecha_peticion_adamo', 'fecha_instalacion']:
+                        if date_col in df.columns:
+                            try:
+                                df[date_col] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                            except Exception:
+                                df[date_col] = df[date_col].astype(str)
+
+                    st.success(f"✅ Archivo cargado y columnas mapeadas correctamente. Total filas: {len(df)}")
+
+                    if st.button("💾 Guardar seguimiento en base de datos"):
+                        with st.spinner("Guardando datos en la base de datos..."):
+                            conn = obtener_conexion()
+                            cur = conn.cursor()
+
+                            # Crear tabla si no existe
+                            cur.execute(
+                                '''CREATE TABLE IF NOT EXISTS seguimiento_contratos (
+                                    id INTEGER PRIMARY KEY,
+                                    num_contrato TEXT,
+                                    cliente TEXT,
+                                    coordenadas TEXT,
+                                    estado TEXT,
+                                    fecha_contrato TEXT,
+                                    fecha_peticion_adamo TEXT,
+                                    quien_solicita_a_adamo TEXT,
+                                    fecha_instalacion TEXT,
+                                    apartment_id TEXT
+                                )'''
+                            )
+
+                            # Borrar registros anteriores
+                            cur.execute("SELECT COUNT(*) FROM seguimiento_contratos")
+                            count_old = cur.fetchone()[0]
+                            if count_old > 0:
+                                cur.execute("DELETE FROM seguimiento_contratos")
+                                conn.commit()
+                                cur.execute("DELETE FROM sqlite_sequence WHERE name='seguimiento_contratos'")
+                                conn.commit()
+                                st.info(
+                                    f"ℹ️ Se han borrado {count_old} registros anteriores y reiniciado el contador de IDs.")
+
+                            # Insertar nuevas filas con padding en apartment_id
+                            total = len(df)
+                            progress = st.progress(0)
+                            insert_sql = '''INSERT INTO seguimiento_contratos (
+                                        num_contrato, cliente, coordenadas, estado, fecha_contrato,
+                                        fecha_peticion_adamo, quien_solicita_a_adamo, fecha_instalacion, apartment_id
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+                            for i, row in df.iterrows():
+                                ap_id = row['apartment_id']
+                                try:
+                                    ap_id_int = int(ap_id)
+                                    padded_id = 'P' + str(ap_id_int).zfill(10)
+                                except (ValueError, TypeError):
+                                    padded_id = None
+                                cur.execute(insert_sql, (
+                                    row['num_contrato'], row['cliente'], row['coordenadas'], row['estado'],
+                                    row['fecha_contrato'], row['fecha_peticion_adamo'], row['quien_solicita_a_adamo'],
+                                    row['fecha_instalacion'], padded_id
+                                ))
+                                progress.progress((i + 1) / total)
+
+                            conn.commit()
+
+                            # 1. Actualizar estado
+                            with obtener_conexion() as conn:
+                                cur = conn.cursor()
+                                update_estado_sql = """
+                                    UPDATE datos_uis
+                                    SET estado = (
+                                        SELECT sc.estado
+                                        FROM seguimiento_contratos sc
+                                        WHERE sc.apartment_id = datos_uis.apartment_id
+                                        AND sc.estado IS NOT NULL
+                                        LIMIT 1
+                                    )
+                                    WHERE apartment_id IN (
+                                        SELECT apartment_id FROM seguimiento_contratos WHERE estado IS NOT NULL
+                                    )
+                                """
+                                cur.execute(update_estado_sql)
+                                updated_estado = cur.rowcount
+                                conn.commit()
+
+                            # 2. Actualizar contrato_uis
+                            with obtener_conexion() as conn:
+                                cur = conn.cursor()
+                                update_contrato_sql = """
+                                    UPDATE datos_uis
+                                    SET contrato_uis = (
+                                        SELECT sc.num_contrato
+                                        FROM seguimiento_contratos sc
+                                        WHERE sc.apartment_id = datos_uis.apartment_id
+                                        AND sc.num_contrato IS NOT NULL
+                                        LIMIT 1
+                                    )
+                                    WHERE apartment_id IN (
+                                        SELECT apartment_id FROM seguimiento_contratos WHERE num_contrato IS NOT NULL
+                                    )
+                                """
+                                cur.execute(update_contrato_sql)
+                                updated_contratos = cur.rowcount
+                                conn.commit()
+
+                            # 3. Marcar como 'serviciable = SI' si estado es FINALIZADO
+                            with obtener_conexion() as conn:
+                                cur = conn.cursor()
+                                update_serviciable_sql = """
+                                    UPDATE datos_uis
+                                    SET serviciable = 'SI'
+                                    WHERE apartment_id IN (
+                                        SELECT apartment_id
+                                        FROM seguimiento_contratos
+                                        WHERE TRIM(UPPER(estado)) = 'FINALIZADO'
+                                        AND apartment_id IS NOT NULL
+                                    )
+                                """
+                                cur.execute(update_serviciable_sql)
+                                updated_serviciables = cur.rowcount
+                                conn.commit()
+
+                        # Dar feedback al usuario
+                        st.success(f"✅ Registros insertados correctamente en 'seguimiento_contratos'.")
+                        if updated_estado > 0:
+                            st.info(f"🔄 {updated_estado} registros actualizados con estado.")
+                        else:
+                            st.warning("⚠️ No se actualizó ninguna fila con estado. Revisa los datos.")
+
+                        if updated_contratos > 0:
+                            st.info(f"📝 {updated_contratos} registros actualizados con contrato_uis.")
+                        else:
+                            st.warning("⚠️ No se actualizó ninguna fila con contrato_uis.")
+
+                        if updated_serviciables > 0:
+                            st.info(f"✅ {updated_serviciables} viviendas marcadas como serviciables.")
+                        else:
+                            st.warning("⚠️ No se marcó ninguna vivienda como serviciable.")
+
                 except Exception as e:
-                    st.error(f"❌ Error al cargar registros existentes: {e}")
+                    st.error(f"❌ Error procesando el archivo: {e}")
+
+            if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
+                with st.spinner("Cargando registros de contratos..."):
+                    try:
+                        conn = obtener_conexion()
+                        existing = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
+                        conn.close()
+                        if existing.empty:
+                            st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
+                        else:
+                            cols = st.multiselect("Filtra columnas a mostrar", existing.columns, default=existing.columns,
+                                                  key="cols_existing")
+                            st.dataframe(existing[cols], use_container_width=True)
+                    except Exception as e:
+                        st.error(f"❌ Error al cargar registros existentes: {e}")
 
     # Opción: Visualizar datos de la tabla comercial_rafa
     elif opcion == "Ofertas Comerciales":
-        st.header("Visualizar Ofertas Comerciales")
-        st.info(
-            "ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales, filtrar los datos por etiquetas, "
-            "columnas, buscar elementos concretos y descargar los datos en Excel o CSV."
-        )
+        sub_seccion = option_menu(
+            menu_title=None,
+            options=["Ver Ofertas", "Certificación"],
+            icons=["table", "file-earmark-check"],
+            orientation="horizontal",
+            styles={
+                "container": {
+                    "padding": "0px",
+                    "margin": "0px",
+                    "width": "100%",
+                    "background-color": "#F0F7F2",
+                    "border-radius": "0px"
+                },
+                "icon": {
+                    "color": "#2C5A2E",  # Íconos en verde oscuro
+                    "font-size": "25px"
+                },
+                "nav-link": {
+                    "color": "#2C5A2E",
+                    "font-size": "18px",
+                    "text-align": "center",
+                    "margin": "0px",
+                    "--hover-color": "#66B032",
+                    "border-radius": "0px",
+                },
+                "nav-link-selected": {
+                    "background-color": "#66B032",  # Verde principal corporativo
+                    "color": "white",
+                    "font-weight": "bold"
+                }
+            })
+        if sub_seccion == "Ver Ofertas":
+            st.info("ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales.")
 
-        if "df" in st.session_state:
-            del st.session_state["df"]
+            if "df" in st.session_state:
+                del st.session_state["df"]
 
-        with st.spinner("⏳ Cargando ofertas comerciales..."):
-            try:
-                conn = obtener_conexion()
-                # Consultar ambas tablas
-                query_comercial_rafa = "SELECT * FROM comercial_rafa"
+            with st.spinner("⏳ Cargando ofertas comerciales..."):
+                try:
+                    conn = obtener_conexion()
+                    # Consultar ambas tablas
+                    query_comercial_rafa = "SELECT * FROM comercial_rafa"
 
-                comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
-                conn.close()
+                    comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
+                    conn.close()
 
-                if comercial_rafa_data.empty:
-                    st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
+                    if comercial_rafa_data.empty:
+                        st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
+                        return
+
+                    # Filtrar comercial_rafa para mostrar registros con datos en 'serviciable'
+                    comercial_rafa_data_filtrada = comercial_rafa_data[comercial_rafa_data['serviciable'].notna()]
+
+                    # Unir ambas tablas en un solo DataFrame
+                    if not comercial_rafa_data_filtrada.empty:
+                        combined_data = pd.concat([comercial_rafa_data_filtrada], ignore_index=True)
+
+                except Exception as e:
+                    st.error(f"❌ Error al cargar datos de la base de datos: {e}")
                     return
 
-                # Filtrar comercial_rafa para mostrar registros con datos en 'serviciable'
-                comercial_rafa_data_filtrada = comercial_rafa_data[comercial_rafa_data['serviciable'].notna()]
-
-                # Unir ambas tablas en un solo DataFrame
-                if not comercial_rafa_data_filtrada.empty:
-                    combined_data = pd.concat([comercial_rafa_data_filtrada], ignore_index=True)
-
-            except Exception as e:
-                st.error(f"❌ Error al cargar datos de la base de datos: {e}")
+            if combined_data.empty:
+                st.warning("⚠️ No se encontraron ofertas comerciales finalizadas.")
                 return
 
-        if combined_data.empty:
-            st.warning("⚠️ No se encontraron ofertas comerciales finalizadas.")
-            return
+            # Eliminar columnas duplicadas si las hay
+            if combined_data.columns.duplicated().any():
+                st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
+                combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
 
-        # Eliminar columnas duplicadas si las hay
-        if combined_data.columns.duplicated().any():
-            st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
-            combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
+            # Guardar en sesión de Streamlit
+            st.session_state["df"] = combined_data
 
-        # Guardar en sesión de Streamlit
-        st.session_state["df"] = combined_data
+            columnas = combined_data.columns.tolist()
 
-        columnas = combined_data.columns.tolist()
+            # Configuramos AgGrid con filtros en cabecera y anchos amplios
+            gb = GridOptionsBuilder.from_dataframe(combined_data[columnas])
+            gb.configure_default_column(
+                filter=True,
+                floatingFilter=True,
+                sortable=True,
+                resizable=True,
+                minWidth=120,  # ancho mínimo
+                flex=1  # reparte espacio extra
+            )
+            gridOptions = gb.build()
 
-        #st.dataframe(combined_data[columnas], use_container_width=True)
-        # Configuramos AgGrid con filtros en cabecera y anchos amplios
-        gb = GridOptionsBuilder.from_dataframe(combined_data[columnas])
-        gb.configure_default_column(
-            filter=True,
-            floatingFilter=True,
-            sortable=True,
-            resizable=True,
-            minWidth=120,  # ancho mínimo
-            flex=1  # reparte espacio extra
-        )
-        gridOptions = gb.build()
+            AgGrid(
+                combined_data[columnas],
+                gridOptions=gridOptions,
+                enable_enterprise_modules=False,
+                update_mode=GridUpdateMode.NO_UPDATE,
+                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                fit_columns_on_grid_load=False,
+                height=500,
+                theme='alpine-dark'
+            )
 
-        AgGrid(
-            combined_data[columnas],
-            gridOptions=gridOptions,
-            enable_enterprise_modules=False,
-            update_mode=GridUpdateMode.NO_UPDATE,
-            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-            fit_columns_on_grid_load=False,
-            height=500,
-            theme='alpine-dark'
-        )
+            seleccion_id = st.selectbox("🖼️ Selecciona un Apartment ID para ver su imagen:",
+                                        combined_data["apartment_id"].unique())
 
-        seleccion_id = st.selectbox("🖼️ Selecciona un Apartment ID para ver su imagen:",
-                                    combined_data["apartment_id"].unique())
+            # Filtrar la oferta seleccionada
+            oferta_seleccionada = combined_data[combined_data["apartment_id"] == seleccion_id]
 
-        # Filtrar la oferta seleccionada
-        oferta_seleccionada = combined_data[combined_data["apartment_id"] == seleccion_id]
+            if not oferta_seleccionada.empty:
+                imagen_url = oferta_seleccionada.iloc[0]["fichero_imagen"]
 
-        if not oferta_seleccionada.empty:
-            imagen_url = oferta_seleccionada.iloc[0]["fichero_imagen"]
+                if pd.notna(imagen_url) and imagen_url.strip() != "":
+                    st.image(imagen_url, caption=f"Imagen de la oferta {seleccion_id}", use_column_width=True)
+                else:
+                    st.warning("❌ Esta oferta no tiene una imagen asociada.")
 
-            if pd.notna(imagen_url) and imagen_url.strip() != "":
-                st.image(imagen_url, caption=f"Imagen de la oferta {seleccion_id}", use_column_width=True)
-            else:
-                st.warning("❌ Esta oferta no tiene una imagen asociada.")
-
-        download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"], key="oferta_download")
-
-        if download_format == "Excel":
+            # 🔽 Solo descarga Excel, sin radio
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
                 combined_data[columnas].to_excel(writer, index=False, sheet_name='Ofertas')
             towrite.seek(0)
+
             with st.spinner("Preparando archivo Excel..."):
                 st.download_button(
                     label="📥 Descargar Excel",
@@ -1808,286 +1853,273 @@ def admin_dashboard():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-        elif download_format == "CSV":
-            csv = combined_data[columnas].to_csv(index=False).encode()
-            with st.spinner("Preparando archivo CSV..."):
-                st.download_button(
-                    label="📥 Descargar CSV",
-                    data=csv,
-                    file_name="ofertas_comerciales.csv",
-                    mime="text/csv"
+                # Ver los Apartment IDs disponibles
+            st.markdown("##### Eliminar Oferta Comercial")
+
+            # Desplegable para seleccionar el Apartment ID de la oferta a eliminar
+            apartment_ids = combined_data['apartment_id'].tolist()
+
+            selected_apartment_id = st.selectbox(
+                "Selecciona el Apartment ID de la oferta a eliminar:",
+                ["-- Seleccione --"] + apartment_ids
+            )
+
+            # Verificar la selección
+            st.write(f"Apartment ID seleccionado: {selected_apartment_id}")  # Verificación de la selección
+
+            # Mostrar botón de eliminar solo si un Apartment ID ha sido seleccionado
+            if selected_apartment_id != "-- Seleccione --":
+                if st.button("Eliminar Oferta"):
+                    try:
+                        # Conexión a la base de datos
+                        conn = obtener_conexion()
+
+                        # Ejecutar la eliminación en ambas tablas (comercial_rafa)
+                        query_delete_comercial = f"DELETE FROM comercial_rafa WHERE apartment_id = '{selected_apartment_id}'"
+
+                        # Ejecutar las consultas
+                        conn.execute(query_delete_comercial)
+
+                        # Confirmar eliminación
+                        conn.commit()
+                        conn.close()
+
+                        st.success(f"✅ La oferta con Apartment ID {selected_apartment_id} ha sido eliminada exitosamente.")
+
+                    except Exception as e:
+                        st.error(f"❌ Error al eliminar la oferta: {e}")
+
+            # Desplegable para ofertas con imagen
+            offers_with_image = []
+            for idx, row in combined_data.iterrows():
+                fichero_imagen = row.get("fichero_imagen", None)
+                if fichero_imagen and isinstance(fichero_imagen, str) and os.path.exists(fichero_imagen):
+                    offers_with_image.append((row["apartment_id"], fichero_imagen))
+
+            if offers_with_image:
+                st.markdown("##### Descarga de imágenes de ofertas")
+
+                # Desplegable para seleccionar una oferta
+                option = st.selectbox(
+                    "Selecciona el Apartment ID de la oferta para descargar su imagen:",
+                    ["-- Seleccione --"] + [offer[0] for offer in offers_with_image]
                 )
 
-            # Ver los Apartment IDs disponibles
-        st.markdown("##### Eliminar Oferta Comercial")
+                if option != "-- Seleccione --":
+                    # Buscar la oferta seleccionada
+                    selected_offer = next((offer for offer in offers_with_image if offer[0] == option), None)
+                    if selected_offer:
+                        fichero_imagen = selected_offer[1]
+                        st.image(fichero_imagen, width=200)
 
-        # Desplegable para seleccionar el Apartment ID de la oferta a eliminar
-        apartment_ids = combined_data['apartment_id'].tolist()
+                        # Determinar el tipo de imagen
+                        mime = "image/jpeg"
+                        if fichero_imagen.lower().endswith(".png"):
+                            mime = "image/png"
+                        elif fichero_imagen.lower().endswith((".jpg", ".jpeg")):
+                            mime = "image/jpeg"
 
-        selected_apartment_id = st.selectbox(
-            "Selecciona el Apartment ID de la oferta a eliminar:",
-            ["-- Seleccione --"] + apartment_ids
-        )
+                        # Enlace de descarga individual
+                        with open(fichero_imagen, "rb") as file:
+                            file_data = file.read()
+                        st.download_button(
+                            label="Descargar imagen",
+                            data=file_data,
+                            file_name=os.path.basename(fichero_imagen),
+                            mime=mime
+                        )
 
-        # Verificar la selección
-        st.write(f"Apartment ID seleccionado: {selected_apartment_id}")  # Verificación de la selección
+                # Botón para descargar todas las imágenes en un archivo ZIP
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                    for apt_id, img_path in offers_with_image:
+                        zip_file.write(img_path, arcname=os.path.basename(img_path))
+                zip_buffer.seek(0)
 
-        # Mostrar botón de eliminar solo si un Apartment ID ha sido seleccionado
-        if selected_apartment_id != "-- Seleccione --":
-            if st.button("Eliminar Oferta"):
+                st.download_button(
+                    label="Descargar todas las imágenes",
+                    data=zip_buffer,
+                    file_name="imagenes_ofertas.zip",
+                    mime="application/zip"
+                )
+        elif sub_seccion == "Certificación":
+            # Nueva sección: Generar Certificación Completa
+
+            with st.spinner("⏳ Cargando y procesando datos..."):
                 try:
-                    # Conexión a la base de datos
                     conn = obtener_conexion()
+                    if conn is None:
+                        st.error("❌ No se pudo establecer conexión con la base de datos.")
+                        st.stop()
 
-                    # Ejecutar la eliminación en ambas tablas (comercial_rafa)
-                    query_delete_comercial = f"DELETE FROM comercial_rafa WHERE apartment_id = '{selected_apartment_id}'"
+                    # Paso 1: Cargar ofertas unificadas con info de datos_uis
+                    query_completa = """
+                    SELECT 
+                        ofertas_unificadas.*,
+                        datos.cto_id,
+                        datos.olt,
+                        datos.cto
+                    FROM (
+                        SELECT * FROM comercial_rafa WHERE contrato IS NULL OR LOWER(TRIM(contrato)) != 'pendiente'
+                    ) AS ofertas_unificadas
+                    LEFT JOIN datos_uis datos ON ofertas_unificadas.apartment_id = datos.apartment_id
+                    """
+                    df_ofertas = pd.read_sql(query_completa, conn)
 
-                    # Ejecutar las consultas
-                    conn.execute(query_delete_comercial)
-
-                    # Confirmar eliminación
-                    conn.commit()
+                    # Paso 2: Calcular resumen por CTO
+                    query_ctos = """
+                    WITH visitas AS (
+                        SELECT DISTINCT apartment_id
+                        FROM (
+                            SELECT apartment_id FROM comercial_rafa
+                        )
+                    )
+                    SELECT
+                        d.cto,
+                        COUNT(DISTINCT d.apartment_id) AS total_apartments_en_cto,
+                        SUM(CASE WHEN v.apartment_id IS NOT NULL THEN 1 ELSE 0 END) AS apartments_visitados
+                    FROM datos_uis d
+                    LEFT JOIN visitas v ON d.apartment_id = v.apartment_id
+                    WHERE d.cto IS NOT NULL
+                    GROUP BY d.cto
+                    ORDER BY total_apartments_en_cto DESC
+                    """
+                    cursor = conn.cursor()
+                    cursor.execute(query_ctos)
+                    rows = cursor.fetchall()
+                    cursor.close()
                     conn.close()
 
-                    st.success(f"✅ La oferta con Apartment ID {selected_apartment_id} ha sido eliminada exitosamente.")
+                    df_ctos = pd.DataFrame(rows, columns=["cto", "Total Apartments en CTO", "Apartments Visitados"])
+
+                    # Paso 3: Unir la tabla de ofertas con el resumen por CTO
+                    df_final = df_ofertas.merge(df_ctos, how="left", on="cto")
+
+                    if df_final.empty:
+                        st.warning("⚠️ No se encontraron datos para mostrar.")
+                        st.stop()
+
+                    # ——— Categorías enriquecidas y unificadas para observaciones ———
+                    categorias = {
+                        "Cliente con otro operador": [
+                            "movistar", "adamo", "digi", "vodafone", "orange", "jazztel",
+                            "euskaltel", "netcan", "o2", "yoigo", "masmovil", "másmóvil",
+                            "otro operador", "no se quiere cambiar",
+                            "con el móvil se arreglan", "datos ilimitados de su móvil",
+                            "se apaña con los datos", "se apaña con el móvil",
+                        ],
+                        "Segunda residencia / vacía / cerrada": [
+                            "segunda residencia", "casa vacía", "casa cerrada", "vacacional",
+                            "deshabitada", "abandonada", "cabaña cerrada", "nave cerrada",
+                            "campo de fútbol", "pabellón cerrado", "cerrada", "cerrado", "abandonado", "abandonada",
+                            "Casa en ruinas", "Cabaña en ruinas", "No hay nadie", "Casa secundaria?", "No viven",
+                            "guardar el coche"
+                        ],
+                        "No interesado / no necesita fibra": [
+                            "no quiere", "no le interesa", "no interesado",
+                            "no contratar", "decide no contratar", "hablado con el cliente decide",
+                            "anciano", "persona mayor",
+                            "sin internet", "no necesita fibra", "no necesita internet",
+                            "no necesitan fibra", "consultorio médico", "estación de tren",
+                            "nave", "ganado", "ganadería", "almacén", "cese de actividad",
+                            "negocio cerrado", "bolería cerrada", "casa deshabitada",
+                            "casa en obras", "en obras", "obras", "estación de tren", "ermita",
+                            "estabulación", "estabulacion", "prao", "prado", "no vive nadie", "consultorio",
+                            "patatas", "almacen", "ya no viven", "hace tiempo", "no estan en casa", "no están en casa", "no tiene interes",
+                            "no tiene interés", "casa a vender", "casa a la venta" "boleria cerrada", "bolera cerrada", "NO ESTA INTERESADA",
+                            "HABLADO CON SU HERMANA ME COMENTA Q DE MOMENTO NO ESTA INTERESADA"
+                        ],
+                        "Pendiente / seguimiento": [
+                            "pendiente visita", "pendiente", "dejado contacto", "dejada info",
+                            "dejado folleto", "presentada oferta", "hablar con hijo",
+                            "volver más adelante", "quedar", "me llamará", "pasar mas adelante", "Lo tiene que pensar", "Dejada oferta",
+                            "Explicada la oferta"
+                        ],
+                        "Cliente Verde": [
+                            "contratado con verde", "cliente de verde", "ya es cliente de verde", "verde", "otro comercial"
+                        ],
+                        "Reformas / obra": [
+                            "reforma", "obra", "reformando", "rehabilitando", "en obras"
+                        ],
+                        "Venta / Contrato realizado": [
+                            "venta realizada", "vendido", "venta hecha",
+                            "contrata fibra", "contrato solo fibra", "contrata tarifa", "contrata",
+                            "contrata fibra 1000", "contrata tarifa avanza"
+                        ],
+                        "Sin observaciones": [
+                            ""
+                        ]
+                    }
+
+                    def clasificar_observacion(texto):
+                        # 1) Si no es string o está vacío -> Sin observaciones
+                        if not isinstance(texto, str) or texto.strip() == "":
+                            return "Sin observaciones"
+                        txt = texto.lower()
+
+                        # 2) Match exacto por substring
+                        for cat, claves in categorias.items():
+                            for clave in claves:
+                                if clave and clave in txt:
+                                    return cat
+
+                        # 3) Fuzzy matching
+                        for cat, claves in categorias.items():
+                            for clave in claves:
+                                if clave and fuzz.partial_ratio(clave, txt) > 85:
+                                    return cat
+
+                        return "Otros / sin clasificar"
+
+                    df_final["Categoría Observación"] = df_final["observaciones"].apply(clasificar_observacion)
+
+                    st.info("ℹ️ Se muestran automaticamente clasificadas por categorias, todas las observaciones realizadas por los comerciales. Aquellas que no logran corresponder a una categoria "
+                            "concreta, aparecen sin clasificar.")
+                    # ——————————————————————————————
+
+                    st.session_state["df"] = df_final
+
+                    columnas = st.multiselect(
+                        "📊 Selecciona las columnas a mostrar:",
+                        df_final.columns.tolist(),
+                        default=df_final.columns.tolist()
+                    )
+                    st.dataframe(df_final[columnas], use_container_width=True)
+
+                    # Exportar a Excel
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                        df_final.to_excel(writer, index=False, sheet_name="Certificación")
+                        workbook = writer.book
+                        worksheet = writer.sheets["Certificación"]
+
+                        header_format = workbook.add_format({
+                            "bold": True, "text_wrap": True, "valign": "top",
+                            "fg_color": "#D7E4BC", "border": 1
+                        })
+                        normal_format = workbook.add_format({
+                            "text_wrap": False, "valign": "top", "border": 1
+                        })
+
+                        # Encabezados
+                        for col_num, val in enumerate(df_final.columns):
+                            worksheet.write(0, col_num, val, header_format)
+
+                        # Filas
+                        for row in range(1, len(df_final) + 1):
+                            for col in range(len(df_final.columns)):
+                                v = df_final.iat[row - 1, col]
+                                worksheet.write(row, col, "" if pd.isna(v) else v, normal_format)
+
+                    st.download_button(
+                        label="📥 Obtener certificación",
+                        data=output.getvalue(),
+                        file_name="certificacion_ofertas.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
                 except Exception as e:
-                    st.error(f"❌ Error al eliminar la oferta: {e}")
-
-        # Desplegable para ofertas con imagen
-        offers_with_image = []
-        for idx, row in combined_data.iterrows():
-            fichero_imagen = row.get("fichero_imagen", None)
-            if fichero_imagen and isinstance(fichero_imagen, str) and os.path.exists(fichero_imagen):
-                offers_with_image.append((row["apartment_id"], fichero_imagen))
-
-        if offers_with_image:
-            st.markdown("##### Descarga de imágenes de ofertas")
-
-            # Desplegable para seleccionar una oferta
-            option = st.selectbox(
-                "Selecciona el Apartment ID de la oferta para descargar su imagen:",
-                ["-- Seleccione --"] + [offer[0] for offer in offers_with_image]
-            )
-
-            if option != "-- Seleccione --":
-                # Buscar la oferta seleccionada
-                selected_offer = next((offer for offer in offers_with_image if offer[0] == option), None)
-                if selected_offer:
-                    fichero_imagen = selected_offer[1]
-                    st.image(fichero_imagen, width=200)
-
-                    # Determinar el tipo de imagen
-                    mime = "image/jpeg"
-                    if fichero_imagen.lower().endswith(".png"):
-                        mime = "image/png"
-                    elif fichero_imagen.lower().endswith((".jpg", ".jpeg")):
-                        mime = "image/jpeg"
-
-                    # Enlace de descarga individual
-                    with open(fichero_imagen, "rb") as file:
-                        file_data = file.read()
-                    st.download_button(
-                        label="Descargar imagen",
-                        data=file_data,
-                        file_name=os.path.basename(fichero_imagen),
-                        mime=mime
-                    )
-
-            # Botón para descargar todas las imágenes en un archivo ZIP
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-                for apt_id, img_path in offers_with_image:
-                    zip_file.write(img_path, arcname=os.path.basename(img_path))
-            zip_buffer.seek(0)
-
-            st.download_button(
-                label="Descargar todas las imágenes",
-                data=zip_buffer,
-                file_name="imagenes_ofertas.zip",
-                mime="application/zip"
-            )
-
-        # Nueva sección: Generar Certificación Completa
-        st.markdown(
-            "##### Generar Certificación Completa: Total de UUII visitadas, CTO a las que corresponden, total viviendas por cada CTO"
-        )
-
-        with st.spinner("⏳ Cargando y procesando datos..."):
-            try:
-                conn = obtener_conexion()
-                if conn is None:
-                    st.error("❌ No se pudo establecer conexión con la base de datos.")
-                    st.stop()
-
-                # Paso 1: Cargar ofertas unificadas con info de datos_uis
-                query_completa = """
-                SELECT 
-                    ofertas_unificadas.*,
-                    datos.cto_id,
-                    datos.olt,
-                    datos.cto
-                FROM (
-                    SELECT * FROM comercial_rafa WHERE contrato IS NULL OR LOWER(TRIM(contrato)) != 'pendiente'
-                ) AS ofertas_unificadas
-                LEFT JOIN datos_uis datos ON ofertas_unificadas.apartment_id = datos.apartment_id
-                """
-                df_ofertas = pd.read_sql(query_completa, conn)
-
-                # Paso 2: Calcular resumen por CTO
-                query_ctos = """
-                WITH visitas AS (
-                    SELECT DISTINCT apartment_id
-                    FROM (
-                        SELECT apartment_id FROM comercial_rafa
-                    )
-                )
-                SELECT
-                    d.cto,
-                    COUNT(DISTINCT d.apartment_id) AS total_apartments_en_cto,
-                    SUM(CASE WHEN v.apartment_id IS NOT NULL THEN 1 ELSE 0 END) AS apartments_visitados
-                FROM datos_uis d
-                LEFT JOIN visitas v ON d.apartment_id = v.apartment_id
-                WHERE d.cto IS NOT NULL
-                GROUP BY d.cto
-                ORDER BY total_apartments_en_cto DESC
-                """
-                cursor = conn.cursor()
-                cursor.execute(query_ctos)
-                rows = cursor.fetchall()
-                cursor.close()
-                conn.close()
-
-                df_ctos = pd.DataFrame(rows, columns=["cto", "Total Apartments en CTO", "Apartments Visitados"])
-
-                # Paso 3: Unir la tabla de ofertas con el resumen por CTO
-                df_final = df_ofertas.merge(df_ctos, how="left", on="cto")
-
-                if df_final.empty:
-                    st.warning("⚠️ No se encontraron datos para mostrar.")
-                    st.stop()
-
-                # ——— Categorías enriquecidas y unificadas para observaciones ———
-                categorias = {
-                    "Cliente con otro operador": [
-                        "movistar", "adamo", "digi", "vodafone", "orange", "jazztel",
-                        "euskaltel", "netcan", "o2", "yoigo", "masmovil", "másmóvil",
-                        "otro operador", "no se quiere cambiar",
-                        "con el móvil se arreglan", "datos ilimitados de su móvil",
-                        "se apaña con los datos", "se apaña con el móvil",
-                    ],
-                    "Segunda residencia / vacía / cerrada": [
-                        "segunda residencia", "casa vacía", "casa cerrada", "vacacional",
-                        "deshabitada", "abandonada", "cabaña cerrada", "nave cerrada",
-                        "campo de fútbol", "pabellón cerrado", "cerrada", "cerrado", "abandonado", "abandonada",
-                        "Casa en ruinas", "Cabaña en ruinas", "No hay nadie", "Casa secundaria?", "No viven",
-                        "guardar el coche"
-                    ],
-                    "No interesado / no necesita fibra": [
-                        "no quiere", "no le interesa", "no interesado",
-                        "no contratar", "decide no contratar", "hablado con el cliente decide",
-                        "anciano", "persona mayor",
-                        "sin internet", "no necesita fibra", "no necesita internet",
-                        "no necesitan fibra", "consultorio médico", "estación de tren",
-                        "nave", "ganado", "ganadería", "almacén", "cese de actividad",
-                        "negocio cerrado", "bolería cerrada", "casa deshabitada",
-                        "casa en obras", "en obras", "obras", "estación de tren", "ermita",
-                        "estabulación", "estabulacion", "prao", "prado", "no vive nadie", "consultorio",
-                        "patatas", "almacen", "ya no viven", "hace tiempo", "no estan en casa", "no están en casa", "no tiene interes",
-                        "no tiene interés", "casa a vender", "casa a la venta" "boleria cerrada", "bolera cerrada", "NO ESTA INTERESADA",
-                        "HABLADO CON SU HERMANA ME COMENTA Q DE MOMENTO NO ESTA INTERESADA"
-                    ],
-                    "Pendiente / seguimiento": [
-                        "pendiente visita", "pendiente", "dejado contacto", "dejada info",
-                        "dejado folleto", "presentada oferta", "hablar con hijo",
-                        "volver más adelante", "quedar", "me llamará", "pasar mas adelante", "Lo tiene que pensar", "Dejada oferta",
-                        "Explicada la oferta"
-                    ],
-                    "Cliente Verde": [
-                        "contratado con verde", "cliente de verde", "ya es cliente de verde", "verde", "otro comercial"
-                    ],
-                    "Reformas / obra": [
-                        "reforma", "obra", "reformando", "rehabilitando", "en obras"
-                    ],
-                    "Venta / Contrato realizado": [
-                        "venta realizada", "vendido", "venta hecha",
-                        "contrata fibra", "contrato solo fibra", "contrata tarifa", "contrata",
-                        "contrata fibra 1000", "contrata tarifa avanza"
-                    ],
-                    "Sin observaciones": [
-                        ""
-                    ]
-                }
-
-                def clasificar_observacion(texto):
-                    # 1) Si no es string o está vacío -> Sin observaciones
-                    if not isinstance(texto, str) or texto.strip() == "":
-                        return "Sin observaciones"
-                    txt = texto.lower()
-
-                    # 2) Match exacto por substring
-                    for cat, claves in categorias.items():
-                        for clave in claves:
-                            if clave and clave in txt:
-                                return cat
-
-                    # 3) Fuzzy matching
-                    for cat, claves in categorias.items():
-                        for clave in claves:
-                            if clave and fuzz.partial_ratio(clave, txt) > 85:
-                                return cat
-
-                    return "Otros / sin clasificar"
-
-                df_final["Categoría Observación"] = df_final["observaciones"].apply(clasificar_observacion)
-
-                st.info("ℹ️ Se muestran automaticamente clasificadas por categorias, todas las observaciones realizadas por los comerciales. Aquellas que no logran corresponder a una categoria "
-                        "concreta, aparecen sin clasificar.")
-                # ——————————————————————————————
-
-                st.session_state["df"] = df_final
-
-                columnas = st.multiselect(
-                    "📊 Selecciona las columnas a mostrar:",
-                    df_final.columns.tolist(),
-                    default=df_final.columns.tolist()
-                )
-                st.dataframe(df_final[columnas], use_container_width=True)
-
-                # Exportar a Excel
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                    df_final.to_excel(writer, index=False, sheet_name="Certificación")
-                    workbook = writer.book
-                    worksheet = writer.sheets["Certificación"]
-
-                    header_format = workbook.add_format({
-                        "bold": True, "text_wrap": True, "valign": "top",
-                        "fg_color": "#D7E4BC", "border": 1
-                    })
-                    normal_format = workbook.add_format({
-                        "text_wrap": False, "valign": "top", "border": 1
-                    })
-
-                    # Encabezados
-                    for col_num, val in enumerate(df_final.columns):
-                        worksheet.write(0, col_num, val, header_format)
-
-                    # Filas
-                    for row in range(1, len(df_final) + 1):
-                        for col in range(len(df_final.columns)):
-                            v = df_final.iat[row - 1, col]
-                            worksheet.write(row, col, "" if pd.isna(v) else v, normal_format)
-
-                st.download_button(
-                    label="📥 Obtener certificación",
-                    data=output.getvalue(),
-                    file_name="certificacion_ofertas.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            except Exception as e:
-                st.error(f"❌ Error al generar la certificación completa: {e}")
+                    st.error(f"❌ Error al generar la certificación completa: {e}")
 
     # Opción: Viabilidades (En construcción)
     elif opcion == "Viabilidades":
@@ -2332,6 +2364,7 @@ def admin_dashboard():
                 query = "SELECT usuario_id, accion, detalles, fecha FROM trazabilidad"
                 trazabilidad_data = pd.read_sql(query, conn)
                 conn.close()
+
                 if trazabilidad_data.empty:
                     st.info("No hay registros de trazabilidad para mostrar.")
                 else:
@@ -2343,31 +2376,22 @@ def admin_dashboard():
                                               default=trazabilidad_data.columns.tolist())
                     st.dataframe(trazabilidad_data[columnas], use_container_width=True)
 
-                    download_format = st.radio("Selecciona el formato de descarga:", ["Excel", "CSV"],
-                                               key="trazabilidad_download")
-                    if download_format == "Excel":
-                        towrite = io.BytesIO()
-                        with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                            trazabilidad_data[columnas].to_excel(writer, index=False, sheet_name='Trazabilidad')
-                        towrite.seek(0)
-                        with st.spinner("Preparando archivo Excel..."):
-                            st.download_button(
-                                label="📥 Descargar Excel",
-                                data=towrite,
-                                file_name="trazabilidad.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                    elif download_format == "CSV":
-                        csv = trazabilidad_data[columnas].to_csv(index=False).encode()
-                        with st.spinner("Preparando archivo CSV..."):
-                            st.download_button(
-                                label="📥 Descargar CSV",
-                                data=csv,
-                                file_name="trazabilidad.csv",
-                                mime="text/csv"
-                            )
+                    # ✅ Solo botón de descarga Excel
+                    towrite = io.BytesIO()
+                    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+                        trazabilidad_data[columnas].to_excel(writer, index=False, sheet_name='Trazabilidad')
+                    towrite.seek(0)
+
+                    with st.spinner("Preparando archivo Excel..."):
+                        st.download_button(
+                            label="📥 Descargar Excel",
+                            data=towrite,
+                            file_name="trazabilidad.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
             except Exception as e:
                 st.error(f"❌ Error al cargar la trazabilidad: {e}")
+
 
     elif opcion == "Control de versiones":
         log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
