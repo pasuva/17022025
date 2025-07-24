@@ -1325,6 +1325,29 @@ def obtener_apartment_ids_existentes(cursor):
 def admin_dashboard():
     """Panel del administrador."""
     controller = CookieController(key="cookies")
+    st.markdown(
+        """
+        <style>
+        .footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: #F7FBF9;
+            color: black;
+            text-align: center;
+            padding: 8px 0;
+            font-size: 14px;
+            font-family: 'Segoe UI', sans-serif;
+            z-index: 999;
+        }
+        </style>
+        <div class="footer">
+            <p>© 2025 Verde tu operador · Desarrollado para uso interno</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Sidebar con opción de menú más moderno
     with st.sidebar:
@@ -1440,11 +1463,11 @@ def admin_dashboard():
             orientation="horizontal",  # horizontal para que quede tipo pestañas arriba
             styles={
                 "container": {
-                    "padding": "0px",
+                    "padding": "0!important",
                     "margin": "0px",
-                    "width": "100%",
                     "background-color": "#F0F7F2",
-                    "border-radius": "0px"
+                    "border-radius": "0px",
+                    "max-width":"none"
                 },
                 "icon": {
                     "color": "#2C5A2E",  # Íconos en verde oscuro
@@ -1736,7 +1759,7 @@ def admin_dashboard():
                 "container": {
                     "padding": "0px",
                     "margin": "0px",
-                    "width": "100%",
+                    "max-width":"none",
                     "background-color": "#F0F7F2",
                     "border-radius": "0px"
                 },
@@ -1755,7 +1778,7 @@ def admin_dashboard():
                 "nav-link-selected": {
                     "background-color": "#66B032",  # Verde principal corporativo
                     "color": "white",
-                    "font-weight": "bold"
+                    "font-weight": "bold",
                 }
             })
         if sub_seccion == "Ver Ofertas":

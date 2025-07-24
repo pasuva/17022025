@@ -1,4 +1,5 @@
 import streamlit as st
+from branca.element import Template, MacroElement
 from folium.plugins import MarkerCluster
 import pandas as pd
 import os, re, time, folium, sqlitecloud
@@ -125,6 +126,29 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
     controller = CookieController(key="cookies")
+    st.markdown(
+        """
+        <style>
+        .footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: #F7FBF9;
+            color: black;
+            text-align: center;
+            padding: 8px 0;
+            font-size: 14px;
+            font-family: 'Segoe UI', sans-serif;
+            z-index: 999;
+        }
+        </style>
+        <div class="footer">
+            <p>© 2025 Verde tu operador · Desarrollado para uso interno</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     with st.sidebar:
         st.sidebar.markdown("""
@@ -231,13 +255,6 @@ def comercial_dashboard():
     marker_icon_type = 'info-sign'
 
     if menu_opcion == "Ofertas Comerciales":
-        st.markdown("""
-         🟢 Serviciable (Finalizado)
-         🟠 Oferta (Contrato: Sí)
-         ⚫ Oferta (No Interesado)
-         🔵 Sin Oferta
-         🔴 No Serviciable
-        """)
 
         log_trazabilidad(comercial, "Visualización de Dashboard", "El comercial visualizó la sección de Ofertas Comerciales.")
 
@@ -311,7 +328,6 @@ def comercial_dashboard():
                 # Consulta para obtener apartamentos no servicibles
                 query_serviciable = "SELECT apartment_id FROM comercial_rafa WHERE LOWER(serviciable) = 'no'"
                 serviciable_no_df = pd.read_sql(query_serviciable, conn)
-                serviciable_no_set = set(serviciable_no_df["apartment_id"])  # Set de IDs no servicibles
 
                 with st.spinner("⏳ Cargando mapa..."):
                     m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
@@ -375,7 +391,36 @@ def comercial_dashboard():
                             icon=folium.Icon(color=marker_color, icon=marker_icon_type)
                         ).add_to(cluster_layer)
 
-                    map_data = st_folium(m, height=500, width=700)
+                    legend = """
+                                {% macro html() %}
+                                <div style="
+                                    position: fixed; 
+                                    bottom: 20px; left: 0px; width: 190px; 
+                                    z-index:9999; 
+                                    font-size:14px;
+                                    background-color: white;
+                                    color: black;
+                                    border:2px solid grey;
+                                    border-radius:8px;
+                                    padding: 10px;
+                                    box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+                                ">
+                                <b>Leyenda</b><br>
+                                <i style="color:green;">●</i> Serviciable y Finalizado<br>
+                                <i style="color:red;">●</i> No serviciable<br>
+                                <i style="color:orange;">●</i> Contrato Sí<br>
+                                <i style="color:black;">●</i> No interesado<br>
+                                <i style="color:purple;">●</i> Incidencia<br>
+                                <i style="color:blue;">●</i> No Visitado<br>
+                                </div>
+                                {% endmacro %}
+                                """
+
+                    macro = MacroElement()
+                    macro._template = Template(legend)
+                    m.get_root().add_child(macro)
+
+                    map_data = st_folium(m, height=680, width="100%")
                 conn.close()
             except Exception as e:
                 st.error(f"❌ Error al cargar los datos: {e}")
@@ -644,7 +689,7 @@ def viabilidades_section():
 
     # Mostrar el mapa y capturar clics
     Geocoder().add_to(m)
-    map_data = st_folium(m, height=500, width=700)
+    map_data = st_folium(m, height=680, width="100%")
 
     # Detectar el clic para agregar el marcador nuevo
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:

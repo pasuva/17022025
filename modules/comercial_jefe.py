@@ -93,6 +93,29 @@ def cargar_viabilidades():
 def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
     controller = CookieController(key="cookies")
+    st.markdown(
+        """
+        <style>
+        .footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: #F7FBF9;
+            color: black;
+            text-align: center;
+            padding: 8px 0;
+            font-size: 14px;
+            font-family: 'Segoe UI', sans-serif;
+            z-index: 999;
+        }
+        </style>
+        <div class="footer">
+            <p>© 2025 Verde tu operador · Desarrollado para uso interno</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Panel lateral de bienvenida y cierre de sesión
     st.sidebar.markdown("""
