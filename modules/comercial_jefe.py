@@ -244,7 +244,7 @@ def mostrar_mapa_de_asignaciones():
             "Usa el filtro de Provincia, Municipio y Población para poder ver los puntos que necesites.")
     # Filtro por provincia
     provincias = datos_uis['provincia'].unique()
-    provincia_seleccionada = st.selectbox("Selecciona una provincia", provincias)
+    provincia_seleccionada = st.selectbox("Seleccione una provincia:", provincias)
     datos_uis = datos_uis[datos_uis["provincia"] == provincia_seleccionada]
 
     # Limpiar latitud y longitud
@@ -265,16 +265,15 @@ def mostrar_mapa_de_asignaciones():
 
     col1, col2 = st.columns([3, 3])
     with col2:
-        st.subheader("Asignación de Zonas para Comerciales")
-        accion = st.radio("Seleccione acción", ["Asignar Zona", "Desasignar Zona"], key="accion")
+        accion = st.radio("Seleccione la acción requerida:", ["Asignar Zona", "Desasignar Zona"], key="accion")
 
         if accion == "Asignar Zona":
             municipios = sorted(datos_uis['municipio'].dropna().unique())
-            municipio_sel = st.selectbox("Seleccione Municipio", municipios, key="municipio_sel")
+            municipio_sel = st.selectbox("Seleccione un municipio:", municipios, key="municipio_sel")
             poblacion_sel = None
             if municipio_sel:
                 poblaciones = sorted(datos_uis[datos_uis['municipio'] == municipio_sel]['poblacion'].dropna().unique())
-                poblacion_sel = st.selectbox("Seleccione Población", poblaciones, key="poblacion_sel")
+                poblacion_sel = st.selectbox("Seleccione una población:", poblaciones, key="poblacion_sel")
 
             # Mostrar comerciales filtrados según usuario
             comerciales_seleccionados = st.multiselect("Asignar equitativamente a:", comerciales_disponibles,
@@ -463,8 +462,13 @@ def mostrar_mapa_de_asignaciones():
                             log_trazabilidad(st.session_state["username"], "Desasignación múltiple",
                                              f"Zona {municipio_sel}-{poblacion_sel} desasignada de {comercial_a_eliminar}")
 
-        st.info("Para revisar las asignaciones ya realizadas, dirigeté al menú ver datos. En el verás que hay 3 tablas, la primera son las asignaciones realizadas, "
-                "la segunda son las ofertas y visitas realizadas por los comerciales y su estado y la última tabla son las viabilidades reportadas por los comerciales.")
+        st.info(
+            "Para revisar las asignaciones que has realizado y los reportes enviados por los comerciales, dirígete al menú **Ver Datos**. "
+            "Ahora encontrarás un submenú con tres secciones: "
+            "**Zonas asignadas**: muestra las asignaciones realizadas por el gestor. "
+            "**Ofertas realizadas**: detalla las visitas y ofertas gestionadas por los comerciales, junto a su estado actual. "
+            "**Viabilidades estudiadas**: presenta el historial completo de viabilidades reportadas por los comerciales."
+        )
 
     # --- Generar el mapa (columna izquierda) ---
     with col1:
