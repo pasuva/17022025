@@ -117,7 +117,7 @@ def mapa_dashboard():
         unsafe_allow_html=True
     )
 
-    # Panel lateral de bienvenida y cierre de sesión
+    # Panel lateral de bienvenida
     st.sidebar.markdown("""
         <style>
             .user-circle {
@@ -153,6 +153,43 @@ def mapa_dashboard():
     """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
 
     with st.sidebar:
+        # Datos y menú
+        datos_uis, comercial_rafa = cargar_datos()
+        total_ofertas = cargar_total_ofertas()
+        viabilidades = cargar_viabilidades()
+
+        opcion = option_menu(
+            menu_title=None,
+            options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Descargar Datos"],
+            icons=["globe", "check-circle", "bar-chart", "download"],
+            menu_icon="list",
+            default_index=0,
+            styles={
+                "container": {
+                    "padding": "0px",
+                    "background-color": "#F0F7F2"
+                },
+                "icon": {
+                    "color": "#2C5A2E",
+                    "font-size": "18px"
+                },
+                "nav-link": {
+                    "color": "#2C5A2E",
+                    "font-size": "16px",
+                    "text-align": "left",
+                    "margin": "0px",
+                    "--hover-color": "#66B032",
+                    "border-radius": "0px",
+                },
+                "nav-link-selected": {
+                    "background-color": "#66B032",
+                    "color": "white",
+                    "font-weight": "bold"
+                }
+            }
+        )
+
+        # Botón de cerrar sesión debajo del menú
         if st.button("Cerrar sesión"):
             detalles = f"El gestor comercial {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
@@ -165,52 +202,17 @@ def mapa_dashboard():
             st.session_state["session_id"] = ""
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
-        st.sidebar.markdown("---")
 
-        # Por ejemplo, aquí cargas o creas los DataFrames:
-        datos_uis, comercial_rafa = cargar_datos() # función que devuelve DataFrame datos_uis
-        total_ofertas = cargar_total_ofertas()  # función que devuelve total_ofertas
-        viabilidades = cargar_viabilidades()  # función que devuelve viabilidades
-
-        opcion = option_menu(
-            menu_title=None,
-            options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Descargar Datos"],
-            icons=["globe", "check-circle", "bar-chart", "download"],
-            menu_icon="list",
-            default_index=0,
-            styles={
-                "container": {
-                    "padding": "0px",
-                    "background-color": "#F0F7F2"  # Fondo claro coherente con el tema
-                },
-                "icon": {
-                    "color": "#2C5A2E",  # Íconos en verde oscuro
-                    "font-size": "18px"
-                },
-                "nav-link": {
-                    "color": "#2C5A2E",
-                    "font-size": "16px",
-                    "text-align": "left",
-                    "margin": "0px",
-                    "--hover-color": "#66B032",
-                    "border-radius": "0px",
-                },
-                "nav-link-selected": {
-                    "background-color": "#66B032",  # Verde principal corporativo
-                    "color": "white",
-                    "font-weight": "bold"
-                }
-            }
-        )
-
+    # Lógica principal según la opción
     if opcion == "Mapa Asignaciones":
         mostrar_mapa_de_asignaciones()
     elif opcion == "Viabilidades":
-        mostrar_viabilidades()  # función que crearás después
+        mostrar_viabilidades()
     elif opcion == "Ver Datos":
-        mostrar_descarga_datos()  # función que crearás después
+        mostrar_descarga_datos()
     elif opcion == "Descargar Datos":
         download_datos(datos_uis, total_ofertas, viabilidades)
+
 
 def mostrar_mapa_de_asignaciones():
     st.title("Mapa Asignaciones")
@@ -570,240 +572,312 @@ def mostrar_mapa_de_asignaciones():
             st_folium(m, height=500, width=700)
 
 def mostrar_descarga_datos():
-    st.title("Ver Datos")
+    sub_seccion = option_menu(
+        menu_title=None,
+        options=["Zonas asignadas", "Ofertas realizadas", "Viabilidades estudiadas"],
+        icons = ["geo-alt", "bar-chart-line", "check2-square"],
+        default_index=0,
+        orientation="horizontal",
+        styles={
+            "container": {
+                "padding": "0!important",
+                "margin": "0px",
+                "background-color": "#F0F7F2",
+                "border-radius": "0px",
+                "max-width": "none"
+            },
+            "icon": {
+                "color": "#2C5A2E",
+                "font-size": "25px"
+            },
+            "nav-link": {
+                "color": "#2C5A2E",
+                "font-size": "18px",
+                "text-align": "center",
+                "margin": "0px",
+                "--hover-color": "#66B032",
+                "border-radius": "0px",
+            },
+            "nav-link-selected": {
+                "background-color": "#66B032",
+                "color": "white",
+                "font-weight": "bold"
+            }
+        }
+    )
 
+    # Conexión y datos comunes
     conn = get_db_connection()
-
-    # Usuarios a excluir para Juan
-    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto"]
     username = st.session_state.get("username", "").strip().lower()
+    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto"]
+    placeholders = ",".join("?" for _ in excluir_para_juan)
 
+    # Cargar datos según el usuario
     if username == "juan":
-        placeholders = ",".join("?" for _ in excluir_para_juan)
-
-        # Filtrar assigned_zones excluyendo esos comerciales
-        query_assigned_zones = f"""
+        assigned_zones = pd.read_sql(
+            f"""
             SELECT DISTINCT municipio, poblacion, comercial
             FROM comercial_rafa
             WHERE LOWER(comercial) NOT IN ({placeholders})
-        """
-        assigned_zones = pd.read_sql(query_assigned_zones, conn, params=[c.lower() for c in excluir_para_juan])
+            """, conn, params=[c.lower() for c in excluir_para_juan])
 
-        # Filtrar total_ofertas excluyendo esos comerciales
-        query_total_ofertas = f"""
+        total_ofertas = pd.read_sql(
+            f"""
             SELECT DISTINCT *
             FROM comercial_rafa
             WHERE LOWER(comercial) NOT IN ({placeholders})
-        """
-        total_ofertas = pd.read_sql(query_total_ofertas, conn, params=[c.lower() for c in excluir_para_juan])
+            """, conn, params=[c.lower() for c in excluir_para_juan])
     else:
-        assigned_zones = pd.read_sql("SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
-        total_ofertas = pd.read_sql("SELECT DISTINCT * FROM comercial_rafa", conn)
+        assigned_zones = pd.read_sql(
+            "SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
+        total_ofertas = pd.read_sql(
+            "SELECT DISTINCT * FROM comercial_rafa", conn)
 
-    # Obtener contratos activos
-    query_contratos = """
+    # Contratos activos
+    df_contratos = pd.read_sql("""
         SELECT apartment_id
         FROM seguimiento_contratos
         WHERE TRIM(LOWER(estado)) = 'finalizado'
-    """
-    df_contratos = pd.read_sql(query_contratos, conn)
+    """, conn)
 
     conn.close()
 
-    # Agregar columna 'Contrato_Activo' a total_ofertas
+    # Marcar contratos activos
     total_ofertas['Contrato_Activo'] = total_ofertas['apartment_id'].isin(df_contratos['apartment_id']).map(
-        {True: '✅ Activo', False: '❌ No Activo'})
+        {True: '✅ Activo', False: '❌ No Activo'}
+    )
 
-    if not assigned_zones.empty:
-        st.info("ℹ️ Zonas ya asignadas:")
+    # Subsección: Zonas asignadas
+    if sub_seccion == "Zonas asignadas":
+        st.info("ℹ️ Zonas ya asignadas: Visualización del total de asignaciones realizadas por el gestor.")
         st.dataframe(assigned_zones, use_container_width=True)
 
-    log_trazabilidad(st.session_state["username"], "Visualización de mapa", "Usuario visualizó el mapa de Rafa Sanz.")
-    st.info("ℹ️ Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
-    st.dataframe(total_ofertas, use_container_width=True)
+    # Sub: Ofertas realizadas
+    elif sub_seccion == "Ofertas realizadas":
+        log_trazabilidad(username, "Visualización de mapa", "Usuario visualizó el mapa de Rafa Sanz.")
+        st.info("ℹ️ Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
+        st.dataframe(total_ofertas, use_container_width=True)
 
-    # 🔎 Consulta general de TODAS las viabilidades
-    conn = get_db_connection()
-    viabilidades = pd.read_sql("""
-         SELECT *
-         FROM viabilidades
-         ORDER BY id DESC
-     """, conn)
-    conn.close()
+    # Sub: Viabilidades estudiadas
+    elif sub_seccion == "Viabilidades estudiadas":
+        conn = get_db_connection()
+        viabilidades = pd.read_sql("""
+            SELECT *
+            FROM viabilidades
+            ORDER BY id DESC
+        """, conn)
+        conn.close()
 
-    # 🔒 Filtro por usuario
-    username = st.session_state.get("username", "").strip().lower()
-
-    if username == "juan":
-        # Excluir ciertos comerciales
-        comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela"]
+        viabilidades['fecha_viabilidad'] = pd.to_datetime(viabilidades['fecha_viabilidad'], errors='coerce')
         viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
-        viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
 
-    # 📋 Mostrar tabla resultante
-    st.info("ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
-    st.dataframe(viabilidades, use_container_width=True)
+        if username == "juan":
+            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela"]
+            viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
+
+        st.info("ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
+        st.dataframe(viabilidades, use_container_width=True)
 
 def mostrar_viabilidades():
+    sub_seccion = option_menu(
+        menu_title=None,  # Sin título encima del menú
+        options=["Viabilidades pendientes de confirmación", "Seguimiento de viabilidades"],
+        icons = ["exclamation-circle", "clipboard-check"],  # Puedes cambiar iconos
+        default_index=0,
+        orientation="horizontal",  # horizontal para que quede tipo pestañas arriba
+        styles={
+            "container": {
+                "padding": "0!important",
+                "margin": "0px",
+                "background-color": "#F0F7F2",
+                "border-radius": "0px",
+                "max-width": "none"
+            },
+            "icon": {
+                "color": "#2C5A2E",  # Íconos en verde oscuro
+                "font-size": "25px"
+            },
+            "nav-link": {
+                "color": "#2C5A2E",
+                "font-size": "18px",
+                "text-align": "center",
+                "margin": "0px",
+                "--hover-color": "#66B032",
+                "border-radius": "0px",
+            },
+            "nav-link-selected": {
+                "background-color": "#66B032",  # Verde principal corporativo
+                "color": "white",
+                "font-weight": "bold"
+            }
+        }
+    )
+    if sub_seccion == "Viabilidades pendientes de confirmación":
+        # 🔗 Conexión única al iniciar la sección
+        conn = get_db_connection()
 
-    # 🔗 Conexión única al iniciar la sección
-    conn = get_db_connection()
+        # 1️⃣  Descargar viabilidades aún sin confirmar (con lat/lon)
+        # 🧑 Usuario actual
+        username = st.session_state.get("username", "").strip().lower()
 
-    # 1️⃣  Descargar viabilidades aún sin confirmar (con lat/lon)
-    # 🧑 Usuario actual
-    username = st.session_state.get("username", "").strip().lower()
+        # ❗Lista de comerciales que Juan no debe ver
+        excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto"]
 
-    # ❗Lista de comerciales que Juan no debe ver
-    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto"]
+        # 🧠 Construcción dinámica del SQL
+        if username == "juan":
+            placeholders = ",".join("?" for _ in excluir_para_juan)
+            query = f"""
+                SELECT id,
+                       provincia, municipio, poblacion,
+                       vial, numero, letra,
+                       latitud, longitud,
+                       serviciable,
+                       usuario AS comercial_reporta,
+                       confirmacion_rafa
+                FROM viabilidades
+                WHERE (confirmacion_rafa IS NULL OR confirmacion_rafa = '')
+                  AND LOWER(usuario) NOT IN ({placeholders})
+                  AND LOWER(usuario) NOT IN ('marian', 'rafa sanz', 'rebe')
+            """
+            df_viab = pd.read_sql(query, conn, params=[c.lower() for c in excluir_para_juan])
+        else:
+            df_viab = pd.read_sql("""
+                SELECT id,
+                       provincia, municipio, poblacion,
+                       vial, numero, letra,
+                       latitud, longitud,
+                       serviciable,
+                       usuario AS comercial_reporta,
+                       confirmacion_rafa
+                FROM viabilidades
+                WHERE confirmacion_rafa IS NULL OR confirmacion_rafa = ''
+            """, conn)
 
-    # 🧠 Construcción dinámica del SQL
-    if username == "juan":
-        placeholders = ",".join("?" for _ in excluir_para_juan)
-        query = f"""
-            SELECT id,
-                   provincia, municipio, poblacion,
-                   vial, numero, letra,
-                   latitud, longitud,
-                   serviciable,
-                   usuario AS comercial_reporta,
-                   confirmacion_rafa
-            FROM viabilidades
-            WHERE (confirmacion_rafa IS NULL OR confirmacion_rafa = '')
-              AND LOWER(usuario) NOT IN ({placeholders})
-        """
-        df_viab = pd.read_sql(query, conn, params=[c.lower() for c in excluir_para_juan])
-    else:
-        df_viab = pd.read_sql("""
-            SELECT id,
-                   provincia, municipio, poblacion,
-                   vial, numero, letra,
-                   latitud, longitud,
-                   serviciable,
-                   usuario AS comercial_reporta,
-                   confirmacion_rafa
-            FROM viabilidades
-            WHERE confirmacion_rafa IS NULL OR confirmacion_rafa = ''
-        """, conn)
+        # 2️⃣  Listas de usuarios por rol
+        comerciales_rafa = pd.read_sql(
+            "SELECT username FROM usuarios WHERE role = 'comercial_rafa'", conn
+        )["username"].tolist()
+        admins = pd.read_sql(
+            "SELECT email FROM usuarios WHERE role = 'admin'", conn
+        )["email"].tolist()
 
-    # 2️⃣  Listas de usuarios por rol
-    comerciales_rafa = pd.read_sql(
-        "SELECT username FROM usuarios WHERE role = 'comercial_rafa'", conn
-    )["username"].tolist()
-    admins = pd.read_sql(
-        "SELECT email FROM usuarios WHERE role = 'admin'", conn
-    )["email"].tolist()
+        st.info("""ℹ️ Desde este panel podrás: Revisar cuáles están pendientes de confirmación y reasignar una viabilidad a otro comercial, si lo consideras necesario.
 
-    st.subheader("Viabilidades pendientes de confirmación")
+        🔔 NOTA: Para que una viabilidad sea enviada a la oficina de administración y comience su estudio, es imprescindible que la confirmes.  
+        Solo deben ser confirmadas aquellas que, tras tu revisión, consideres aptas para recibir un estudio y presupuesto.
+        
+        📝 ¿Cómo confirmar una viabilidad? Haz clic sobre cualquier viabilidad del listado: se desplegará su descripción, un enlace directo a Google Maps, 
+        la opción de reasignación y un botón para confirmar.
+        """)
 
-    if df_viab.empty:
-        st.success("🎉No hay viabilidades pendientes.")
-    else:
-        for _, row in df_viab.iterrows():
+        if df_viab.empty:
+            st.success("🎉No hay viabilidades pendientes de confirmación.")
+        else:
+            for _, row in df_viab.iterrows():
 
-            # Si esta viabilidad ya fue gestionada en esta sesión, la ocultamos
-            if st.session_state.get(f"ocultar_{row.id}"):
-                continue
+                # Si esta viabilidad ya fue gestionada en esta sesión, la ocultamos
+                if st.session_state.get(f"ocultar_{row.id}"):
+                    continue
 
-            with st.expander(
-                    f"ID{row.id} — {row.municipio} / {row.vial} "
-                    f"{row.numero}{row.letra or ''}",
-                    expanded=False
-            ):
-                st.markdown(
-                    f"**Comercial que la envió:** {row.comercial_reporta}<br>"
-                    f"**Serviciable:** {row.serviciable or 'Sin dato'}",
-                    unsafe_allow_html=True
-                )
-
-                # Link GoogleMaps
-                if pd.notna(row.latitud) and pd.notna(row.longitud):
-                    maps_url = (
-                        f"https://www.google.com/maps/search/?api=1"
-                        f"&query={row.latitud},{row.longitud}"
+                with st.expander(
+                        f"ID{row.id} — {row.municipio} / {row.vial} "
+                        f"{row.numero}{row.letra or ''}",
+                        expanded=False
+                ):
+                    st.markdown(
+                        f"**Comercial que la envió:** {row.comercial_reporta}<br>"
+                        f"**Serviciable:** {row.serviciable or 'Sin dato'}",
+                        unsafe_allow_html=True
                     )
-                    st.markdown(f"[🌍Ver en GoogleMaps]({maps_url})")
 
-                col_ok, col_rea = st.columns([1, 2], gap="small")
+                    # Link GoogleMaps
+                    if pd.notna(row.latitud) and pd.notna(row.longitud):
+                        maps_url = (
+                            f"https://www.google.com/maps/search/?api=1"
+                            f"&query={row.latitud},{row.longitud}"
+                        )
+                        st.markdown(f"[🌍Ver en GoogleMaps]({maps_url})")
 
-                # --------------- CONFIRMAR ----------------
-                with col_ok:
-                    if st.button("✅Confirmar", key=f"ok_{row.id}"):
-                        with st.spinner("Confirmando viabilidad…"):
-                            conn.execute(
-                                "UPDATE viabilidades SET confirmacion_rafa = 'OK' WHERE id = ?",
-                                (row.id,)
-                            )
-                            conn.commit()
+                    col_ok, col_rea = st.columns([1, 2], gap="small")
 
-                            for email_admin in admins:
-                                correo_confirmacion_viab_admin(
-                                    destinatario=email_admin,
-                                    id_viab=row.id,
-                                    comercial_orig=row.comercial_reporta
+                    # --------------- CONFIRMAR ----------------
+                    with col_ok:
+                        if st.button("✅Confirmar", key=f"ok_{row.id}"):
+                            with st.spinner("Confirmando viabilidad…"):
+                                conn.execute(
+                                    "UPDATE viabilidades SET confirmacion_rafa = 'OK' WHERE id = ?",
+                                    (row.id,)
                                 )
-
-                        st.success(f"Viabilidad {row.id} confirmada.")
-                        st.session_state[f"ocultar_{row.id}"] = True  # Oculta la fila
-
-                # --------------- REASIGNAR ----------------
-                with col_rea:
-                    destinos = [c for c in comerciales_rafa if c != row.comercial_reporta]
-                    nuevo_com = st.selectbox(
-                        "🔄Reasignar a",
-                        options=[""] + destinos,
-                        key=f"sel_{row.id}"
-                    )
-
-                    if st.button("↪️Reasignar", key=f"reasig_{row.id}"):
-                        if not nuevo_com:
-                            st.warning("Selecciona un comercial para reasignar.")
-                        else:
-                            with st.spinner("Reasignando viabilidad…"):
-                                conn.execute("""
-                                    UPDATE viabilidades
-                                    SET usuario = ?, confirmacion_rafa = 'Reasignada'
-                                    WHERE id = ?
-                                """, (nuevo_com, row.id))
                                 conn.commit()
 
-                                correo_reasignacion_saliente(
-                                    destinatario=row.comercial_reporta,
-                                    id_viab=row.id,
-                                    nuevo_comercial=nuevo_com
-                                )
-                                correo_reasignacion_entrante(
-                                    destinatario=nuevo_com,
-                                    id_viab=row.id,
-                                    comercial_orig=row.comercial_reporta
-                                )
+                                for email_admin in admins:
+                                    correo_confirmacion_viab_admin(
+                                        destinatario=email_admin,
+                                        id_viab=row.id,
+                                        comercial_orig=row.comercial_reporta
+                                    )
 
-                            st.success(f"Viabilidad {row.id} reasignada a {nuevo_com}.")
+                            st.success(f"Viabilidad {row.id} confirmada.")
+                            st.session_state[f"ocultar_{row.id}"] = True  # Oculta la fila
 
-    # 🔒 Cerrar la conexión al final
-    conn.close()
+                    # --------------- REASIGNAR ----------------
+                    with col_rea:
+                        destinos = [c for c in comerciales_rafa if c != row.comercial_reporta]
+                        nuevo_com = st.selectbox(
+                            "🔄Reasignar a",
+                            options=[""] + destinos,
+                            key=f"sel_{row.id}"
+                        )
 
-    # 🔎 Consulta general de TODAS las viabilidades
-    conn = get_db_connection()
-    viabilidades = pd.read_sql("""
-        SELECT *
-        FROM viabilidades
-        ORDER BY id DESC
-    """, conn)
-    conn.close()
+                        if st.button("↪️Reasignar", key=f"reasig_{row.id}"):
+                            if not nuevo_com:
+                                st.warning("Selecciona un comercial para reasignar.")
+                            else:
+                                with st.spinner("Reasignando viabilidad…"):
+                                    conn.execute("""
+                                        UPDATE viabilidades
+                                        SET usuario = ?, confirmacion_rafa = 'Reasignada'
+                                        WHERE id = ?
+                                    """, (nuevo_com, row.id))
+                                    conn.commit()
 
-    # 🔒 Filtro por usuario
-    username = st.session_state.get("username", "").strip().lower()
+                                    correo_reasignacion_saliente(
+                                        destinatario=row.comercial_reporta,
+                                        id_viab=row.id,
+                                        nuevo_comercial=nuevo_com
+                                    )
+                                    correo_reasignacion_entrante(
+                                        destinatario=nuevo_com,
+                                        id_viab=row.id,
+                                        comercial_orig=row.comercial_reporta
+                                    )
 
-    if username == "juan":
-        # Excluir ciertos comerciales
-        comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela"]
-        viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
-        viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
+                                st.success(f"Viabilidad {row.id} reasignada a {nuevo_com}.")
 
-    # 📋 Mostrar tabla resultante
-    st.markdown("---")
-    st.subheader("Listado completo de viabilidades")
-    st.dataframe(viabilidades, use_container_width=True)
+        # 🔒 Cerrar la conexión al final
+        conn.close()
+    if sub_seccion == "Seguimiento de viabilidades":
+        # 🔎 Consulta general de TODAS las viabilidades
+        conn = get_db_connection()
+        viabilidades = pd.read_sql("""
+            SELECT *
+            FROM viabilidades
+            ORDER BY id DESC
+        """, conn)
+        conn.close()
+
+        # 🔒 Filtro por usuario
+        username = st.session_state.get("username", "").strip().lower()
+
+        if username == "juan":
+            # Excluir ciertos comerciales
+            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela","marian","rebe","rafa sanz"]
+            viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
+            viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
+
+        # 📋 Mostrar tabla resultante
+        st.info("ℹ️ Listado completo de viabilidades y su estado actual.")
+        st.dataframe(viabilidades, use_container_width=True)
 
 def download_datos(datos_uis, total_ofertas, viabilidades):
 
@@ -821,7 +895,8 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
             if not isinstance(df, pd.DataFrame):
                 st.warning(f"No hay datos válidos para descargar en la hoja '{sheet_name}'.")
                 return
-
+        if 'fecha_viabilidad' in viabilidades.columns:
+            viabilidades['fecha_viabilidad'] = pd.to_datetime(viabilidades['fecha_viabilidad'], errors='coerce')
         with io.BytesIO() as output:
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 for sheet_name, df in dfs_dict.items():

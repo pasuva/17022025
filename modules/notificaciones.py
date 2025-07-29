@@ -145,7 +145,7 @@ def correo_confirmacion_viab_admin(destinatario, id_viab, comercial_orig):
     contenido = {
         "mensaje": (
             f"La viabilidad <strong>#{id_viab}</strong>, enviada por "
-            f"<strong>{comercial_orig}</strong>, ha sido confirmada por Rafa."
+            f"<strong>{comercial_orig}</strong>, ha sido confirmada por el Gestor Comercial."
         ),
         "Descripción": (
             "Ya está lista para continuar su flujo de trabajo."
