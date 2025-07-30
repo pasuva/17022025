@@ -578,8 +578,8 @@ def mostrar_mapa_de_asignaciones():
 def mostrar_descarga_datos():
     sub_seccion = option_menu(
         menu_title=None,
-        options=["Zonas asignadas", "Ofertas realizadas", "Viabilidades estudiadas"],
-        icons = ["geo-alt", "bar-chart-line", "check2-square"],
+        options=["Zonas asignadas", "Ofertas realizadas", "Viabilidades estudiadas", "Datos totales"],
+        icons = ["geo-alt", "bar-chart-line", "check2-square", "database"],
         default_index=0,
         orientation="horizontal",
         styles={
@@ -676,11 +676,32 @@ def mostrar_descarga_datos():
         viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
 
         if username == "juan":
-            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela"]
+            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz"]
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
 
         st.info("ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
         st.dataframe(viabilidades, use_container_width=True)
+
+
+    elif sub_seccion == "Datos totales":
+        st.info("ℹ️ Visualización total de los datos")
+        username = st.session_state.get("username", "").strip().lower()
+        # Conectar a la base de datos y leer la tabla
+        conn = get_db_connection()
+        datos_uis = pd.read_sql("SELECT apartment_id, address_id, provincia, municipio, poblacion, vial numero, parcela_catastral, "
+                                "letra, cp, olt, cto, latitud, longitud FROM datos_uis", conn)
+        conn.close()
+        if username == "juan":
+            # Solo Lugo y Asturias
+            datos_filtrados = datos_uis[datos_uis['provincia'].str.strip().str.lower().isin(["lugo", "asturias"])]
+            st.dataframe(datos_filtrados, use_container_width=True, height=580)
+
+        elif username == "rafa sanz":
+            # Solo registros cuyo comercial sea 'rafa sanz'
+            datos_filtrados = datos_uis[datos_uis['comercial'].str.strip().str.lower() == "rafa sanz"]
+            st.dataframe(datos_filtrados, use_container_width=True, height=580)
+        else:
+            st.warning("⚠️ No tienes acceso a visualizar estos datos.")
 
 def mostrar_viabilidades():
     sub_seccion = option_menu(
