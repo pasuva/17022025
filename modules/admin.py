@@ -634,22 +634,9 @@ def viabilidades_seccion():
             theme='alpine-dark'
         )
 
-        # Selector de viabilidad por ticket (usando selectbox)
-        selected_index = st.selectbox(
-            "Selecciona una viabilidad por Ticket:",
-            options=viabilidades_df["ticket"],
-            index=viabilidades_df["ticket"].tolist().index(st.session_state["selected_ticket"])
-            if st.session_state["selected_ticket"] in viabilidades_df["ticket"].tolist()
-            else 0,
-            key="viabilidad_selectbox"
-        )
-
-        # Filtramos el dataframe con el ticket seleccionado
-        selected_viabilidad = viabilidades_df[viabilidades_df["ticket"] == selected_index].iloc[0]
-        st.session_state["selected_ticket"] = selected_viabilidad["ticket"]
-        st.session_state["map_center"] = [selected_viabilidad["latitud"], selected_viabilidad["longitud"]]
-        st.session_state["map_zoom"] = 14
-
+        if st.session_state.get("selected_ticket"):
+            selected_viabilidad = \
+            viabilidades_df[viabilidades_df["ticket"] == st.session_state["selected_ticket"]].iloc[0]
         # Orden y renombrado de columnas
         orden_columnas_excel = [
             "ticket", "usuario", "nuevapromocion", "resultado", "justificacion",
@@ -2178,43 +2165,73 @@ def admin_dashboard():
             informe = generar_informe(str(fecha_inicio), str(fecha_fin))
             st.dataframe(informe)
 
-    # Opción: Gestionar Usuarios
     elif opcion == "Gestionar Usuarios":
-        st.header("Gestionar Usuarios")
-        st.info(
-            "ℹ️ Aquí puedes gestionar los usuarios registrados. Crea, edita o elimina usuarios en función de tus necesidades. "
-            "El usuario afectado recibirá una notificación por correo electrónico con la información asociada a la acción que realices.")
+        sub_seccion = option_menu(
+            menu_title=None,
+            options=["Listado de usuarios", "Agregar usuarios", "Editar/eliminar usuarios"],
+            icons=["people", "person-plus", "pencil-square"],
+            default_index=0,
+            orientation="horizontal",
+            styles={
+                "container": {
+                    "padding": "0!important",
+                    "margin": "0px",
+                    "background-color": "#F0F7F2",
+                    "border-radius": "0px",
+                    "max-width": "none"
+                },
+                "icon": {
+                    "color": "#2C5A2E",
+                    "font-size": "25px"
+                },
+                "nav-link": {
+                    "color": "#2C5A2E",
+                    "font-size": "18px",
+                    "text-align": "center",
+                    "margin": "0px",
+                    "--hover-color": "#66B032",
+                    "border-radius": "0px",
+                },
+                "nav-link-selected": {
+                    "background-color": "#66B032",
+                    "color": "white",
+                    "font-weight": "bold"
+                }
+            }
+        )
 
-        log_trazabilidad(st.session_state["username"], "Gestionar Usuarios",
-                         "El admin accedió a la sección de gestión de usuarios.")
+        log_trazabilidad(st.session_state["username"], "Gestionar Usuarios", "Accedió a la gestión de usuarios.")
 
+        # Cargar usuarios para todas las subsecciones
         usuarios = cargar_usuarios()
-        if usuarios:
-            # Usamos una columna para la tabla
-            col1, col2 = st.columns([2, 2])  # La columna izquierda será más grande
+        df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Nombre", "Rol", "Email"]) if usuarios else pd.DataFrame()
 
-            with col1:
-                st.subheader("Lista de Usuarios")
-                df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Nombre", "Rol", "Email"])
-                st.dataframe(df_usuarios)
+        # 🧾 SUBSECCIÓN: Listado de usuarios
+        if sub_seccion == "Listado de usuarios":
+            st.info("ℹ️ Desde esta sección puedes consultar usuarios registrados en el sistema.")
+            if not df_usuarios.empty:
+                st.dataframe(df_usuarios, use_container_width=True, height=420)
+            else:
+                st.warning("No hay usuarios registrados.")
 
-            with col2:
-                # Columna derecha para el formulario de "Agregar Nuevo Usuario"
-                st.subheader("Agregar Nuevo Usuario")
-                nombre = st.text_input("Nombre del Usuario")
-                rol = st.selectbox("Selecciona el Rol",
-                                   ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"])
-                email = st.text_input("Email del Usuario")
-                password = st.text_input("Contraseña", type="password")
+        # ➕ SUBSECCIÓN: Agregar usuarios
+        elif sub_seccion == "Agregar usuarios":
+            st.info("ℹ️ Desde esta sección puedes agregar nuevos usuarios al sistema.")
+            nombre = st.text_input("Nombre del Usuario")
+            rol = st.selectbox("Rol", ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"])
+            email = st.text_input("Email del Usuario")
+            password = st.text_input("Contraseña", type="password")
 
-                if st.button("Agregar Usuario"):
-                    if nombre and password and email:
-                        agregar_usuario(nombre, rol, password, email)
-                    else:
-                        st.error("Por favor, completa todos los campos.")
+            if st.button("Agregar Usuario"):
+                if nombre and password and email:
+                    agregar_usuario(nombre, rol, password, email)
+                    st.success("✅ Usuario agregado correctamente.")
+                else:
+                    st.error("❌ Por favor, completa todos los campos.")
 
-            # Formularios de "Editar Usuario" y "Eliminar Usuario" fuera de las columnas
-            st.subheader("Editar Usuario")
+        # ✏️ SUBSECCIÓN: Editar/Eliminar usuarios
+        elif sub_seccion == "Editar/eliminar usuarios":
+            st.info("ℹ️ Edita el usuario que quieras del sistema.")
             usuario_id = st.number_input("ID del Usuario a Editar", min_value=1, step=1)
 
             if usuario_id:
@@ -2227,23 +2244,23 @@ def admin_dashboard():
                 if usuario:
                     nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
                     nuevo_rol = st.selectbox("Nuevo Rol",
-                                             ["admin", "supervisor", "comercial", "comercial_rafa", "comercial_jefe"],
-                                             index=["admin", "supervisor", "comercial", "comercial_rafa",
-                                                    "comercial_jefe"].index(usuario[1]))
+                                             ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"],
+                                             index=["admin", "supervisor", "comercial", "comercial_jefe",
+                                                    "comercial_rafa"].index(usuario[1]))
                     nuevo_email = st.text_input("Nuevo Email", value=usuario[2])
                     nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
 
                     if st.button("Guardar Cambios"):
                         editar_usuario(usuario_id, nuevo_nombre, nuevo_rol, nueva_contraseña, nuevo_email)
+                        st.success("✅ Usuario editado correctamente.")
                 else:
-                    st.error("Usuario no encontrado.")
+                    st.error("❌ Usuario no encontrado.")
 
-            st.subheader("Eliminar Usuario")
+            st.info("ℹ️ Elimina el usuario que quieras del sistema.")
             eliminar_id = st.number_input("ID del Usuario a Eliminar", min_value=1, step=1)
-            if eliminar_id:
-                if st.button("Eliminar Usuario"):
-                    eliminar_usuario(eliminar_id)
-
+            if eliminar_id and st.button("Eliminar Usuario"):
+                eliminar_usuario(eliminar_id)
+                st.success("✅ Usuario eliminado correctamente.")
 
     elif opcion == "Cargar Nuevos Datos":
         st.header("Cargar Nuevos Datos")

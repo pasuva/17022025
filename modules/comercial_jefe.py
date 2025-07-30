@@ -905,30 +905,56 @@ def mostrar_viabilidades():
         st.dataframe(viabilidades, use_container_width=True)
 
 def download_datos(datos_uis, total_ofertas, viabilidades):
-
-    st.subheader("Descargar Datos")
-
+    st.info("ℹ️ Dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
     dataset_opcion = st.selectbox("¿Qué deseas descargar?", ["Datos", "Ofertas asignadas", "Viabilidades", "Todo"])
     nombre_base = st.text_input("Nombre base del archivo:", "datos")
 
     fecha_actual = datetime.now().strftime("%Y-%m-%d")
     nombre_archivo_final = f"{nombre_base}_{fecha_actual}"
 
+    username = st.session_state.get("username", "").strip().lower()
+
+    # Aplicar filtros personalizados si es Juan
+    if username == "juan":
+        datos_filtrados = datos_uis[
+            datos_uis['provincia'].str.strip().str.lower().isin(["lugo", "asturias"])
+        ]
+        ofertas_filtradas = total_ofertas[
+            ~total_ofertas['comercial'].str.strip().str.lower().isin(
+                ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz"]
+            )
+        ]
+        viabilidades_filtradas = viabilidades[
+            ~viabilidades['usuario'].str.strip().str.lower().isin(
+                ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz"]
+            )
+        ].copy()
+
+        viabilidades_filtradas['fecha_viabilidad'] = pd.to_datetime(viabilidades_filtradas['fecha_viabilidad'],
+                                                                    errors='coerce')
+    else:
+        datos_filtrados = datos_uis.copy()
+        ofertas_filtradas = total_ofertas.copy()
+        viabilidades_filtradas = viabilidades.copy()
+
     def descargar_excel(dfs_dict, nombre_archivo):
-        # Comprobar que cada valor en el dict sea DataFrame
         for sheet_name, df in dfs_dict.items():
             if not isinstance(df, pd.DataFrame):
                 st.warning(f"No hay datos válidos para descargar en la hoja '{sheet_name}'.")
                 return
-        if 'fecha_viabilidad' in viabilidades.columns:
-            viabilidades['fecha_viabilidad'] = pd.to_datetime(viabilidades['fecha_viabilidad'], errors='coerce')
+
+        if 'fecha_viabilidad' in viabilidades_filtradas.columns:
+            viabilidades_filtradas['fecha_viabilidad'] = pd.to_datetime(
+                viabilidades_filtradas['fecha_viabilidad'], errors='coerce'
+            )
+
         with io.BytesIO() as output:
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 for sheet_name, df in dfs_dict.items():
                     df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
             output.seek(0)
             st.download_button(
-                label=f"📥 Descargar {nombre_archivo} como Excel",
+                label=f"📥 Descargar {nombre_archivo}",
                 data=output,
                 file_name=f"{nombre_archivo}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -936,25 +962,24 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
 
     # Lógica de descarga según la selección
     if dataset_opcion == "Datos":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó los datos.")
-        descargar_excel({"Datos Rafa Sanz": datos_uis}, nombre_archivo_final)
+        log_trazabilidad(username, "Descarga de datos", "Usuario descargó los datos.")
+        descargar_excel({"Datos Gestor": datos_filtrados}, nombre_archivo_final)
 
     elif dataset_opcion == "Ofertas asignadas":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó ofertas asignadas.")
-        descargar_excel({"Ofertas Asignadas": total_ofertas}, nombre_archivo_final)
+        log_trazabilidad(username, "Descarga de datos", "Usuario descargó ofertas asignadas.")
+        descargar_excel({"Ofertas Asignadas": ofertas_filtradas}, nombre_archivo_final)
 
     elif dataset_opcion == "Viabilidades":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó viabilidades.")
-        descargar_excel({"Viabilidades": viabilidades}, nombre_archivo_final)
+        log_trazabilidad(username, "Descarga de datos", "Usuario descargó viabilidades.")
+        descargar_excel({"Viabilidades": viabilidades_filtradas}, nombre_archivo_final)
 
     elif dataset_opcion == "Todo":
-        log_trazabilidad(st.session_state["username"], "Descarga de datos", "Usuario descargó todos los datos.")
+        log_trazabilidad(username, "Descarga de datos", "Usuario descargó todos los datos.")
         descargar_excel({
-            "Datos Gestor": datos_uis,
-            "Ofertas Asignadas": total_ofertas,
-            "Viabilidades": viabilidades
+            "Datos Gestor": datos_filtrados,
+            "Ofertas Asignadas": ofertas_filtradas,
+            "Viabilidades": viabilidades_filtradas
         }, nombre_archivo_final)
 
-    st.info("Dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
 if __name__ == "__main__":
     mapa_dashboard()
