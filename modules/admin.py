@@ -2262,6 +2262,7 @@ def admin_dashboard():
                 eliminar_usuario(eliminar_id)
                 st.success("✅ Usuario eliminado correctamente.")
 
+
     elif opcion == "Cargar Nuevos Datos":
         st.header("Cargar Nuevos Datos")
         st.info(
@@ -2270,6 +2271,7 @@ def admin_dashboard():
             "la tabla de datos también quedará eliminada. Se recomienda recargar el excel de seguimiento de contratos en el caso de que esta carga de datos no tenga "
             "todas las columnas actualizadas."
         )
+
         log_trazabilidad(
             st.session_state["username"],
             "Cargar Nuevos Datos",
@@ -2283,67 +2285,103 @@ def admin_dashboard():
                         data = pd.read_excel(uploaded_file)
                     elif uploaded_file.name.endswith(".csv"):
                         data = pd.read_csv(uploaded_file)
-                columnas_requeridas = [
-                    "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
-                    "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
-                    "apartment_operational_state", "cto_id", "olt", "cto", "lat", "lng",
-                    "cto_con_proyecto", "CERTIFICABLE", "COMERCIAL", "ZONA", "FECHA", "SERVICIABLE", "MOTIVO", "contrato_uis"
-                ]
-                columnas_faltantes = [col for col in columnas_requeridas if col not in data.columns]
+                # Diccionario para mapear columnas del Excel a las de la base de datos
+                mapeo_columnas = {
+                    "id_ams": "id_ams",
+                    "apartment_id": "apartment_id",
+                    "address_id": "address_id",
+                    "provincia": "provincia",
+                    "municipio": "municipio",
+                    "poblacion": "poblacion",
+                    "vial": "vial",
+                    "numero": "numero",
+                    "parcela_catastral": "parcela_catastral",
+                    "letra": "letra",
+                    "cp": "cp",
+                    "site_operational_state": "site_operational_state",
+                    "apartment_operational_state": "apartment_operational_state",
+                    "cto_id": "cto_id",
+                    "olt": "olt",
+                    "cto": "cto",
+                    "lat": "latitud",
+                    "lng": "longitud",
+                    "cto_con_proyecto": "cto_con_proyecto",
+                    "CERTIFICABLE": "CERTIFICABLE",
+                    "COMERCIAL": "comercial",
+                    "ZONA": "zona",
+                    "FECHA": "fecha",
+                    "SERVICIABLE": "serviciable",
+                    "MOTIVO": "motivo",
+                    "contrato_uis": "contrato_uis"
+                }
+                columnas_faltantes = [col for col in mapeo_columnas if col not in data.columns]
+
                 if columnas_faltantes:
                     st.error(
-                        f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}"
-                    )
+                        f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
                 else:
-                    data_filtrada = data[columnas_requeridas].copy()
-                    # Usar campos 'lat' y 'lng' del Excel para llenar LATITUD y LONGITUD
-                    data_filtrada["LATITUD"] = data["lat"].astype(str).str.replace(",", ".").astype(float).round(7)
-                    data_filtrada["LONGITUD"] = data["lng"].astype(str).str.replace(",", ".").astype(float).round(7)
+                    data_filtrada = data[list(mapeo_columnas.keys())].copy()
+                    data_filtrada.rename(columns=mapeo_columnas, inplace=True)
 
-                    # --- Leer datos antiguos antes de borrar ---
+                    # Convertir lat y lng a float
+                    data_filtrada["latitud"] = (
+                        data_filtrada["latitud"].astype(str).str.replace(",", ".").astype(float).round(7)
+                    )
+
+                    data_filtrada["longitud"] = (
+                        data_filtrada["longitud"].astype(str).str.replace(",", ".").astype(float).round(7)
+                    )
+
+                    columnas_finales = [
+                        "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
+                        "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
+                        "apartment_operational_state", "cto_id", "olt", "cto", "latitud", "longitud",
+                        "cto_con_proyecto", "CERTIFICABLE", "comercial", "zona", "fecha",
+                        "serviciable", "motivo", "contrato_uis"
+                    ]
+                    data_filtrada = data_filtrada[columnas_finales]
+
+                    # Leer datos anteriores
                     conn = obtener_conexion()
                     df_antiguos = pd.read_sql("SELECT * FROM datos_uis", conn)
                     st.write(
-                        "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos..."
-                    )
-
+                        "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
                     cursor = conn.cursor()
-                    # Eliminamos todos los registros de la tabla y reiniciamos el ID autoincremental
                     cursor.execute("DELETE FROM datos_uis")
                     cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
                     conn.commit()
                     total_registros = len(data_filtrada)
                     insert_values = data_filtrada.values.tolist()
-                    progress_bar = st.progress(0)
                     chunk_size = 500
                     num_chunks = (total_registros + chunk_size - 1) // chunk_size
                     query = """
                         INSERT INTO datos_uis (
-                            id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero, 
-                            parcela_catastral, letra, cp, site_operational_state, apartment_operational_state, 
-                            cto_id, olt, cto, LATITUD, LONGITUD, cto_con_proyecto, CERTIFICABLE, COMERCIAL, ZONA, FECHA, 
-                            SERVICIABLE, MOTIVO, contrato_uis
+                            id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero,
+                            parcela_catastral, letra, cp, site_operational_state, apartment_operational_state,
+                            cto_id, olt, cto, latitud, longitud, cto_con_proyecto, CERTIFICABLE, comercial,
+                            zona, fecha, serviciable, motivo, contrato_uis
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """
+                    progress_bar = st.progress(0)
+
                     for i in range(num_chunks):
                         chunk = insert_values[i * chunk_size: (i + 1) * chunk_size]
                         cursor.executemany(query, chunk)
                         conn.commit()
                         progress_bar.progress(min((i + 1) / num_chunks, 1.0))
 
-                    # --- Aquí añadimos la comparación y envío de correos ---
-                    df_nuevos = data_filtrada
-                    # Detectamos nuevos apartment_id
+                    # Comparar apartment_id nuevos
                     apt_antiguos = set(df_antiguos['apartment_id'].unique())
-                    apt_nuevos = set(df_nuevos['apartment_id'].unique())
+                    apt_nuevos = set(data_filtrada['apartment_id'].unique())
                     nuevos_apartment_id = apt_nuevos - apt_antiguos
-                    df_nuevos_filtrados = df_nuevos[df_nuevos['apartment_id'].isin(nuevos_apartment_id)]
-                    resumen = df_nuevos_filtrados.groupby('COMERCIAL').agg(
+                    df_nuevos_filtrados = data_filtrada[data_filtrada['apartment_id'].isin(nuevos_apartment_id)]
+                    resumen = df_nuevos_filtrados.groupby('comercial').agg(
                         total_nuevos=('apartment_id', 'count'),
                         poblaciones_nuevas=('poblacion', lambda x: ', '.join(sorted(x.unique())))
                     ).reset_index()
+
                     for _, row in resumen.iterrows():
-                        comercial = row["COMERCIAL"]
+                        comercial = row["comercial"]
                         total_nuevos = row["total_nuevos"]
                         poblaciones_nuevas = row["poblaciones_nuevas"]
                         cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial,))
@@ -2361,8 +2399,8 @@ def admin_dashboard():
                             st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
                     conn.close()
                     progress_bar.progress(1.0)
-                    st.success(f"🎉 Datos reemplazados exitosamente. Total registros cargados: {total_registros}")
                     progress_bar.empty()
+                    st.success(f"🎉 Datos reemplazados exitosamente. Total registros cargados: {total_registros}")
                     log_trazabilidad(
                         st.session_state["username"],
                         "Cargar Nuevos Datos",
@@ -2370,6 +2408,7 @@ def admin_dashboard():
                     )
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
+
 
     # Opción: Trazabilidad y logs
     elif opcion == "Trazabilidad y logs":
