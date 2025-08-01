@@ -2324,13 +2324,13 @@ def admin_dashboard():
                     data_filtrada.rename(columns=mapeo_columnas, inplace=True)
 
                     # Convertir lat y lng a float
-                    data_filtrada["latitud"] = (
-                        data_filtrada["latitud"].astype(str).str.replace(",", ".").astype(float).round(7)
-                    )
+                    data_filtrada["latitud"] = pd.to_numeric(
+                        data_filtrada["latitud"].astype(str).str.replace(",", "."), errors="coerce"
+                    ).round(7)
 
-                    data_filtrada["longitud"] = (
-                        data_filtrada["longitud"].astype(str).str.replace(",", ".").astype(float).round(7)
-                    )
+                    data_filtrada["longitud"] = pd.to_numeric(
+                        data_filtrada["longitud"].astype(str).str.replace(",", "."), errors="coerce"
+                    ).round(7)
 
                     columnas_finales = [
                         "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
@@ -2375,10 +2375,17 @@ def admin_dashboard():
                     apt_nuevos = set(data_filtrada['apartment_id'].unique())
                     nuevos_apartment_id = apt_nuevos - apt_antiguos
                     df_nuevos_filtrados = data_filtrada[data_filtrada['apartment_id'].isin(nuevos_apartment_id)]
-                    resumen = df_nuevos_filtrados.groupby('comercial').agg(
-                        total_nuevos=('apartment_id', 'count'),
-                        poblaciones_nuevas=('poblacion', lambda x: ', '.join(sorted(x.unique())))
-                    ).reset_index()
+                    try:
+                        df_nuevos_filtrados["comercial"] = df_nuevos_filtrados["comercial"].astype(str)
+                        df_nuevos_filtrados["poblacion"] = df_nuevos_filtrados["poblacion"].astype(str)
+
+                        resumen = df_nuevos_filtrados.groupby('comercial').agg(
+                            total_nuevos=('apartment_id', 'count'),
+                            poblaciones_nuevas=('poblacion', lambda x: ', '.join(sorted(x.dropna().unique())))
+                        ).reset_index()
+                    except Exception as e:
+                        st.warning(f"⚠️ Error generando resumen de nuevos datos: {e}")
+                        resumen = pd.DataFrame()
 
                     for _, row in resumen.iterrows():
                         comercial = row["comercial"]
