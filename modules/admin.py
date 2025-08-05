@@ -2391,7 +2391,8 @@ def admin_dashboard():
                         comercial = row["comercial"]
                         total_nuevos = row["total_nuevos"]
                         poblaciones_nuevas = row["poblaciones_nuevas"]
-                        cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial,))
+                        comercial_lower = comercial.lower()
+                        cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_lower,))
                         resultado = cursor.fetchone()
                         if resultado:
                             email = resultado[0]
