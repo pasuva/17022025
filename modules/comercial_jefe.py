@@ -427,7 +427,7 @@ def mostrar_mapa_de_asignaciones():
                             # Verificar si hay registros con Contrato no nulo
                             cursor.execute("""
                                 SELECT COUNT(*) FROM comercial_rafa
-                                WHERE municipio = ? AND poblacion = ? AND comercial = ? AND Contrato IS NOT NULL
+                                WHERE municipio = ? AND poblacion = ? AND comercial = ? AND Contrato != 'Pendiente'
                             """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
                             visitas_existentes = cursor.fetchone()[0]
 
