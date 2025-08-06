@@ -423,44 +423,59 @@ def mostrar_mapa_de_asignaciones():
                         if st.button("Desasignar Comercial de Zona"):
                             conn = get_db_connection()
                             cursor = conn.cursor()
+
+                            # Verificar si hay registros con Contrato no nulo
                             cursor.execute("""
-                                        DELETE FROM comercial_rafa 
-                                        WHERE municipio = ? AND poblacion = ? AND comercial = ?
-                                    """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
-                            conn.commit()
+                                SELECT COUNT(*) FROM comercial_rafa
+                                WHERE municipio = ? AND poblacion = ? AND comercial = ? AND Contrato IS NOT NULL
+                            """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
+                            visitas_existentes = cursor.fetchone()[0]
 
-                            cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_a_eliminar,))
-                            email_comercial = cursor.fetchone()
-                            destinatario_comercial = email_comercial[
-                                0] if email_comercial else "patricia@redytelcomputer.com"
+                            if visitas_existentes > 0:
+                                st.error(
+                                    "❌ No se puede desasignar esta zona porque ya tiene registros con visita asociada y posible contrato.")
+                                conn.close()
+                            else:
+                                # Si no hay visitas/contratos, proceder al borrado
+                                cursor.execute("""
+                                    DELETE FROM comercial_rafa 
+                                    WHERE municipio = ? AND poblacion = ? AND comercial = ?
+                                """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
+                                conn.commit()
 
-                            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
-                            emails_admins = [fila[0] for fila in cursor.fetchall()]
-                            conn.close()
+                                # Continuar con notificaciones, etc.
+                                cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_a_eliminar,))
+                                email_comercial = cursor.fetchone()
+                                destinatario_comercial = email_comercial[
+                                    0] if email_comercial else "patricia@redytelcomputer.com"
 
-                            descripcion_desasignacion = (
-                                f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel}.<br>"
-                                "🔄 Este cambio puede deberse a ajustes en las zonas asignadas.<br>"
-                                "⚠️ Ya no estará a cargo de las tareas de esta zona.<br>"
-                                "ℹ️ Revise su panel de usuario para más detalles.<br><br>"
-                                "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
-                            )
-                            correo_desasignacion_administracion(destinatario_comercial, municipio_sel,
-                                                                poblacion_sel, descripcion_desasignacion)
+                                cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                                emails_admins = [fila[0] for fila in cursor.fetchall()]
+                                conn.close()
 
-                            descripcion_admin = (
-                                f"📢 Desasignación de zona.\n\n"
-                                f"📌 Zona Desasignada: {municipio_sel} - {poblacion_sel}\n"
-                                f"👥 Desasignado: {comercial_a_eliminar}\n"
-                                f"🕵️ Realizado por: {st.session_state['username']}"
-                            )
-                            for email_admin in emails_admins:
-                                correo_asignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
-                                                                  descripcion_admin)
+                                descripcion_desasignacion = (
+                                    f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel}.<br>"
+                                    "🔄 Este cambio puede deberse a ajustes en las zonas asignadas.<br>"
+                                    "⚠️ Ya no estará a cargo de las tareas de esta zona.<br>"
+                                    "ℹ️ Revise su panel de usuario para más detalles.<br><br>"
+                                    "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
+                                )
+                                correo_desasignacion_administracion(destinatario_comercial, municipio_sel,
+                                                                    poblacion_sel, descripcion_desasignacion)
 
-                            st.success("✅ Zona desasignada correctamente y notificaciones enviadas.")
-                            log_trazabilidad(st.session_state["username"], "Desasignación múltiple",
-                                             f"Zona {municipio_sel}-{poblacion_sel} desasignada de {comercial_a_eliminar}")
+                                descripcion_admin = (
+                                    f"📢 Desasignación de zona.\n\n"
+                                    f"📌 Zona Desasignada: {municipio_sel} - {poblacion_sel}\n"
+                                    f"👥 Desasignado: {comercial_a_eliminar}\n"
+                                    f"🕵️ Realizado por: {st.session_state['username']}"
+                                )
+                                for email_admin in emails_admins:
+                                    correo_asignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
+                                                                      descripcion_admin)
+
+                                st.success("✅ Zona desasignada correctamente y notificaciones enviadas.")
+                                log_trazabilidad(st.session_state["username"], "Desasignación múltiple",
+                                                 f"Zona {municipio_sel}-{poblacion_sel} desasignada de {comercial_a_eliminar}")
 
         st.info(
             "Para revisar las asignaciones que has realizado y los reportes enviados por los comerciales, dirígete al menú **Ver Datos**. "
