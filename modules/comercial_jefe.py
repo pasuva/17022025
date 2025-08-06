@@ -424,26 +424,23 @@ def mostrar_mapa_de_asignaciones():
                             conn = get_db_connection()
                             cursor = conn.cursor()
 
-                            # Verificar si hay registros con Contrato no nulo
+                            # Verificar cuántos registros NO se pueden borrar
                             cursor.execute("""
                                 SELECT COUNT(*) FROM comercial_rafa
                                 WHERE municipio = ? AND poblacion = ? AND comercial = ? AND Contrato != 'Pendiente'
                             """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
-                            visitas_existentes = cursor.fetchone()[0]
+                            registros_bloqueados = cursor.fetchone()[0]
 
-                            if visitas_existentes > 0:
-                                st.error(
-                                    "❌ No se puede desasignar esta zona porque ya tiene registros con visita asociada y posible contrato.")
-                                conn.close()
-                            else:
-                                # Si no hay visitas/contratos, proceder al borrado
-                                cursor.execute("""
-                                    DELETE FROM comercial_rafa 
-                                    WHERE municipio = ? AND poblacion = ? AND comercial = ?
-                                """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
-                                conn.commit()
+                            # Eliminar los que SÍ se pueden (Contrato = 'Pendiente')
+                            cursor.execute("""
+                                DELETE FROM comercial_rafa 
+                                WHERE municipio = ? AND poblacion = ? AND comercial = ? AND Contrato = 'Pendiente'
+                            """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
+                            registros_eliminados = cursor.rowcount
+                            conn.commit()
 
-                                # Continuar con notificaciones, etc.
+                            if registros_eliminados > 0:
+                                # Notificar
                                 cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_a_eliminar,))
                                 email_comercial = cursor.fetchone()
                                 destinatario_comercial = email_comercial[
@@ -454,9 +451,9 @@ def mostrar_mapa_de_asignaciones():
                                 conn.close()
 
                                 descripcion_desasignacion = (
-                                    f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel}.<br>"
-                                    "🔄 Este cambio puede deberse a ajustes en las zonas asignadas.<br>"
-                                    "⚠️ Ya no estará a cargo de las tareas de esta zona.<br>"
+                                    f"📍 Se le ha desasignado parcialmente la zona {municipio_sel} - {poblacion_sel}.<br>"
+                                    "🔄 Se han liberado los puntos sin actividad registrada.<br>"
+                                    "⚠️ Los puntos con visitas o contratos se han mantenido.<br>"
                                     "ℹ️ Revise su panel de usuario para más detalles.<br><br>"
                                     "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
                                 )
@@ -464,18 +461,38 @@ def mostrar_mapa_de_asignaciones():
                                                                     poblacion_sel, descripcion_desasignacion)
 
                                 descripcion_admin = (
-                                    f"📢 Desasignación de zona.\n\n"
-                                    f"📌 Zona Desasignada: {municipio_sel} - {poblacion_sel}\n"
-                                    f"👥 Desasignado: {comercial_a_eliminar}\n"
+                                    f"📢 Desasignación parcial de zona.\n\n"
+                                    f"📌 Zona: {municipio_sel} - {poblacion_sel}\n"
+                                    f"👥 Comercial afectado: {comercial_a_eliminar}\n"
+                                    f"🗑️ Registros eliminados: {registros_eliminados}\n"
+                                    f"🔒 Registros conservados (con datos): {registros_bloqueados}\n"
                                     f"🕵️ Realizado por: {st.session_state['username']}"
                                 )
                                 for email_admin in emails_admins:
                                     correo_asignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
                                                                       descripcion_admin)
 
-                                st.success("✅ Zona desasignada correctamente y notificaciones enviadas.")
-                                log_trazabilidad(st.session_state["username"], "Desasignación múltiple",
-                                                 f"Zona {municipio_sel}-{poblacion_sel} desasignada de {comercial_a_eliminar}")
+                                if registros_eliminados > 0 and registros_bloqueados == 0:
+                                    st.success(
+                                        f"✅ Zona desasignada completamente. Se eliminaron {registros_eliminados} registros.")
+                                elif registros_eliminados > 0 and registros_bloqueados > 0:
+                                    st.success(f"⚠️ Zona desasignada parcialmente. "
+                                               f"Se eliminaron {registros_eliminados} registros sin información. "
+                                               f"Se conservaron {registros_bloqueados} registros con visitas o contratos.")
+                                elif registros_eliminados == 0:
+                                    st.info(
+                                        "ℹ️ No se pudo desasignar ningún registro: todos los puntos ya tienen información asociada.")
+
+                                accion_log = "Desasignación total" if registros_bloqueados == 0 else "Desasignación parcial"
+                                detalle_log = (
+                                    f"Zona {municipio_sel}-{poblacion_sel} desasignada de {comercial_a_eliminar} - "
+                                    f"{registros_eliminados} eliminados, {registros_bloqueados} conservados")
+                                log_trazabilidad(st.session_state["username"], accion_log, detalle_log)
+
+                            else:
+                                conn.close()
+                                st.info(
+                                    "ℹ️ No se pudo desasignar ningún registro: todos los puntos ya tienen información asociada.")
 
         st.info(
             "Para revisar las asignaciones que has realizado y los reportes enviados por los comerciales, dirígete al menú **Ver Datos**. "
