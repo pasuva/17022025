@@ -379,7 +379,7 @@ def mostrar_mapa_de_asignaciones():
                                         cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial,))
                                         email_comercial = cursor.fetchone()
                                         destinatario_comercial = email_comercial[
-                                            0] if email_comercial else "patricia@redytelcomputer.com"
+                                            0] if email_comercial else "patricia@verdetuoperador.com"
 
                                         descripcion_asignacion = (
                                             f"📍 Se le ha asignado la zona {municipio_sel} - {poblacion_sel}.<br><br>"
@@ -466,19 +466,19 @@ def mostrar_mapa_de_asignaciones():
                             """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
                             registros_bloqueados = cursor.fetchone()[0]
 
-                            # Guardar los puntos liberados en la tabla temporal
+                            # Guardar TODOS los puntos liberados en la tabla temporal
                             cursor.execute("""
-                                    INSERT INTO puntos_liberados_temp
-                                    (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
-                                    SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato
-                                    FROM comercial_rafa
-                                    WHERE municipio = ? AND poblacion = ? AND comercial = ? AND Contrato = 'Pendiente'
-                                """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
+                                INSERT INTO puntos_liberados_temp
+                                (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
+                                SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato
+                                FROM comercial_rafa
+                                WHERE municipio = ? AND poblacion = ? AND comercial = ?
+                            """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
 
-                            # Eliminar los que SÍ se pueden (Contrato = 'Pendiente')
+                            # Eliminar TODOS los registros de esa zona para ese comercial
                             cursor.execute("""
                                 DELETE FROM comercial_rafa 
-                                WHERE municipio = ? AND poblacion = ? AND comercial = ? AND Contrato = 'Pendiente'
+                                WHERE municipio = ? AND poblacion = ? AND comercial = ?
                             """, (municipio_sel, poblacion_sel, comercial_a_eliminar))
                             registros_eliminados = cursor.rowcount
                             conn.commit()
@@ -491,7 +491,7 @@ def mostrar_mapa_de_asignaciones():
                                 cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_a_eliminar,))
                                 email_comercial = cursor.fetchone()
                                 destinatario_comercial = email_comercial[
-                                    0] if email_comercial else "patricia@redytelcomputer.com"
+                                    0] if email_comercial else "patricia@verdetuoperador.com"
 
                                 cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
                                 emails_admins = [fila[0] for fila in cursor.fetchall()]
@@ -621,6 +621,43 @@ def mostrar_mapa_de_asignaciones():
                                 conn.commit()
 
                                 resumen = "\n".join([f"👤 {com}: {len(puntos)} puntos" for com, puntos in reparto.items()])
+                                # -------------------
+                                # 🔔 Notificaciones
+                                # -------------------
+                                resumen = "\n".join(
+                                    [f"👤 {com}: {len(puntos)} puntos" for com, puntos in reparto.items()])
+                                total_puntos = sum(len(puntos) for puntos in reparto.values())
+
+                                # Notificar a comerciales
+                                for comercial, puntos in reparto.items():
+                                    if puntos:
+                                        cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial,))
+                                        resultado = cursor.fetchone()
+                                        email_comercial = resultado[0] if resultado else None
+                                        if email_comercial:
+                                            descripcion = (
+                                                f"📍 Ha recibido una nueva asignación.\n\n"
+                                                f"📌 Zona: {puntos[0][2]} - {puntos[0][3]}\n"
+                                                f"📊 Total puntos asignados: {len(puntos)}\n\n"
+                                                "ℹ️ Los puntos ya están disponibles en su panel."
+                                            )
+                                            correo_asignacion_administracion2(email_comercial, puntos[0][2],
+                                                                              puntos[0][3], descripcion)
+
+                                # Notificar a administradores
+                                cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                                emails_admins = [fila[0] for fila in cursor.fetchall()]
+
+                                descripcion_admin = (
+                                    f"📢 Reasignación de zona.\n\n"
+                                    f"📌 Zona: {puntos[0][2]} - {puntos[0][3]}\n"
+                                    f"📊 Total puntos reasignados: {total_puntos}\n"
+                                    f"{resumen}\n\n"
+                                    f"🕵️ Realizado por: {st.session_state['username']}"
+                                )
+                                for email_admin in emails_admins:
+                                    correo_asignacion_administracion2(email_admin, puntos[0][2], puntos[0][3],
+                                                                      descripcion_admin)
                                 st.success(f"✅ Puntos liberados reasignados correctamente.\nTotal puntos: {total_puntos}\n{resumen}")
 
                                 # Recargar la página para ver los cambios
@@ -787,7 +824,7 @@ def mostrar_descarga_datos():
     # Conexión y datos comunes
     conn = get_db_connection()
     username = st.session_state.get("username", "").strip().lower()
-    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto"]
+    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto", "marian"]
     placeholders = ",".join("?" for _ in excluir_para_juan)
 
     # Cargar datos según el usuario
@@ -851,7 +888,7 @@ def mostrar_descarga_datos():
         viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
 
         if username == "juan":
-            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz"]
+            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz", "marian"]
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
 
         st.info(
@@ -865,8 +902,8 @@ def mostrar_descarga_datos():
         # Conectar a la base de datos y leer la tabla
         conn = get_db_connection()
         datos_uis = pd.read_sql(
-            "SELECT apartment_id, address_id, provincia, municipio, poblacion, vial numero, parcela_catastral, "
-            "letra, cp, olt, cto, latitud, longitud FROM datos_uis", conn)
+            "SELECT apartment_id, address_id, provincia, municipio, poblacion, vial, numero, parcela_catastral, "
+            "letra, cp, olt, cto, latitud, longitud, comercial FROM datos_uis", conn)
         conn.close()
         if username == "juan":
             # Solo Lugo y Asturias
@@ -924,7 +961,7 @@ def mostrar_viabilidades():
         username = st.session_state.get("username", "").strip().lower()
 
         # ❗Lista de comerciales que Juan no debe ver
-        excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto"]
+        excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto", "marian"]
 
         # 🧠 Construcción dinámica del SQL
         if username == "juan":

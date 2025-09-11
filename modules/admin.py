@@ -2,7 +2,7 @@ import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual, correo_nueva_version
+from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
@@ -615,18 +615,39 @@ def viabilidades_seccion():
         )
         # (Opcional) Para resaltar duplicados en apartment_id sin pandas styling:
         dup_ids = viabilidades_df.loc[viabilidades_df['is_duplicate'], 'apartment_id'].unique().tolist()
+        # Configurar estilo para apartment_id (duplicados en amarillo)
         gb.configure_column(
             'apartment_id',
             cellStyle={
-                'function': f"if (value && {dup_ids}.includes(value)) return {{'backgroundColor':'yellow'}}"
+                'function': f"""
+                            function(params) {{
+                                if (params.value && {dup_ids}.includes(params.value)) {{
+                                    return {{'backgroundColor': 'yellow'}};
+                                }}
+                            }}
+                        """
             }
         )
+
         gridOptions = gb.build()
+
+        # Aplicar estilo rojo para filas con resultado "NO"
+        for col_def in gridOptions['columnDefs']:
+            if col_def['field'] != 'apartment_id':  # No aplicar a apartment_id (ya tiene estilo)
+                col_def['cellStyle'] = {
+                    'function': """
+                                function(params) {
+                                    if (params.data.resultado.toUpperCase() === 'NO') {
+                                        return {'backgroundColor': 'red'};
+                                    }
+                                }
+                            """
+                }
 
         AgGrid(
             df_reordered,
             gridOptions=gridOptions,
-            enable_enterprise_modules=False,
+            enable_enterprise_modules=True,
             update_mode=GridUpdateMode.NO_UPDATE,
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             fit_columns_on_grid_load=False,
@@ -671,14 +692,7 @@ def viabilidades_seccion():
                     rows.append(new_row)
             return pd.DataFrame(rows)
 
-        df_export = expand_apartments(df_export)
-
-        # Filtrar columnas existentes y reordenar
-        columnas_presentes = [col for col in orden_columnas_excel if col in df_export.columns]
-        df_export = df_export[columnas_presentes]
-
-        # Renombrar columnas para Excel
-        df_export = df_export.rename(columns=nombres_excel)
+        df_export = viabilidades_df.copy()
 
         # Convertir a Excel en memoria
         output = BytesIO()
@@ -686,9 +700,8 @@ def viabilidades_seccion():
             df_export.to_excel(writer, index=False, sheet_name="Viabilidades")
         output.seek(0)
 
-        # Botones lado a lado
         # Botones alineados a los extremos
-        col_b1, _, col_b2 = st.columns([1, 2.3, 1])  # Usamos una columna vacía en medio para separar
+        col_b1, _, col_b2 = st.columns([1, 2.3, 1])
 
         with col_b1:
             if st.button("🔄 Refrescar Tabla"):
@@ -1268,7 +1281,7 @@ def mostrar_formulario(click_data):
                 destinatarios.append(email_comercial[0])
             else:
                 st.error("❌ No se encontró el correo del comercial correspondiente.")
-                destinatarios.append("patricia@redytelcomputer.com")
+                destinatarios.append("patricia@verdetuoperador.com")
 
             cursor.execute("""
                 SELECT email
@@ -2370,6 +2383,91 @@ def admin_dashboard():
                         conn.commit()
                         progress_bar.progress(min((i + 1) / num_chunks, 1.0))
 
+                    # -------------------------------------------------------
+                    # 🔄 Asignación automática de nuevos puntos en zonas ya asignadas
+                    # -------------------------------------------------------
+
+                    # Buscar zonas ya asignadas en comercial_rafa
+                    cursor.execute("""
+                        SELECT DISTINCT provincia, municipio, poblacion, zona, comercial
+                        FROM comercial_rafa
+                    """)
+                    zonas_asignadas = cursor.fetchall()
+
+                    for zona in zonas_asignadas:
+                        provincia, municipio, poblacion, zona_val, comercial = zona
+
+                        # Puntos ya asignados en esa zona
+                        cursor.execute("""
+                            SELECT apartment_id
+                            FROM comercial_rafa
+                            WHERE provincia = ? AND municipio = ? AND poblacion = ? AND zona = ? AND comercial = ?
+                        """, (provincia, municipio, poblacion, zona_val, comercial))
+                        asignados_ids = {fila[0] for fila in cursor.fetchall()}
+
+                        # Puntos disponibles en datos_uis para esa zona
+                        cursor.execute("""
+                            SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
+                            FROM datos_uis
+                            WHERE provincia = ? AND municipio = ? AND poblacion = ? AND zona = ?
+                        """, (provincia, municipio, poblacion, zona_val))
+                        puntos_zona = cursor.fetchall()
+
+                        # Filtrar los que todavía no están en comercial_rafa
+                        nuevos_para_asignar = [p for p in puntos_zona if p[0] not in asignados_ids]
+
+                        # Insertarlos asignados al mismo comercial
+                        for p in nuevos_para_asignar:
+                            cursor.execute("""
+                                INSERT INTO comercial_rafa
+                                (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial, 'Pendiente'))
+
+                        if nuevos_para_asignar:
+                            st.info(
+                                f"📌 Se asignaron {len(nuevos_para_asignar)} nuevos puntos a {comercial} en la zona {poblacion} ({municipio}, {provincia})")
+                            # 🔹 Notificación al comercial
+                            cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial.lower(),))
+                            resultado = cursor.fetchone()
+                            if resultado:
+                                email = resultado[0]
+                                try:
+                                    correo_asignacion_puntos_existentes(
+                                        destinatario=email,
+                                        nombre_comercial=comercial,
+                                        provincia=provincia,
+                                        municipio=municipio,
+                                        poblacion=poblacion,
+                                        nuevos_puntos=len(nuevos_para_asignar)
+                                    )
+                                    st.write(
+                                        f"📧 Notificación enviada a {comercial} ({email}) por nuevos puntos en zona existente")
+                                except Exception as e:
+                                    st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
+                            else:
+                                st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
+
+                            # 🔹 Notificación a administradores
+                            cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                            admins = [fila[0] for fila in cursor.fetchall()]
+                            for email_admin in admins:
+                                try:
+                                    correo_asignacion_puntos_existentes(
+                                        destinatario=email_admin,
+                                        nombre_comercial=comercial,
+                                        provincia=provincia,
+                                        municipio=municipio,
+                                        poblacion=poblacion,
+                                        nuevos_puntos=len(nuevos_para_asignar)
+                                    )
+                                    st.write(
+                                        f"📧 Notificación enviada a administrador ({email_admin}) por nuevos puntos en zona existente")
+                                except Exception as e:
+                                    st.error(f"❌ Error enviando correo a admin ({email_admin}): {e}")
+
+                    conn.commit()
+
                     # Comparar apartment_id nuevos
                     apt_antiguos = set(df_antiguos['apartment_id'].unique())
                     apt_nuevos = set(data_filtrada['apartment_id'].unique())
@@ -2388,32 +2486,46 @@ def admin_dashboard():
                         resumen = pd.DataFrame()
 
                     for _, row in resumen.iterrows():
-                        comercial = row["comercial"]
+                        comercial = str(row["comercial"]).strip()
                         total_nuevos = row["total_nuevos"]
                         poblaciones_nuevas = row["poblaciones_nuevas"]
-                        comercial_lower = comercial.lower()
-                        cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_lower,))
+
+                        # Normalizamos a minúsculas para comparar con usuarios.username
+                        comercial_normalizado = comercial.lower()
+
+                        cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial_normalizado,))
                         resultado = cursor.fetchone()
+
                         if resultado:
                             email = resultado[0]
-                            correo_nuevas_zonas_comercial(
-                                destinatario=email,
-                                nombre_comercial=comercial,
-                                total_nuevos=total_nuevos,
-                                poblaciones_nuevas=poblaciones_nuevas
-                            )
-                            st.write(f"📧 Notificación enviada a {comercial} ({email})")
+                            try:
+                                correo_nuevas_zonas_comercial(
+                                    destinatario=email,
+                                    nombre_comercial=comercial,
+                                    total_nuevos=total_nuevos,
+                                    poblaciones_nuevas=poblaciones_nuevas
+                                )
+                                st.write(f"📧 Notificación enviada a {comercial} ({email})")
+                            except Exception as e:
+                                st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
                         else:
                             st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
-                    conn.close()
-                    progress_bar.progress(1.0)
-                    progress_bar.empty()
-                    st.success(f"🎉 Datos reemplazados exitosamente. Total registros cargados: {total_registros}")
-                    log_trazabilidad(
-                        st.session_state["username"],
-                        "Cargar Nuevos Datos",
-                        f"El admin reemplazó los datos existentes con {total_registros} nuevos registros."
-                    )
+
+                    # 🔹 Notificar también a los administradores
+                    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                    admins = [fila[0] for fila in cursor.fetchall()]
+
+                    for email_admin in admins:
+                        try:
+                            correo_nuevas_zonas_comercial(
+                                destinatario=email_admin,
+                                nombre_comercial="ADMINISTRACIÓN",
+                                total_nuevos=total_registros,
+                                poblaciones_nuevas="Se han cargado nuevos datos en el sistema."
+                            )
+                            st.write(f"📧 Notificación enviada a administrador ({email_admin})")
+                        except Exception as e:
+                            st.error(f"❌ Error enviando correo a admin ({email_admin}): {e}")
             except Exception as e:
                 st.error(f"❌ Error al cargar el archivo: {e}")
 

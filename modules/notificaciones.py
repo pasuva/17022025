@@ -231,3 +231,18 @@ def correo_nueva_version(destinatario, version, descripcion):
     }
     enviar_notificacion(destinatario, asunto, contenido)
 
+def correo_asignacion_puntos_existentes(destinatario, nombre_comercial, provincia, municipio, poblacion, nuevos_puntos):
+    asunto = f"Se han asignado {nuevos_puntos} nuevos puntos en {municipio} - {poblacion}"
+    contenido = {
+        "mensaje": (
+            f"Se han detectado <strong>{nuevos_puntos}</strong> nuevos puntos en la zona "
+            f"<strong>{municipio} - {poblacion} ({provincia})</strong>, "
+            f"que han sido asignados automáticamente al comercial <strong>{nombre_comercial}</strong>."
+        ),
+        "Descripción de la asignación": (
+            "Esta asignación corresponde a puntos que estaban en la base de datos pero aún no "
+            "habían sido vinculados. Ahora quedan correctamente asociados."
+        )
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+

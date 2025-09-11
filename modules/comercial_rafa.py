@@ -574,17 +574,27 @@ def guardar_viabilidad(datos):
     conn.commit()
 
     # Obtener los emails de todos los administradores
-    cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin', 'comercial_jefe')")
-    resultados = cursor.fetchall()  # Obtiene una lista de tuplas con cada email
+    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+    resultados = cursor.fetchall()
     emails_admin = [fila[0] for fila in resultados]
+
+    # Determinar el comercial_jefe según la provincia
+    provincia_viabilidad = datos[2].upper().strip()
+    if provincia_viabilidad == "CANTABRIA":
+        cursor.execute("SELECT email FROM usuarios WHERE username = 'rafa sanz'")
+    else:
+        cursor.execute("SELECT email FROM usuarios WHERE username = 'juan'")
+    resultado_jefe = cursor.fetchone()
+    email_comercial_jefe = resultado_jefe[0] if resultado_jefe else None
+
     conn.close()
 
     # Información de la viabilidad
-    ticket_id = datos[10]  # Asumiendo que 'ticket' está en la posición 10
+    ticket_id = datos[10]  # 'ticket'
     nombre_comercial = st.session_state.get("username")
     descripcion_viabilidad = (
         f"📝 Viabilidad para el ticket {ticket_id}:<br><br>"
-        f"🧑‍💼 Comercial: {nombre_comercial}<br><br>"  # Nombre del comercial (usuario logueado)
+        f"🧑‍💼 Comercial: {nombre_comercial}<br><br>"
         f"📍 Latitud: {datos[0]}<br>"
         f"📍 Longitud: {datos[1]}<br>"
         f"🏞️ Provincia: {datos[2]}<br>"
@@ -606,12 +616,21 @@ def guardar_viabilidad(datos):
         for email in emails_admin:
             correo_viabilidad_comercial(email, ticket_id, descripcion_viabilidad)
         st.info(
-            f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada.")
+            f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada."
+        )
     else:
         st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
 
+    # Notificar al comercial jefe específico
+    if email_comercial_jefe:
+        correo_viabilidad_comercial(email_comercial_jefe, ticket_id, descripcion_viabilidad)
+        st.info(f"📧 Notificación enviada al comercial jefe: {email_comercial_jefe}")
+    else:
+        st.warning("⚠️ No se encontró email del comercial jefe, no se pudo enviar la notificación.")
+
     # Mostrar mensaje de éxito en Streamlit
     st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
+
 
 
 # Función para obtener viabilidades guardadas en la base de datos
