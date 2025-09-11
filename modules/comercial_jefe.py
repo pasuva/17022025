@@ -754,10 +754,10 @@ def mostrar_mapa_de_asignaciones():
                     popup=folium.Popup(popup_text, max_width=300)
                 ).add_to(marker_cluster)
             legend = """
-            {% macro html() %}
+            {% macro html(this, kwargs) %}
             <div style="
                 position: fixed; 
-                bottom: 20px; left: 0px; width: 190px; 
+                bottom: 00px; left: 0px; width: 190px; 
                 z-index:9999; 
                 font-size:14px;
                 background-color: white;

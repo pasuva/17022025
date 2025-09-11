@@ -379,10 +379,10 @@ def mapa_seccion():
 
         # renderizar y captura de click
         legend = """
-                    {% macro html() %}
+                    {% macro html(this, kwargs) %}
                     <div style="
                         position: fixed; 
-                        bottom: 20px; left: 0px; width: 190px; 
+                        bottom: 0px; left: 0px; width: 190px; 
                         z-index:9999; 
                         font-size:14px;
                         background-color: white;
@@ -664,7 +664,7 @@ def viabilidades_seccion():
             "coste", "zona_estudio", "contratos", "latitud", "longitud",
             "provincia", "municipio", "poblacion", "vial", "numero", "letra",
             "cp", "olt", "cto_admin", "id_cto", "fecha_viabilidad",
-            "apartment_id", "nombre_cliente", "telefono", "comentarios_internos"
+            "apartment_id", "nombre_cliente", "telefono", "comentarios_internos", "respuesta_comercial"
         ]
 
         nombres_excel = {
@@ -755,10 +755,10 @@ def viabilidades_seccion():
 
         m_to_show = draw_map(viabilidades_df, st.session_state["map_center"], st.session_state["map_zoom"])
         legend = """
-                            {% macro html() %}
+                            {% macro html(this, kwargs) %}
                             <div style="
                                 position: fixed; 
-                                bottom: 20px; left: 0px; width: 150px; 
+                                bottom: 0px; left: 0px; width: 150px; 
                                 z-index:9999; 
                                 font-size:14px;
                                 background-color: white;
@@ -1294,7 +1294,7 @@ def mostrar_formulario(click_data):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            apartment_id_clean = ",".join(apartment_ids)  # Guardamos limpio, sin espacios sobrantes
+            apartment_id_clean = ",".join(apartment_ids)
 
             cursor.execute("""
                 UPDATE viabilidades
@@ -1310,32 +1310,37 @@ def mostrar_formulario(click_data):
                 ticket
             ))
 
+            # 📧 Obtener correo del comercial
             cursor.execute("""
-                SELECT email 
-                FROM usuarios
-                WHERE username = (
-                    SELECT usuario 
-                    FROM viabilidades 
-                    WHERE ticket = ?
-                )
+                SELECT email, provincia
+                FROM usuarios u
+                JOIN viabilidades v ON v.usuario = u.username
+                WHERE v.ticket = ?
             """, (ticket,))
-            email_comercial = cursor.fetchone()
+            row = cursor.fetchone()
+            email_comercial, provincia = (row if row else (None, None))
+
             destinatarios = []
 
             if email_comercial:
-                destinatarios.append(email_comercial[0])
+                destinatarios.append(email_comercial)
             else:
                 st.error("❌ No se encontró el correo del comercial correspondiente.")
                 destinatarios.append("patricia@verdetuoperador.com")
 
+            # 📧 Obtener correos de comerciales_jefe
             cursor.execute("""
-                SELECT email
+                SELECT username, email
                 FROM usuarios
                 WHERE role = 'comercial_jefe'
             """)
             jefes = cursor.fetchall()
-            for fila in jefes:
-                destinatarios.append(fila[0])
+
+            for jefe_username, jefe_email in jefes:
+                # ⚠️ Filtrar a Juan si la provincia es Cantabria
+                if provincia and provincia.lower() == "cantabria" and jefe_username.lower() == "juan":
+                    continue
+                destinatarios.append(jefe_email)
 
             descripcion_viabilidad = (
                 f"📢 La viabilidad del ticket {ticket} ha sido completada.<br><br>"
@@ -1349,6 +1354,7 @@ def mostrar_formulario(click_data):
                 f"Si tiene alguna pregunta o necesita realizar alguna modificación, no dude en ponerse en contacto con el equipo de administración."
             )
 
+            # Enviar notificaciones
             for destinatario in set(destinatarios):
                 correo_viabilidad_administracion(destinatario, ticket, descripcion_viabilidad)
 

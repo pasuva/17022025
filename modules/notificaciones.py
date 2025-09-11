@@ -246,3 +246,17 @@ def correo_asignacion_puntos_existentes(destinatario, nombre_comercial, provinci
     }
     enviar_notificacion(destinatario, asunto, contenido)
 
+def correo_respuesta_comercial(destinatario, ticket_id, nombre_comercial, comentario):
+    asunto = f"Respuesta del comercial {nombre_comercial} para el ticket {ticket_id}"
+    contenido = {
+        "mensaje": (
+            f"El comercial <strong>{nombre_comercial}</strong> ha dado una respuesta al ticket "
+            f"<strong>{ticket_id}</strong>."
+        ),
+        "Respuesta del comercial": comentario,
+        "Descripción": (
+            "Por favor revise la respuesta del comercial a la resolución dada por la oficina."
+        )
+    }
+    enviar_notificacion(destinatario, asunto, contenido)
+

@@ -9,7 +9,7 @@ from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
 from modules.cloudinary import upload_image_to_cloudinary
-from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial
+from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 
@@ -392,10 +392,10 @@ def comercial_dashboard():
                         ).add_to(cluster_layer)
 
                     legend = """
-                                {% macro html() %}
+                                {% macro html(this, kwargs) %}
                                 <div style="
                                     position: fixed; 
-                                    bottom: 20px; left: 0px; width: 190px; 
+                                    bottom: 00px; left: 0px; width: 190px; 
                                     z-index:9999; 
                                     font-size:14px;
                                     background-color: white;
@@ -496,8 +496,8 @@ def comercial_dashboard():
 
             # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """
-            SELECT v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
-                   v.serviciable, v.coste, v.comentarios_comercial
+            SELECT v.ticket, v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
+                   v.serviciable, v.coste, v.comentarios_comercial, v.justificacion, v.resultado, v.respuesta_comercial
             FROM viabilidades v
             WHERE LOWER(v.usuario) = LOWER(?)
             """
@@ -514,11 +514,93 @@ def comercial_dashboard():
                 st.dataframe(df_ofertas, use_container_width=True)
 
             # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
+            # Mostrar segunda tabla (viabilidades)
             if df_viabilidades.empty:
                 st.warning(f"⚠️ No hay viabilidades disponibles para el comercial '{comercial_usuario}'.")
             else:
                 st.subheader("📋 Tabla de Viabilidades")
                 st.dataframe(df_viabilidades, use_container_width=True)
+
+                # Filtrar viabilidades críticas por justificación
+                justificaciones_criticas = ["MAS PREVENTA", "PDTE. RAFA FIN DE OBRA"]
+
+                # Filtrar viabilidades críticas por resultado
+                resultados_criticos = ["PDTE INFORMACION RAFA", "OK", "SOBRECOSTE"]
+
+                # Filtrar las viabilidades que cumplen la condición
+                df_condiciones = df_viabilidades[
+                    (df_viabilidades['justificacion'].isin(justificaciones_criticas)) |
+                    (df_viabilidades['resultado'].isin(resultados_criticos))
+                    ]
+
+                # Filtrar solo las que aún NO tienen respuesta_comercial
+                df_pendientes = df_condiciones[
+                    df_condiciones['respuesta_comercial'].isna() | (df_condiciones['respuesta_comercial'] == "")
+                    ]
+
+                if not df_pendientes.empty:
+                    st.warning(f"🔔 Tienes {len(df_pendientes)} viabilidades pendientes de contestar.")
+
+                    st.subheader("📝 Añadir comentarios a Viabilidades pendientes")
+
+                    for _, row in df_pendientes.iterrows():
+                        with st.expander(f"Ticket {row['ticket']} - {row['municipio']} {row['vial']} {row['numero']}"):
+                            # Mostrar información contextual
+                            st.markdown(f"""
+                                    **📌 Justificación oficina:**  
+                                    {row.get('justificacion', '—')}
+
+                                    **📊 Resultado oficina:**  
+                                    {row.get('resultado', '—')}
+                                    """)
+
+                            st.info("""
+                                    ℹ️ **Por favor, completa este campo indicando:**  
+                                            - Si estás de acuerdo o no con la resolución.  
+                                            - Información adicional de tu visita (cliente, obra, accesos, etc.), detalles que ayuden a la oficina a cerrar la viabilidad.  
+                                            - Si el cliente acepta o no el presupuesto.
+                                    """)
+                            nuevo_comentario = st.text_area(
+                                f"✏️ Comentario para ticket {row['ticket']}",
+                                value="",
+                                placeholder="Ejemplo: El cliente confirma que esperará a fin de obra para contratar...",
+                                key=f"comentario_{row['ticket']}"
+                            )
+
+                            if st.button(f"💾 Guardar comentario ({row['ticket']})", key=f"guardar_{row['ticket']}"):
+                                try:
+                                    conn = get_db_connection()
+                                    cursor = conn.cursor()
+
+                                    # Guardar la respuesta del comercial
+                                    cursor.execute(
+                                        "UPDATE viabilidades SET respuesta_comercial = ? WHERE ticket = ?",
+                                        (nuevo_comentario, row['ticket'])
+                                    )
+
+                                    conn.commit()
+                                    conn.close()
+
+                                    # 🔔 Enviar notificación por correo a administradores y comercial_jefe
+                                    # Obtener emails de administradores y comercial_jefe
+                                    conn = get_db_connection()
+                                    cursor = conn.cursor()
+                                    cursor.execute(
+                                        "SELECT email FROM usuarios WHERE role IN ('admin','comercial_jefe')")
+                                    destinatarios = [fila[0] for fila in cursor.fetchall()]
+                                    conn.close()
+
+                                    for email in destinatarios:
+                                        correo_respuesta_comercial(email, row['ticket'], comercial_usuario,
+                                                                   nuevo_comentario)
+
+                                    st.success(
+                                        f"✅ Comentario guardado y notificación enviada para el ticket {row['ticket']}.")
+                                    st.rerun()  # 🔄 Refrescar la página para que desaparezca de pendientes
+                                except Exception as e:
+                                    st.error(f"❌ Error al guardar el comentario para el ticket {row['ticket']}: {e}")
+                else:
+                    st.info("🎉 No tienes viabilidades pendientes de contestar. ✅")
 
         except Exception as e:
             st.error(f"❌ Error al cargar los datos: {e}")
