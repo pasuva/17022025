@@ -1173,6 +1173,7 @@ def mostrar_formulario(click_data):
             )
         with col_nueva4:
             opciones_justificacion = [
+                " ",
                 "ZONA SUBVENCIONADA",
                 "INVIABLE",
                 "MAS PREVENTA",
