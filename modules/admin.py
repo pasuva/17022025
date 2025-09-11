@@ -968,32 +968,76 @@ def viabilidades_seccion():
 
                 insertados = 0
                 errores = []
+                actualizados = []
+
+                # Columnas que deben completarse si están vacías
+                columnas_rellenables = [
+                    "nuevapromocion", "resultado", "justificacion",
+                    "coste", "zona_estudio", "contratos", "comentarios_comercial"
+                ]
 
                 for _, fila in df.iterrows():
                     datos_validos = {col: fila[col] for col in fila.index if col in columnas_bd and pd.notna(fila[col])}
-
                     if not datos_validos:
                         continue
 
-                    columnas_sql = ", ".join(datos_validos.keys())
-                    placeholders = ", ".join(["?"] * len(datos_validos))
-                    valores = list(datos_validos.values())
+                    ticket_id = fila.get("ticket")
 
-                    sql = f"INSERT OR REPLACE INTO viabilidades ({columnas_sql}) VALUES ({placeholders})"
+                    # Comprobar si el ticket ya existe en la BD
+                    cursor.execute("SELECT * FROM viabilidades WHERE ticket = ?", (ticket_id,))
+                    existente = cursor.fetchone()
 
-                    try:
-                        cursor.execute(sql, valores)
-                        insertados += 1
-                    except Exception as e:
-                        errores.append(f"❌ Error al insertar ticket {fila.get('ticket')}: {e}")
+                    if existente:
+                        # Crear dict con valores actuales de la BD
+                        cursor.execute("PRAGMA table_info(viabilidades);")
+                        cols_info = cursor.fetchall()
+                        nombres_cols = [c[1] for c in cols_info]
+                        existente_dict = dict(zip(nombres_cols, existente))
+
+                        # Preparar actualizaciones solo si la BD tiene vacío
+                        updates = {}
+                        for col in columnas_rellenables:
+                            if col in datos_validos and (
+                                    existente_dict.get(col) is None or str(existente_dict.get(col)).strip() == ""):
+                                updates[col] = datos_validos[col]
+
+                        if updates:
+                            set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
+                            valores = list(updates.values()) + [ticket_id]
+                            sql = f"UPDATE viabilidades SET {set_clause} WHERE ticket = ?"
+                            try:
+                                cursor.execute(sql, valores)
+                                actualizados.append(
+                                    f"✅ Ticket {ticket_id} → columnas actualizadas: {', '.join(updates.keys())}")
+                                insertados += 1
+                            except Exception as e:
+                                errores.append(f"❌ Error al actualizar ticket {ticket_id}: {e}")
+                    else:
+                        # Insertar nuevo registro
+                        columnas_sql = ", ".join(datos_validos.keys())
+                        placeholders = ", ".join(["?"] * len(datos_validos))
+                        valores = list(datos_validos.values())
+                        sql = f"INSERT INTO viabilidades ({columnas_sql}) VALUES ({placeholders})"
+
+                        try:
+                            cursor.execute(sql, valores)
+                            insertados += 1
+                        except Exception as e:
+                            errores.append(f"❌ Error al insertar ticket {ticket_id}: {e}")
 
                 conn.commit()
                 conn.close()
 
                 # Mostrar resultados al usuario
-                st.success(f"✅ Registros insertados correctamente: {insertados}")
+                st.success(f"✅ Registros insertados/actualizados correctamente: {insertados}")
+
+                if actualizados:
+                    st.info("ℹ️ Detalle de actualizaciones realizadas:")
+                    for msg in actualizados:
+                        st.write(msg)
+
                 if errores:
-                    st.error(f"❌ Se encontraron {len(errores)} errores durante la inserción.")
+                    st.error(f"❌ Se encontraron {len(errores)} errores durante la inserción/actualización.")
                     for e in errores:
                         st.write(e)
 
