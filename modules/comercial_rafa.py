@@ -650,8 +650,10 @@ def guardar_viabilidad(datos):
             ticket, 
             nombre_cliente, 
             telefono, 
-            usuario
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+            usuario,
+            olt,
+            apartment_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)
     """, datos)
     conn.commit()
 
@@ -689,6 +691,8 @@ def guardar_viabilidad(datos):
         f"💬 Comentario: {datos[9]}<br>"
         f"👥 Nombre Cliente: {datos[11]}<br>"
         f"📞 Teléfono: {datos[12]}<br><br>"
+        f"🏢 OLT: {datos[14]}<br>"
+        f"🏘️ Apartment ID: {datos[15]}<br><br>"
         f"ℹ️ Por favor, revise todos los detalles de la viabilidad para asegurar que toda la información esté correcta. "
         f"Si tiene alguna pregunta o necesita más detalles, no dude en ponerse en contacto con el comercial {nombre_comercial} o con el equipo responsable."
     )
@@ -843,6 +847,19 @@ def viabilidades_section():
                 nombre_cliente = st.text_input("👤 Nombre Cliente")
             with col11:
                 telefono = st.text_input("📞 Teléfono")
+            # ✅ NUEVOS CAMPOS
+            col12, col13 = st.columns(2)
+            # Conexión para cargar los OLT desde la tabla
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY nombre_olt")
+            lista_olt = [f"{fila[0]}. {fila[1]}" for fila in cursor.fetchall()]
+            conn.close()
+
+            with col12:
+                olt = st.selectbox("🏢 OLT", options=lista_olt)
+            with col13:
+                apartment_id = st.text_input("🏘️ Apartment ID")
             comentario = st.text_area("📝 Comentario")
             submit = st.form_submit_button("Enviar Formulario")
 
@@ -866,7 +883,9 @@ def viabilidades_section():
                     ticket,
                     nombre_cliente,
                     telefono,
-                    st.session_state["username"]
+                    st.session_state["username"],
+                    olt,  # nuevo campo
+                    apartment_id  # nuevo campo
                 ))
 
                 st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
