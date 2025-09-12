@@ -496,7 +496,7 @@ def comercial_dashboard():
 
             # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """
-            SELECT v.ticket, v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
+            SELECT v.ticket, v.latitud, v.longitud, v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
                    v.serviciable, v.coste, v.comentarios_comercial, v.justificacion, v.resultado, v.respuesta_comercial
             FROM viabilidades v
             WHERE LOWER(v.usuario) = LOWER(?)

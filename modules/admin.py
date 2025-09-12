@@ -2405,6 +2405,12 @@ def admin_dashboard():
                     ]
                     data_filtrada = data_filtrada[columnas_finales]
 
+                    if "fecha" in data_filtrada.columns:
+                        data_filtrada["fecha"] = pd.to_datetime(data_filtrada["fecha"], errors="coerce")
+                        data_filtrada["fecha"] = data_filtrada["fecha"].dt.strftime(
+                            "%Y-%m-%d")  # convierte fechas a texto
+                        data_filtrada["fecha"] = data_filtrada["fecha"].where(pd.notnull(data_filtrada["fecha"]), None)
+
                     # Leer datos anteriores
                     conn = obtener_conexion()
                     df_antiguos = pd.read_sql("SELECT * FROM datos_uis", conn)
@@ -2440,32 +2446,36 @@ def admin_dashboard():
 
                     # Buscar zonas ya asignadas en comercial_rafa
                     cursor.execute("""
-                        SELECT DISTINCT provincia, municipio, poblacion, zona, comercial
+                        SELECT DISTINCT provincia, municipio, poblacion, comercial
                         FROM comercial_rafa
                     """)
                     zonas_asignadas = cursor.fetchall()
 
                     for zona in zonas_asignadas:
-                        provincia, municipio, poblacion, zona_val, comercial = zona
+                        provincia, municipio, poblacion, comercial = zona
 
                         # Puntos ya asignados en esa zona
                         cursor.execute("""
                             SELECT apartment_id
                             FROM comercial_rafa
-                            WHERE provincia = ? AND municipio = ? AND poblacion = ? AND zona = ? AND comercial = ?
-                        """, (provincia, municipio, poblacion, zona_val, comercial))
+                            WHERE provincia = ? AND municipio = ? AND poblacion = ? AND comercial = ?
+                        """, (provincia, municipio, poblacion, comercial))
                         asignados_ids = {fila[0] for fila in cursor.fetchall()}
 
-                        # Puntos disponibles en datos_uis para esa zona
+                        # Puntos disponibles en datos_uis para esa zona (sin usar la columna 'zona')
                         cursor.execute("""
                             SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
                             FROM datos_uis
-                            WHERE provincia = ? AND municipio = ? AND poblacion = ? AND zona = ?
-                        """, (provincia, municipio, poblacion, zona_val))
+                            WHERE provincia = ? AND municipio = ? AND poblacion = ?
+                        """, (provincia, municipio, poblacion))
                         puntos_zona = cursor.fetchall()
 
-                        # Filtrar los que todavía no están en comercial_rafa
-                        nuevos_para_asignar = [p for p in puntos_zona if p[0] not in asignados_ids]
+                        # 🔹 Obtener todos los apartment_id ya existentes en comercial_rafa
+                        cursor.execute("SELECT apartment_id FROM comercial_rafa")
+                        todos_asignados = {fila[0] for fila in cursor.fetchall()}
+
+                        # 🔹 Filtrar los nuevos para no insertar duplicados
+                        nuevos_para_asignar = [p for p in puntos_zona if p[0] not in todos_asignados]
 
                         # Insertarlos asignados al mismo comercial
                         for p in nuevos_para_asignar:
@@ -2477,7 +2487,9 @@ def admin_dashboard():
 
                         if nuevos_para_asignar:
                             st.info(
-                                f"📌 Se asignaron {len(nuevos_para_asignar)} nuevos puntos a {comercial} en la zona {poblacion} ({municipio}, {provincia})")
+                                f"📌 Se asignaron {len(nuevos_para_asignar)} nuevos puntos a {comercial} en la zona {poblacion} ({municipio}, {provincia})"
+                            )
+
                             # 🔹 Notificación al comercial
                             cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial.lower(),))
                             resultado = cursor.fetchone()
