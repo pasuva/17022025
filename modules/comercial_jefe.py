@@ -48,7 +48,7 @@ def cargar_datos():
     """Carga los datos de las tablas con caché"""
     conn = get_db_connection()
     query_datos_uis = """
-        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, cto_con_proyecto, serviciable 
+        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, tipo_olt_rental, serviciable 
         FROM datos_uis 
         WHERE comercial = 'RAFA SANZ'
     """
@@ -233,12 +233,12 @@ def mostrar_mapa_de_asignaciones():
             datos_uis = datos_uis[datos_uis["provincia"].isin(["asturias", "lugo"])]
             # st.info("🔒 Estás viendo solo datos de Asturias y Lugo.")
 
-            # Filtro por cto_con_proyecto según usuario
-        if st.session_state["username"].strip().lower() == "juan":
-            datos_uis = datos_uis[datos_uis["cto_con_proyecto"].str.lower() == "si"]
-        elif st.session_state["username"].strip().lower() == "rafa sanz":
-            datos_uis = datos_uis[
-                datos_uis["cto_con_proyecto"].isnull() | (datos_uis["cto_con_proyecto"].str.strip() == "")]
+            # Filtro por tipo_olt_rental según usuario
+        #if st.session_state["username"].strip().lower() == "juan":
+        #    datos_uis = datos_uis[datos_uis["tipo_olt_rental"].str.lower() == "CTO COMPARTIDA"]
+        #elif st.session_state["username"].strip().lower() == "rafa sanz":
+        #    datos_uis = datos_uis[
+        #        datos_uis["tipo_olt_rental"].isnull() | (datos_uis["tipo_olt_rental"].str.strip() == "")]
 
         # Si después del filtro no quedan datos, detenemos
         if datos_uis.empty:
@@ -741,7 +741,7 @@ def mostrar_mapa_de_asignaciones():
                         elif contrato == "no interesado":
                             color = 'black'
 
-                icon_name = 'home' if str(row.get('cto_con_proyecto', '')).strip().lower() == 'si' else 'info-sign'
+                icon_name = 'home' if str(row.get('tipo_olt_rental', '')).strip().lower() == 'si' else 'info-sign'
                 popup_text = f"""
                     <b>Apartment ID:</b> {apartment_id}<br>
                     <b>Vial:</b> {vial}<br>

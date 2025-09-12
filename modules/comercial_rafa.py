@@ -251,7 +251,7 @@ def comercial_dashboard():
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
 
-    # Se utiliza un ícono de marcador por defecto (sin comprobación de cto_con_proyecto)
+    # Se utiliza un ícono de marcador por defecto (sin comprobación de tipo_olt_rental)
     marker_icon_type = 'info-sign'
 
     if menu_opcion == "Ofertas Comerciales":
@@ -269,17 +269,17 @@ def comercial_dashboard():
                     conn.close()
                     return
 
-                #query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
-                query= """
-                    SELECT cr.*
-                    FROM comercial_rafa cr
-                    LEFT JOIN datos_uis du ON cr.apartment_id = du.apartment_id
-                    WHERE LOWER(cr.comercial) = LOWER(?)
-                    AND (
-                        LOWER(cr.serviciable) <> 'no'
-                        OR UPPER(IFNULL(du.cto_con_proyecto, '')) = 'SI'
-                    )
-                    """
+                query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
+                #query= """
+                #    SELECT cr.*
+                #    FROM comercial_rafa cr
+                #    LEFT JOIN datos_uis du ON cr.apartment_id = du.apartment_id
+                #    WHERE LOWER(cr.comercial) = LOWER(?)
+                #    AND (
+                #        LOWER(cr.serviciable) <> 'no'
+                #        OR UPPER(IFNULL(du.tipo_olt_rental, '')) = 'CTO COMPARTIDA'
+                #    )
+                #    """
                 df = pd.read_sql(query, conn, params=(comercial,))
 
                 query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"

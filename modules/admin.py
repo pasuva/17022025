@@ -199,7 +199,7 @@ def cargar_datos_uis():
 
     # Consulta de datos_uis
     query_datos_uis = """
-        SELECT apartment_id, latitud, longitud, provincia, municipio, poblacion, cto_con_proyecto, serviciable,
+        SELECT apartment_id, latitud, longitud, provincia, municipio, poblacion, tipo_olt_rental, serviciable,
                vial, numero, letra, cp, cto_id, cto, site_operational_state, apartment_operational_state, zona
         FROM datos_uis
     """
@@ -447,7 +447,7 @@ def mostrar_info_apartamento(apartment_id, datos_df, comercial_rafa_df):
                     datos_info.iloc[0]['cto'],
                     datos_info.iloc[0]['site_operational_state'],
                     datos_info.iloc[0]['apartment_operational_state'],
-                    datos_info.iloc[0]['cto_con_proyecto'],
+                    datos_info.iloc[0]['tipo_olt_rental'],
                     datos_info.iloc[0]['zona']
                 ]
             }
@@ -2369,7 +2369,7 @@ def admin_dashboard():
                     "cto": "cto",
                     "lat": "latitud",
                     "lng": "longitud",
-                    "cto_con_proyecto": "cto_con_proyecto",
+                    "TIPO OLT RENTAL": "tipo_olt_rental",
                     "CERTIFICABLE": "CERTIFICABLE",
                     "COMERCIAL": "comercial",
                     "ZONA": "zona",
@@ -2400,7 +2400,7 @@ def admin_dashboard():
                         "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
                         "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
                         "apartment_operational_state", "cto_id", "olt", "cto", "latitud", "longitud",
-                        "cto_con_proyecto", "CERTIFICABLE", "comercial", "zona", "fecha",
+                        "tipo_olt_rental", "CERTIFICABLE", "comercial", "zona", "fecha",
                         "serviciable", "motivo", "contrato_uis"
                     ]
                     data_filtrada = data_filtrada[columnas_finales]
@@ -2422,7 +2422,7 @@ def admin_dashboard():
                         INSERT INTO datos_uis (
                             id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero,
                             parcela_catastral, letra, cp, site_operational_state, apartment_operational_state,
-                            cto_id, olt, cto, latitud, longitud, cto_con_proyecto, CERTIFICABLE, comercial,
+                            cto_id, olt, cto, latitud, longitud, tipo_olt_rental, CERTIFICABLE, comercial,
                             zona, fecha, serviciable, motivo, contrato_uis
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """
