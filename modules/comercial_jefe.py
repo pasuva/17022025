@@ -483,9 +483,9 @@ def mostrar_mapa_de_asignaciones():
                             registros_eliminados = cursor.rowcount
                             conn.commit()
 
-                            if registros_eliminados > 0 or registros_bloqueados > 0:
+                            if registros_eliminados > 0:
                                 # Calcular total de registros de la zona para ese comercial
-                                total_registros = registros_eliminados + registros_bloqueados
+                                total_registros = registros_eliminados
 
                                 # Notificar
                                 cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_a_eliminar,))
@@ -499,9 +499,7 @@ def mostrar_mapa_de_asignaciones():
 
                                 descripcion_desasignacion = (
                                     f"📍 Se le ha desasignado la zona {municipio_sel} - {poblacion_sel}.<br>"
-                                    f"📊 Total puntos: {total_registros}<br>"
-                                    f"🗑️ Eliminados: {registros_eliminados}<br>"
-                                    f"🔒 Conservados (con visitas/contratos): {registros_bloqueados}<br><br>"
+                                    f"📊 Total puntos eliminados: {total_registros}<br><br>"
                                     "ℹ️ Revise su panel de usuario para más detalles.<br>"
                                     "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
                                 )
@@ -512,9 +510,7 @@ def mostrar_mapa_de_asignaciones():
                                     f"📢 Desasignación de zona.\n\n"
                                     f"📌 Zona: {municipio_sel} - {poblacion_sel}\n"
                                     f"👥 Comercial afectado: {comercial_a_eliminar}\n"
-                                    f"📊 Total puntos: {total_registros}\n"
-                                    f"🗑️ Registros eliminados: {registros_eliminados}\n"
-                                    f"🔒 Registros conservados: {registros_bloqueados}\n"
+                                    f"📊 Total puntos eliminados: {total_registros}\n"
                                     f"🕵️ Realizado por: {st.session_state['username']}"
                                 )
                                 for email_admin in emails_admins:
@@ -522,37 +518,26 @@ def mostrar_mapa_de_asignaciones():
                                                                       descripcion_admin)
 
                                 # Mensajes claros en la interfaz
-                                if registros_eliminados > 0 and registros_bloqueados == 0:
-                                    st.success(
-                                        f"✅ Se ha desasignado completamente la zona {municipio_sel} - {poblacion_sel} "
-                                        f"para el comercial **{comercial_a_eliminar}**.\n\n"
-                                        f"📊 Total puntos: {total_registros}\n"
-                                        f"🗑️ Eliminados: {registros_eliminados}\n"
-                                        f"🔒 Conservados: {registros_bloqueados}"
-                                    )
-                                elif registros_eliminados > 0 and registros_bloqueados > 0:
-                                    st.warning(
-                                        f"⚠️ Se ha desasignado parcialmente la zona {municipio_sel} - {poblacion_sel} "
-                                        f"para el comercial **{comercial_a_eliminar}**.\n\n"
-                                        f"📊 Total puntos: {total_registros}\n"
-                                        f"🗑️ Eliminados (sin info): {registros_eliminados}\n"
-                                        f"🔒 Conservados (con visitas/contratos): {registros_bloqueados}\n\n"
-                                        "ℹ️ Los puntos con información se mantienen para no perder trazabilidad."
-                                    )
-                                elif registros_eliminados == 0:
-                                    st.info(
-                                        f"ℹ️ No se pudo desasignar ningún punto de la zona {municipio_sel} - {poblacion_sel} "
-                                        f"para el comercial **{comercial_a_eliminar}**.\n\n"
-                                        f"📊 Total puntos: {total_registros}\n"
-                                        f"🔒 Conservados (con visitas/contratos): {registros_bloqueados}"
-                                    )
+                                st.success(
+                                    f"✅ Se ha desasignado completamente la zona {municipio_sel} - {poblacion_sel} "
+                                    f"para el comercial **{comercial_a_eliminar}**.\n\n"
+                                    f"📊 Total puntos eliminados: {total_registros}"
+                                )
 
-                                accion_log = "Desasignación total" if registros_bloqueados == 0 else "Desasignación parcial"
+                                # Log
+                                accion_log = "Desasignación total"
                                 detalle_log = (
                                     f"Zona {municipio_sel}-{poblacion_sel} desasignada de {comercial_a_eliminar} - "
-                                    f"{registros_eliminados} eliminados, {registros_bloqueados} conservados"
+                                    f"{registros_eliminados} eliminados"
                                 )
                                 log_trazabilidad(st.session_state["username"], accion_log, detalle_log)
+
+                            else:
+                                conn.close()
+                                st.info(
+                                    f"ℹ️ No había puntos para desasignar en la zona {municipio_sel} - {poblacion_sel} "
+                                    f"para el comercial **{comercial_a_eliminar}**."
+                                )
 
         # --- REASIGNAR PUNTOS ---
         # FORMULARIO DE REASIGNACIÓN (FUERA DEL BLOQUE DE DESASIGNACIÓN)
