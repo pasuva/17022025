@@ -589,15 +589,33 @@ def mostrar_mapa_de_asignaciones():
                                     reparto[nuevos_comerciales[i % n_comerciales]].append(p)
 
                                 # 3. Insertar en la tabla principal
+                                # 3. Insertar en la tabla principal con control de duplicados y trazabilidad
                                 for comercial, puntos in reparto.items():
                                     for p in puntos:
+                                        apartment_id = p[0]
+
+                                        # Verificar si ya existe en la tabla comercial_rafa
+                                        cursor.execute("SELECT comercial FROM comercial_rafa WHERE apartment_id = ?",
+                                                       (apartment_id,))
+                                        anterior = cursor.fetchone()
+
+                                        if anterior:
+                                            comercial_anterior = anterior[0]
+                                            # Registrar en el log que se reasigna desde comercial_anterior hacia comercial
+                                            detalle_log = (
+                                                f"Reasignación de punto {apartment_id}: "
+                                                f"{comercial_anterior} ➝ {comercial} "
+                                                f"(zona {p[2]} - {p[3]})"
+                                            )
+                                            log_trazabilidad(st.session_state["username"], "Reasignación", detalle_log)
+
+                                        # Insertar o reemplazar (sobrescribe si ya existe el apartment_id)
                                         cursor.execute("""
-                                                                            INSERT INTO comercial_rafa
-                                                                            (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
-                                                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                                                        """,
-                                                       (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9],
-                                                        comercial, 'Pendiente'))
+                                            INSERT OR REPLACE INTO comercial_rafa
+                                            (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial,
+                                              'Pendiente'))
 
                                 # 4. Limpiar la tabla temporal
                                 cursor.execute("DELETE FROM puntos_liberados_temp")
