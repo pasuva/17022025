@@ -123,8 +123,8 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
     except Exception as e:
         st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
 
-def comercial_dashboard():
-    """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
+def comercial_dashboard_vip():
+    """Muestra el mapa y formulario de Ofertas Comerciales para el comercial VIP (ve toda la huella con filtros persistentes)."""
     controller = CookieController(key="cookies")
     st.markdown(
         """
@@ -150,6 +150,7 @@ def comercial_dashboard():
         unsafe_allow_html=True
     )
 
+    # --- SIDEBAR ---
     with st.sidebar:
         st.sidebar.markdown("""
             <style>
@@ -181,26 +182,20 @@ def comercial_dashboard():
             </style>
 
             <div class="user-circle">👤</div>
-            <div class="user-info">Rol: Comercial</div>
+            <div class="user-info">Rol: Comercial VIP</div>
             <div class="welcome-msg">Bienvenido, <strong>{username}</strong></div>
             <hr>
-            """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
+            """.replace("{username}", st.session_state.get('username', 'N/A')), unsafe_allow_html=True)
 
         menu_opcion = option_menu(
-            menu_title=None,  # Título oculto
+            menu_title=None,
             options=["Ofertas Comerciales", "Viabilidades", "Visualización de Datos"],
             icons=["bar-chart", "check-circle", "graph-up"],
             menu_icon="list",
             default_index=0,
             styles={
-                "container": {
-                    "padding": "0px",
-                    "background-color": "#F0F7F2"  # Fondo claro corporativo
-                },
-                "icon": {
-                    "color": "#2C5A2E",  # Verde oscuro
-                    "font-size": "18px"
-                },
+                "container": {"padding": "0px", "background-color": "#F0F7F2"},
+                "icon": {"color": "#2C5A2E", "font-size": "18px"},
                 "nav-link": {
                     "color": "#2C5A2E",
                     "font-size": "16px",
@@ -210,7 +205,7 @@ def comercial_dashboard():
                     "border-radius": "0px",
                 },
                 "nav-link-selected": {
-                    "background-color": "#66B032",  # Verde principal
+                    "background-color": "#66B032",
                     "color": "white",
                     "font-weight": "bold"
                 }
@@ -218,159 +213,214 @@ def comercial_dashboard():
         )
 
     detalles = f"El usuario seleccionó la vista '{menu_opcion}'."
-    log_trazabilidad(st.session_state["username"], "Selección de vista", detalles)
+    log_trazabilidad(st.session_state.get("username", "N/A"), "Selección de vista", detalles)
 
-    if "username" not in st.session_state:
+    if "username" not in st.session_state or not st.session_state.get("username"):
         st.warning("⚠️ No has iniciado sesión. Por favor, inicia sesión para continuar.")
-        time.sleep(2)
-        login.login()
+        time.sleep(1.5)
+        try:
+            login.login()
+        except Exception:
+            pass
         return
 
     comercial = st.session_state.get("username")
 
-    # Botón de Cerrar Sesión
+    # --- CERRAR SESIÓN ---
     with st.sidebar:
         if st.button("Cerrar sesión"):
             detalles = f"El comercial {st.session_state.get('username', 'N/A')} cerró sesión."
             log_trazabilidad(st.session_state.get("username", "N/A"), "Cierre sesión", detalles)
-
-            # Eliminar las cookies del session_id, username y role para esta sesión
             if controller.get(f'{cookie_name}_session_id'):
                 controller.set(f'{cookie_name}_session_id', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_username'):
                 controller.set(f'{cookie_name}_username', '', max_age=0, path='/')
             if controller.get(f'{cookie_name}_role'):
                 controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
-
-            # Reiniciar el estado de sesión
             st.session_state["login_ok"] = False
             st.session_state["username"] = ""
             st.session_state["role"] = ""
             st.session_state["session_id"] = ""
-
             st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
 
-    # Se utiliza un ícono de marcador por defecto (sin comprobación de tipo_olt_rental)
     marker_icon_type = 'info-sign'
 
+    # --- DASHBOARD ---
     if menu_opcion == "Ofertas Comerciales":
+        log_trazabilidad(comercial, "Visualización de Dashboard VIP", "El comercial VIP visualizó la sección de Ofertas Comerciales.")
 
-        log_trazabilidad(comercial, "Visualización de Dashboard", "El comercial visualizó la sección de Ofertas Comerciales.")
-
-        with st.spinner("⏳ Cargando los datos del comercial..."):
+        # ----- FILTROS -----
+        with st.spinner("⏳ Cargando filtros..."):
             try:
                 conn = get_db_connection()
-                query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
-                tables = pd.read_sql(query_tables, conn)
-
-                if 'comercial_rafa' not in tables['name'].values:
-                    st.error("❌ La tabla 'comercial_rafa' no se encuentra en la base de datos.")
-                    conn.close()
-                    return
-
-                query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
-                #query= """
-                #    SELECT cr.*
-                #    FROM comercial_rafa cr
-                #    LEFT JOIN datos_uis du ON cr.apartment_id = du.apartment_id
-                #    WHERE LOWER(cr.comercial) = LOWER(?)
-                #    AND (
-                #        LOWER(cr.serviciable) <> 'no'
-                #        OR UPPER(IFNULL(du.tipo_olt_rental, '')) = 'CTO COMPARTIDA'
-                #    )
-                #    """
-                df = pd.read_sql(query, conn, params=(comercial,))
-
-                query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
-                ofertas_df = pd.read_sql(query_ofertas, conn)
-
-                query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(serviciable) = 'sí'"
-                ams_df = pd.read_sql(query_ams, conn)
+                provincias = pd.read_sql("SELECT DISTINCT provincia FROM datos_uis ORDER BY provincia", conn)["provincia"].dropna().tolist()
                 conn.close()
-
-                if df.empty:
-                    st.warning("⚠️ No hay datos asignados a este comercial.")
-                    return
             except Exception as e:
-                st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
+                st.error(f"❌ Error al cargar filtros: {e}")
                 return
 
-        if not isinstance(df, pd.DataFrame):
-            st.error("❌ Los datos no se cargaron correctamente.")
-            return
+        provincia_sel = st.selectbox("🌍 Selecciona provincia", ["Todas"] + provincias, key="vip_provincia")
 
-        for col in ['latitud', 'longitud', 'apartment_id']:
-            if col not in df.columns:
-                st.error(f"❌ No se encuentra la columna '{col}'.")
-                return
+        municipios = []
+        if provincia_sel != "Todas":
+            conn = get_db_connection()
+            municipios = pd.read_sql(
+                "SELECT DISTINCT municipio FROM datos_uis WHERE provincia = ? ORDER BY municipio",
+                conn, params=(provincia_sel,)
+            )["municipio"].dropna().tolist()
+            conn.close()
+        municipio_sel = st.selectbox("🏘️ Selecciona municipio", ["Todos"] + municipios, key="vip_municipio") if municipios else "Todos"
 
-        if "clicks" not in st.session_state:
-            st.session_state.clicks = []
+        poblaciones = []
+        if municipio_sel != "Todos":
+            conn = get_db_connection()
+            poblaciones = pd.read_sql(
+                "SELECT DISTINCT poblacion FROM datos_uis WHERE provincia = ? AND municipio = ? ORDER BY poblacion",
+                conn, params=(provincia_sel, municipio_sel)
+            )["poblacion"].dropna().tolist()
+            conn.close()
+        poblacion_sel = st.selectbox("🏡 Selecciona población", ["Todas"] + poblaciones, key="vip_poblacion") if poblaciones else "Todas"
 
-        location = get_user_location()
-        if "ultima_lat" in st.session_state and "ultima_lon" in st.session_state:
-            # Usar la última ubicación guardada
-            lat, lon = st.session_state["ultima_lat"], st.session_state["ultima_lon"]
-        elif location is None:
-            st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
-            lat, lon = 43.463444, -3.790476
-        else:
-            lat, lon = location
+        # Botones: aplicar y limpiar
+        colA, colB = st.columns([1, 1])
+        with colA:
+            aplicar = st.button("🔍 Aplicar filtros", key="vip_apply")
+        with colB:
+            limpiar = st.button("🧹 Limpiar filtros", key="vip_clear")
 
-        # Construir conjuntos y diccionarios para el estado de cada apartamento
-        serviciable_set = set(ams_df["apartment_id"])
-        contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
+        # Si pulsa limpiar: quitar df guardado
+        if limpiar:
+            st.session_state.pop("vip_filtered_df", None)
+            st.session_state.pop("vip_filters", None)
+            st.success("🧹 Filtros limpiados.")
+            st.experimental_rerun()
 
-        with st.spinner("⏳ Cargando datos..."):
-            try:
-                conn = get_db_connection()
-                # Consulta para obtener apartamentos no servicibles
-                query_serviciable = "SELECT apartment_id FROM comercial_rafa WHERE LOWER(serviciable) = 'no'"
-                serviciable_no_df = pd.read_sql(query_serviciable, conn)
+        # Si pulsa aplicar: obtener datos y guardarlos en session_state (persisten tras rerun)
+        if aplicar:
+            with st.spinner("⏳ Cargando puntos filtrados..."):
+                try:
+                    conn = get_db_connection()
+                    query = """
+                        SELECT d.apartment_id,
+                               d.provincia,
+                               d.municipio,
+                               d.poblacion,
+                               d.vial,
+                               d.numero,
+                               d.letra,
+                               d.cp,
+                               d.latitud,
+                               d.longitud,
+                               d.serviciable,
+                               c.comercial,
+                               c.Contrato
+                        FROM datos_uis d
+                        LEFT JOIN comercial_rafa c ON d.apartment_id = c.apartment_id
+                        WHERE 1=1
+                    """
+                    params = []
+                    if provincia_sel != "Todas":
+                        query += " AND d.provincia = ?"
+                        params.append(provincia_sel)
+                    if municipio_sel != "Todos":
+                        query += " AND d.municipio = ?"
+                        params.append(municipio_sel)
+                    if poblacion_sel != "Todas":
+                        query += " AND d.poblacion = ?"
+                        params.append(poblacion_sel)
 
-                with st.spinner("⏳ Cargando mapa..."):
-                    m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
-                                   tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-                                   attr="Google")
+                    df = pd.read_sql(query, conn, params=params)
+                    conn.close()
+
+                    if df.empty:
+                        st.warning("⚠️ No hay datos para los filtros seleccionados.")
+                    else:
+                        # Guardar DataFrame en session_state para persistencia
+                        st.session_state["vip_filtered_df"] = df
+                        st.session_state["vip_filters"] = {
+                            "provincia": provincia_sel,
+                            "municipio": municipio_sel,
+                            "poblacion": poblacion_sel
+                        }
+                        st.success(f"✅ Se han cargado {len(df)} puntos. (Filtros guardados en sesión)")
+                        # No forzamos rerun: el mismo flujo continuará y luego comprobamos session_state
+                except Exception as e:
+                    st.error(f"❌ Error al cargar los datos filtrados: {e}")
+
+        # ------ RENDER DEL MAPA (si hay df en session_state) ------
+        df_to_show = st.session_state.get("vip_filtered_df")
+        if df_to_show is not None:
+            df = df_to_show  # DataFrame a usar para el mapa
+
+            # --- Preparar y mostrar mapa ---
+            if "clicks" not in st.session_state:
+                st.session_state.clicks = []
+
+            location = get_user_location()
+            if "ultima_lat" in st.session_state and "ultima_lon" in st.session_state:
+                lat, lon = st.session_state["ultima_lat"], st.session_state["ultima_lon"]
+            elif location is None:
+                lat, lon = 43.463444, -3.790476
+            else:
+                lat, lon = location
+
+            with st.spinner("⏳ Cargando mapa..."):
+                try:
+                    # Si hay más de un punto, centramos en todos los puntos; si solo uno, zoom cercano
+                    if len(df) == 1:
+                        lat, lon = df['latitud'].iloc[0], df['longitud'].iloc[0]
+                        m = folium.Map(location=[lat, lon], zoom_start=18, max_zoom=21,
+                                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+                    else:
+                        # centro aproximado
+                        lat, lon = df['latitud'].mean(), df['longitud'].mean()
+                        m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
+                                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+                        # ajustar límites al bounding box de todos los puntos
+                        bounds = [[df['latitud'].min(), df['longitud'].min()],
+                                  [df['latitud'].max(), df['longitud'].max()]]
+                        m.fit_bounds(bounds)
 
                     Geocoder().add_to(m)
 
-                    if m.options['zoom'] >= 15:  # Si el zoom es alto, desactivar clustering
+                    # decidir cluster según tamaño
+                    if len(df) < 500:
                         cluster_layer = m
                     else:
                         cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
 
-                    # Calcular cuántos apartamentos comparten las mismas coordenadas
                     coord_counts = {}
                     for _, row in df.iterrows():
                         coord = (row['latitud'], row['longitud'])
                         coord_counts[coord] = coord_counts.get(coord, 0) + 1
 
-                    for index, row in df.iterrows():
-                        popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
+                    for _, row in df.iterrows():
                         apartment_id = row['apartment_id']
-
-                        # Obtener estado de serviciable desde datos_uis (no desde comercial_rafa)
+                        comercial_asignado = row['comercial'] if row['comercial'] else "Sin asignar"
+                        contrato_val = row['Contrato'] if row['Contrato'] else "N/A"
                         serviciable_val = str(row.get("serviciable", "")).strip().lower()
 
-                        # Lógica para determinar el color del marcador
+                        # Colores
                         if serviciable_val == "no":
-                            marker_color = 'red'  # 🔴 No Serviciable
+                            marker_color = 'red'
                         elif serviciable_val == "si":
-                            marker_color = 'green'  # 🟢 Serviciable
-                        elif apartment_id in contrato_dict:
-                            contrato_val = contrato_dict[apartment_id].strip().lower()
-                            if contrato_val == "sí":
-                                marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
-                            elif contrato_val == "no interesado":
-                                marker_color = 'black'  # ⚫ Oferta (No Interesado)
-                            else:
-                                marker_color = 'blue'  # 🔵 Sin oferta ni contrato
+                            marker_color = 'green'
+                        elif isinstance(contrato_val, str) and contrato_val.strip().lower() == "sí":
+                            marker_color = 'orange'
+                        elif isinstance(contrato_val, str) and contrato_val.strip().lower() == "no interesado":
+                            marker_color = 'black'
                         else:
-                            marker_color = 'blue'  # 🔵 Sin información
+                            marker_color = 'blue'
 
-                        # Aplicar desplazamiento si hay coordenadas duplicadas
+                        popup_text = f"""
+                        🏠 ID: {apartment_id}<br>
+                        📍 {row['latitud']}, {row['longitud']}<br>
+                        ✅ Serviciable: {row.get('serviciable', 'N/D')}<br>
+                        👤 Comercial: {comercial_asignado}<br>
+                        📑 Contrato: {contrato_val}
+                        """
+
                         coord = (row['latitud'], row['longitud'])
                         offset_factor = coord_counts[coord]
                         if offset_factor > 1:
@@ -378,11 +428,8 @@ def comercial_dashboard():
                             lon_offset = offset_factor * -0.00003
                         else:
                             lat_offset, lon_offset = 0, 0
-
                         new_lat = row['latitud'] + lat_offset
                         new_lon = row['longitud'] + lon_offset
-
-                        # Reducir el contador para el siguiente marcador con las mismas coordenadas
                         coord_counts[coord] -= 1
 
                         folium.Marker(
@@ -391,11 +438,12 @@ def comercial_dashboard():
                             icon=folium.Icon(color=marker_color, icon=marker_icon_type)
                         ).add_to(cluster_layer)
 
+                    # Leyenda
                     legend = """
                                 {% macro html(this, kwargs) %}
                                 <div style="
                                     position: fixed; 
-                                    bottom: 00px; left: 0px; width: 190px; 
+                                    bottom: 0px; left: 0px; width: 220px; 
                                     z-index:9999; 
                                     font-size:14px;
                                     background-color: white;
@@ -406,56 +454,57 @@ def comercial_dashboard():
                                     box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
                                 ">
                                 <b>Leyenda</b><br>
-                                <i style="color:green;">●</i> Serviciable y Finalizado<br>
+                                <i style="color:green;">●</i> Serviciable<br>
                                 <i style="color:red;">●</i> No serviciable<br>
                                 <i style="color:orange;">●</i> Contrato Sí<br>
                                 <i style="color:black;">●</i> No interesado<br>
-                                <i style="color:purple;">●</i> Incidencia<br>
-                                <i style="color:blue;">●</i> No Visitado<br>
+                                <i style="color:blue;">●</i> Sin información/No visitado<br>
                                 </div>
                                 {% endmacro %}
                                 """
-
                     macro = MacroElement()
                     macro._template = Template(legend)
                     m.get_root().add_child(macro)
 
                     map_data = st_folium(m, height=680, width="100%")
-                conn.close()
-            except Exception as e:
-                st.error(f"❌ Error al cargar los datos: {e}")
+                except Exception as e:
+                    st.error(f"❌ Error al cargar los datos en el mapa: {e}")
 
-        if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
-            st.session_state.clicks.append(map_data["last_object_clicked"])
+            # Clicks y formulario (igual que antes)
+            if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
+                st.session_state.clicks.append(map_data["last_object_clicked"])
 
-        if st.session_state.clicks:
-            last_click = st.session_state.clicks[-1]
-            lat_click = last_click.get("lat", "")
-            lon_click = last_click.get("lng", "")
+            if st.session_state.clicks:
+                last_click = st.session_state.clicks[-1]
+                lat_click = last_click.get("lat", "")
+                lon_click = last_click.get("lng", "")
 
-            if lat_click and lon_click:
-                google_maps_link = f"https://www.google.com/maps/search/?api=1&query={lat_click},{lon_click}"
-                st.markdown(f"""
-                    <div style="text-align: center; margin: 5px 0;">
-                        <a href="{google_maps_link}" target="_blank" style="
-                            background-color: #0078ff;
-                            color: white;
-                            padding: 6px 12px;
-                            font-size: 14px;
-                            font-weight: bold;
-                            border-radius: 6px;
-                            text-decoration: none;
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 6px;
-                        ">
-                            🗺️ Ver en Google Maps
-                        </a>
-                    </div>
-                """, unsafe_allow_html=True)
+                if lat_click and lon_click:
+                    google_maps_link = f"https://www.google.com/maps/search/?api=1&query={lat_click},{lon_click}"
+                    st.markdown(f"""
+                        <div style="text-align: center; margin: 5px 0;">
+                            <a href="{google_maps_link}" target="_blank" style="
+                                background-color: #0078ff;
+                                color: white;
+                                padding: 6px 12px;
+                                font-size: 14px;
+                                font-weight: bold;
+                                border-radius: 6px;
+                                text-decoration: none;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            ">
+                                🗺️ Ver en Google Maps
+                            </a>
+                        </div>
+                    """, unsafe_allow_html=True)
 
-            with st.spinner("⏳ Cargando formulario..."):
-                mostrar_formulario(last_click)
+                with st.spinner("⏳ Cargando formulario..."):
+                    mostrar_formulario(last_click)
+
+        else:
+            st.info("Selecciona filtros y pulsa 'Aplicar filtros' para cargar los puntos en el mapa.")
 
     # Sección de Viabilidades
     elif menu_opcion == "Viabilidades":
@@ -945,25 +994,15 @@ def mostrar_formulario(click_data):
         conn = get_db_connection()
         delta = 0.00001  # tolerancia para floats
         query = """
-            SELECT * FROM datos_uis 
-            WHERE latitud BETWEEN ? AND ? AND longitud BETWEEN ? AND ?
-        """
+                SELECT * FROM datos_uis 
+                WHERE latitud BETWEEN ? AND ? AND longitud BETWEEN ? AND ?
+            """
         params = (lat_value - delta, lat_value + delta, lng_value - delta, lng_value + delta)
         df = pd.read_sql(query, conn, params=params)
         conn.close()
     except Exception as e:
         st.error(f"❌ Error al obtener datos de la base de datos: {e}")
         return
-
-    # Si no se encontraron registros, avisar y salir
-    if df.empty:
-        st.warning("⚠️ No se encontraron datos para estas coordenadas.")
-        return
-
-    # Si no se encontraron registros, avisar y salir
-    if df.empty:
-        st.warning("⚠️ No se encontraron datos para estas coordenadas.")
-        return  # O podrías inicializar un formulario en blanco aquí
 
     # Si hay más de un registro, pedir al usuario que seleccione uno
     if len(df) > 1:
@@ -1181,4 +1220,4 @@ def mostrar_formulario(click_data):
                 st.warning("⚠️ No se encontró ningún email de administrador/gestor, no se pudo enviar la notificación.")
 
 if __name__ == "__main__":
-    comercial_dashboard()
+    comercial_dashboard_vip()
