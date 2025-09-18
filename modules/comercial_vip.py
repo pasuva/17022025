@@ -39,89 +39,119 @@ def log_trazabilidad(usuario, accion, detalles):
     conn.close()
 
 
-def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
-    """Guarda o actualiza la oferta en SQLite y almacena la imagen en Cloudinary si es necesario."""
+def guardar_en_base_de_datos_vip(oferta_data, imagen_incidencia, apartment_id):
+    """Guarda o actualiza la oferta en SQLite para comercial VIP."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar si el apartment_id existe en la base de datos
-        cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE apartment_id = ?", (apartment_id,))
-        if cursor.fetchone()[0] == 0:
-            st.error("❌ El Apartment ID no existe en la base de datos. No se puede guardar ni actualizar la oferta.")
-            conn.close()
-            return
-
-        st.info(f"⚠️ El Apartment ID {apartment_id} está asignado, se actualizarán los datos.")
-
         # Subir la imagen a Cloudinary si hay incidencia
         imagen_url = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
-            # Extraer la extensión del archivo para formar un nombre adecuado
             extension = os.path.splitext(imagen_incidencia.name)[1]
             filename = f"{apartment_id}{extension}"
             imagen_url = upload_image_to_cloudinary(imagen_incidencia, filename)
 
         comercial_logueado = st.session_state.get("username", None)
 
-        # Actualizar los datos en la base de datos, usando imagen_url en lugar de imagen_path
-        cursor.execute('''UPDATE comercial_rafa SET 
-                            provincia = ?, municipio = ?, poblacion = ?, vial = ?, numero = ?, letra = ?, 
-                            cp = ?, latitud = ?, longitud = ?, nombre_cliente = ?, telefono = ?, 
-                            direccion_alternativa = ?, observaciones = ?, serviciable = ?, motivo_serviciable = ?, 
-                            incidencia = ?, motivo_incidencia = ?, fichero_imagen = ?, fecha = ?, Tipo_Vivienda = ?, 
-                            Contrato = ?, comercial = ?
-                          WHERE apartment_id = ?''',
-                       (
-                           oferta_data["Provincia"],
-                           oferta_data["Municipio"],
-                           oferta_data["Población"],
-                           oferta_data["Vial"],
-                           oferta_data["Número"],
-                           oferta_data["Letra"],
-                           oferta_data["Código Postal"],
-                           oferta_data["Latitud"],
-                           oferta_data["Longitud"],
-                           oferta_data["Nombre Cliente"],
-                           oferta_data["Teléfono"],
-                           oferta_data["Dirección Alternativa"],
-                           oferta_data["Observaciones"],
-                           oferta_data["serviciable"],
-                           oferta_data["motivo_serviciable"],
-                           oferta_data["incidencia"],
-                           oferta_data["motivo_incidencia"],
-                           imagen_url,
-                           oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
-                           oferta_data["Tipo_Vivienda"],
-                           oferta_data["Contrato"],
-                           comercial_logueado,
-                           apartment_id
-                       ))
+        # Verificar si ya existe en comercial_rafa
+        cursor.execute("SELECT comercial FROM comercial_rafa WHERE apartment_id = ?", (apartment_id,))
+        row = cursor.fetchone()
+
+        if row:
+            comercial_asignado = row[0]
+
+            if comercial_asignado and str(comercial_asignado).strip() != "":
+                st.error(f"❌ El Apartment ID {apartment_id} ya está asignado al comercial '{comercial_asignado}'. "
+                         f"No se puede modificar desde este panel.")
+                conn.close()
+                return
+
+            # --- UPDATE si no está asignado ---
+            cursor.execute("""
+                UPDATE comercial_rafa SET
+                    provincia = ?, municipio = ?, poblacion = ?, vial = ?, numero = ?, letra = ?,
+                    cp = ?, latitud = ?, longitud = ?, nombre_cliente = ?, telefono = ?,
+                    direccion_alternativa = ?, observaciones = ?, serviciable = ?, motivo_serviciable = ?,
+                    incidencia = ?, motivo_incidencia = ?, fichero_imagen = ?, fecha = ?, Tipo_Vivienda = ?,
+                    Contrato = ?, comercial = ?
+                WHERE apartment_id = ?
+            """, (
+                oferta_data["Provincia"],
+                oferta_data["Municipio"],
+                oferta_data["Población"],
+                oferta_data["Vial"],
+                oferta_data["Número"],
+                oferta_data["Letra"],
+                oferta_data["Código Postal"],
+                oferta_data["Latitud"],
+                oferta_data["Longitud"],
+                oferta_data["Nombre Cliente"],
+                oferta_data["Teléfono"],
+                oferta_data["Dirección Alternativa"],
+                oferta_data["Observaciones"],
+                oferta_data["serviciable"],
+                oferta_data["motivo_serviciable"],
+                oferta_data["incidencia"],
+                oferta_data["motivo_incidencia"],
+                imagen_url,
+                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
+                oferta_data["Tipo_Vivienda"],
+                oferta_data["Contrato"],
+                comercial_logueado,
+                apartment_id
+            ))
+            st.success(f"✅ ¡Oferta actualizada en comercial_rafa para {apartment_id}!")
+
+        else:
+            # --- INSERT ---
+            cursor.execute("""
+                SELECT provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
+                FROM datos_uis WHERE apartment_id = ?
+            """, (apartment_id,))
+            row = cursor.fetchone()
+            if not row:
+                st.error(f"❌ El apartment_id {apartment_id} no existe en datos_uis.")
+                conn.close()
+                return
+
+            provincia, municipio, poblacion, vial, numero, letra, cp, lat, lon = row
+
+            cursor.execute("""
+                INSERT INTO comercial_rafa (
+                    apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud,
+                    nombre_cliente, telefono, direccion_alternativa, observaciones, serviciable, motivo_serviciable,
+                    incidencia, motivo_incidencia, fichero_imagen, fecha, Tipo_Vivienda, Contrato, comercial
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, lat, lon,
+                oferta_data["Nombre Cliente"],
+                oferta_data["Teléfono"],
+                oferta_data["Dirección Alternativa"],
+                oferta_data["Observaciones"],
+                oferta_data["serviciable"],
+                oferta_data["motivo_serviciable"],
+                oferta_data["incidencia"],
+                oferta_data["motivo_incidencia"],
+                imagen_url,
+                oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
+                oferta_data["Tipo_Vivienda"],
+                oferta_data["Contrato"],
+                comercial_logueado
+            ))
+            st.success(f"✅ ¡Oferta insertada en comercial_rafa para {apartment_id}!")
 
         conn.commit()
         conn.close()
-        st.success("✅ ¡Oferta actualizada con éxito en la base de datos!")
-
-        # Enviar notificación al administrador
-        # Obtener todos los correos de usuarios con rol 'admin' o 'comercial_jefe'
-        cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin', 'comercial_jefe')")
-        destinatario_admin = [fila[0] for fila in cursor.fetchall()]
-        descripcion_oferta = f"Se ha actualizado una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
-        for correo in destinatario_admin:
-            correo_oferta_comercial(correo, apartment_id, descripcion_oferta)
-
-        st.success("✅ Oferta actualizada con éxito")
-        st.info(f"📧 Se ha enviado una notificación a {len(destinatario_admin)} destinatario(s) con rol 'admin' o 'comercial_jefe', sobre la oferta actualizada.")
 
         # Registrar trazabilidad
-        log_trazabilidad(st.session_state["username"], "Actualizar Oferta",
-                         f"Oferta actualizada para Apartment ID: {apartment_id}")
+        log_trazabilidad(comercial_logueado, "Guardar/Actualizar Oferta",
+                         f"Oferta guardada para Apartment ID: {apartment_id}")
 
     except Exception as e:
-        st.error(f"❌ Error al guardar o actualizar la oferta en la base de datos: {e}")
+        st.error(f"❌ Error al guardar/actualizar la oferta: {e}")
 
-    except Exception as e:
-        st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
+
 
 def comercial_dashboard_vip():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial VIP (ve toda la huella con filtros persistentes)."""
@@ -248,13 +278,15 @@ def comercial_dashboard_vip():
 
     # --- DASHBOARD ---
     if menu_opcion == "Ofertas Comerciales":
-        log_trazabilidad(comercial, "Visualización de Dashboard VIP", "El comercial VIP visualizó la sección de Ofertas Comerciales.")
+        log_trazabilidad(comercial, "Visualización de Dashboard VIP",
+                         "El comercial VIP visualizó la sección de Ofertas Comerciales.")
 
         # ----- FILTROS -----
         with st.spinner("⏳ Cargando filtros..."):
             try:
                 conn = get_db_connection()
-                provincias = pd.read_sql("SELECT DISTINCT provincia FROM datos_uis ORDER BY provincia", conn)["provincia"].dropna().tolist()
+                provincias = pd.read_sql("SELECT DISTINCT provincia FROM datos_uis ORDER BY provincia", conn)[
+                    "provincia"].dropna().tolist()
                 conn.close()
             except Exception as e:
                 st.error(f"❌ Error al cargar filtros: {e}")
@@ -270,7 +302,8 @@ def comercial_dashboard_vip():
                 conn, params=(provincia_sel,)
             )["municipio"].dropna().tolist()
             conn.close()
-        municipio_sel = st.selectbox("🏘️ Selecciona municipio", ["Todos"] + municipios, key="vip_municipio") if municipios else "Todos"
+        municipio_sel = st.selectbox("🏘️ Selecciona municipio", ["Todos"] + municipios,
+                                     key="vip_municipio") if municipios else "Todos"
 
         poblaciones = []
         if municipio_sel != "Todos":
@@ -280,7 +313,11 @@ def comercial_dashboard_vip():
                 conn, params=(provincia_sel, municipio_sel)
             )["poblacion"].dropna().tolist()
             conn.close()
-        poblacion_sel = st.selectbox("🏡 Selecciona población", ["Todas"] + poblaciones, key="vip_poblacion") if poblaciones else "Todas"
+        poblacion_sel = st.selectbox("🏡 Selecciona población", ["Todas"] + poblaciones,
+                                     key="vip_poblacion") if poblaciones else "Todas"
+
+        # NUEVO CHECKBOX: sin comercial asignado
+        sin_comercial = st.checkbox("Mostrar solo apartamentos sin comercial asignado", key="vip_sin_comercial")
 
         # Botones: aplicar y limpiar
         colA, colB = st.columns([1, 1])
@@ -289,14 +326,12 @@ def comercial_dashboard_vip():
         with colB:
             limpiar = st.button("🧹 Limpiar filtros", key="vip_clear")
 
-        # Si pulsa limpiar: quitar df guardado
         if limpiar:
             st.session_state.pop("vip_filtered_df", None)
             st.session_state.pop("vip_filters", None)
             st.success("🧹 Filtros limpiados.")
             st.experimental_rerun()
 
-        # Si pulsa aplicar: obtener datos y guardarlos en session_state (persisten tras rerun)
         if aplicar:
             with st.spinner("⏳ Cargando puntos filtrados..."):
                 try:
@@ -320,6 +355,7 @@ def comercial_dashboard_vip():
                         WHERE 1=1
                     """
                     params = []
+
                     if provincia_sel != "Todas":
                         query += " AND d.provincia = ?"
                         params.append(provincia_sel)
@@ -330,21 +366,25 @@ def comercial_dashboard_vip():
                         query += " AND d.poblacion = ?"
                         params.append(poblacion_sel)
 
+                    # FILTRO NUEVO: solo sin comercial asignado
+                    if sin_comercial:
+                        query += " AND (c.comercial IS NULL OR TRIM(c.comercial) = '')"
+
                     df = pd.read_sql(query, conn, params=params)
                     conn.close()
 
                     if df.empty:
                         st.warning("⚠️ No hay datos para los filtros seleccionados.")
                     else:
-                        # Guardar DataFrame en session_state para persistencia
                         st.session_state["vip_filtered_df"] = df
                         st.session_state["vip_filters"] = {
                             "provincia": provincia_sel,
                             "municipio": municipio_sel,
-                            "poblacion": poblacion_sel
+                            "poblacion": poblacion_sel,
+                            "sin_comercial": sin_comercial
                         }
                         st.success(f"✅ Se han cargado {len(df)} puntos. (Filtros guardados en sesión)")
-                        # No forzamos rerun: el mismo flujo continuará y luego comprobamos session_state
+
                 except Exception as e:
                     st.error(f"❌ Error al cargar los datos filtrados: {e}")
 
@@ -635,7 +675,7 @@ def comercial_dashboard_vip():
                                     conn = get_db_connection()
                                     cursor = conn.cursor()
                                     cursor.execute(
-                                        "SELECT email FROM usuarios WHERE role IN ('admin','comercial_jefe')")
+                                        "SELECT email FROM usuarios WHERE role IN ('admin')")
                                     destinatarios = [fila[0] for fila in cursor.fetchall()]
                                     conn.close()
 
@@ -718,7 +758,7 @@ def guardar_viabilidad(datos):
     else:
         cursor.execute("SELECT email FROM usuarios WHERE username = 'juan'")
     resultado_jefe = cursor.fetchone()
-    email_comercial_jefe = resultado_jefe[0] if resultado_jefe else None
+    #email_comercial_jefe = resultado_jefe[0] if resultado_jefe else None
 
     conn.close()
 
@@ -757,11 +797,11 @@ def guardar_viabilidad(datos):
         st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
 
     # Notificar al comercial jefe específico
-    if email_comercial_jefe:
-        correo_viabilidad_comercial(email_comercial_jefe, ticket_id, descripcion_viabilidad)
-        st.info(f"📧 Notificación enviada al comercial jefe: {email_comercial_jefe}")
-    else:
-        st.warning("⚠️ No se encontró email del comercial jefe, no se pudo enviar la notificación.")
+    #if email_comercial_jefe:
+    #    correo_viabilidad_comercial(email_comercial_jefe, ticket_id, descripcion_viabilidad)
+    #    st.info(f"📧 Notificación enviada al comercial jefe: {email_comercial_jefe}")
+    #else:
+    #    st.warning("⚠️ No se encontró email del comercial jefe, no se pudo enviar la notificación.")
 
     # Mostrar mensaje de éxito en Streamlit
     st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
@@ -1172,11 +1212,11 @@ def mostrar_formulario(click_data):
         st.success("✅ Oferta enviada correctamente.")
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
-            guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id)
+            guardar_en_base_de_datos_vip(oferta_data, imagen_incidencia, apartment_id)
 
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin', 'comercial_jefe')")
+            cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin')")
             emails_admin = [fila[0] for fila in cursor.fetchall()]
 
             # Obtener email del comercial desde sesión o base de datos

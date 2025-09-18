@@ -827,7 +827,7 @@ def mostrar_descarga_datos():
     # Conexión y datos comunes
     conn = get_db_connection()
     username = st.session_state.get("username", "").strip().lower()
-    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto", "marian"]
+    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto", "marian", "juan pablo"]
     placeholders = ",".join("?" for _ in excluir_para_juan)
 
     # Cargar datos según el usuario
@@ -845,6 +845,21 @@ def mostrar_descarga_datos():
             FROM comercial_rafa
             WHERE LOWER(comercial) NOT IN ({placeholders})
             """, conn, params=[c.lower() for c in excluir_para_juan])
+    elif username == "rafa sanz":
+        # Rafa Sanz no ve a Juan Pablo
+        assigned_zones = pd.read_sql(
+            """
+            SELECT DISTINCT municipio, poblacion, comercial
+            FROM comercial_rafa
+            WHERE LOWER(comercial) != 'juan pablo'
+            """, conn)
+
+        total_ofertas = pd.read_sql(
+            """
+            SELECT DISTINCT *
+            FROM comercial_rafa
+            WHERE LOWER(comercial) != 'juan pablo'
+            """, conn)
     else:
         assigned_zones = pd.read_sql(
             "SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
@@ -891,8 +906,11 @@ def mostrar_descarga_datos():
         viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
 
         if username == "juan":
-            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz", "marian"]
+            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz", "marian", "juan pablo"]
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
+        elif username.lower() == "rafa sanz":
+            # Rafa Sanz no ve a Juan Pablo
+            viabilidades = viabilidades[viabilidades['usuario'] != "juan pablo"]
 
         st.info(
             "ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
@@ -964,7 +982,7 @@ def mostrar_viabilidades():
         username = st.session_state.get("username", "").strip().lower()
 
         # ❗Lista de comerciales que Juan no debe ver
-        excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto", "marian"]
+        excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto", "marian", "juan pablo"]
 
         # 🧠 Construcción dinámica del SQL
         if username == "juan":
@@ -983,6 +1001,21 @@ def mostrar_viabilidades():
                   AND LOWER(usuario) NOT IN ('marian', 'rafa sanz', 'rebe')
             """
             df_viab = pd.read_sql(query, conn, params=[c.lower() for c in excluir_para_juan])
+        elif username == "rafa sanz":
+            # Rafa Sanz no ve a Juan Pablo
+            query = """
+                    SELECT id,
+                           provincia, municipio, poblacion,
+                           vial, numero, letra,
+                           latitud, longitud,
+                           serviciable,
+                           usuario AS comercial_reporta,
+                           confirmacion_rafa
+                    FROM viabilidades
+                    WHERE (confirmacion_rafa IS NULL OR confirmacion_rafa = '')
+                      AND LOWER(usuario) != 'juan pablo'
+                """
+            df_viab = pd.read_sql(query, conn)
         else:
             df_viab = pd.read_sql("""
                 SELECT id,
@@ -1114,9 +1147,12 @@ def mostrar_viabilidades():
 
         if username == "juan":
             # Excluir ciertos comerciales
-            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "marian", "rebe", "rafa sanz"]
+            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "marian", "rebe", "rafa sanz", "juan pablo"]
             viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
+        elif username == "rafa sanz":
+            # Rafa Sanz no ve a Juan Pablo
+            viabilidades = viabilidades[viabilidades['usuario'] != "juan pablo"]
 
         # 📋 Mostrar tabla resultante
         st.info("ℹ️ Listado completo de viabilidades y su estado actual.")
