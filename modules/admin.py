@@ -66,7 +66,7 @@ def cargar_contratos_google():
     try:
         # --- Configurar credenciales del service account ---
         SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_file(os.path.join(os.path.dirname(__file__), "carga-contratos-verde-8b655d348ac0.json"), scopes=SCOPE)
+        creds = Credentials.from_service_account_file("modules\carga-contratos-verde-8b655d348ac0.json", scopes=SCOPE)
         client = gspread.authorize(creds)
 
         # --- Abrir la hoja de Google Sheets ---
@@ -3139,5 +3139,6 @@ def home_page():
 
 if __name__ == "__main__":
     admin_dashboard()
+
 
 
