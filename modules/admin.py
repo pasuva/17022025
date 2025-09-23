@@ -62,26 +62,25 @@ def safe_convert_to_numeric(col):
 def cargar_contratos_google():
     """
     Carga los contratos desde Google Sheets y devuelve un DataFrame normalizado.
-    Requiere un archivo credenciales.json de Google Service Account con permisos en la hoja.
+    Usa un archivo de secretos en Render para las credenciales del service account.
     """
     try:
-        # --- Configurar credenciales del service account ---
-        SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        # Leer el JSON de la variable de entorno
-        creds_json = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
-        creds_dict = json.loads(creds_json)
+        # --- Ruta del archivo secreto en Render ---
+        secret_path = "/etc/secrets/carga-contratos-verde-8b655d348ac0.json"
+
+        # Leer credenciales desde el archivo
+        with open(secret_path, "r") as f:
+            creds_dict = json.load(f)
 
         # Reparar el private_key (los \n se vuelven saltos reales)
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
         # Crear credenciales y cliente
+        SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
         client = gspread.authorize(creds)
-        #return client
 
         # --- Abrir la hoja de Google Sheets ---
-        # Cambia "SeguimientoContratos" por el nombre de tu documento de Sheets
-        # y "Hoja1" por el nombre de la pestaña
         sheet = client.open("SEGUIMIENTO CLIENTES/CONTRATOS VERDE").worksheet("LISTADO DE ESTADO DE CONTRATOS")
         data = sheet.get_all_records()
 
@@ -112,9 +111,9 @@ def cargar_contratos_google():
                     df[date_col] = df[date_col].astype(str)
 
         return df
-
     except Exception as e:
-        raise RuntimeError(f"Error al cargar contratos desde Google Sheets: {e}")
+        print(f"Error cargando contratos desde Google Sheets: {e}")
+        return pd.DataFrame()
 
 def cargar_usuarios():
     """Carga los usuarios desde la base de datos."""
