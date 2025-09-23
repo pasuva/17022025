@@ -13,6 +13,9 @@ import plotly.graph_objects as go
 from rapidfuzz import fuzz
 from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 from io import BytesIO
+from google.oauth2.service_account import Credentials
+import gspread
+
 
 from branca.element import Template, MacroElement
 
@@ -54,6 +57,54 @@ def safe_convert_to_numeric(col):
         return pd.to_numeric(col)
     except ValueError:
         return col  # Si ocurre un error, regresamos la columna original sin cambios
+
+def cargar_contratos_google():
+    """
+    Carga los contratos desde Google Sheets y devuelve un DataFrame normalizado.
+    Requiere un archivo credenciales.json de Google Service Account con permisos en la hoja.
+    """
+    try:
+        # --- Configurar credenciales del service account ---
+        SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_file("modules\carga-contratos-verde-8b655d348ac0.json", scopes=SCOPE)
+        client = gspread.authorize(creds)
+
+        # --- Abrir la hoja de Google Sheets ---
+        # Cambia "SeguimientoContratos" por el nombre de tu documento de Sheets
+        # y "Hoja1" por el nombre de la pestaña
+        sheet = client.open("SEGUIMIENTO CLIENTES/CONTRATOS VERDE").worksheet("LISTADO DE ESTADO DE CONTRATOS")
+        data = sheet.get_all_records()
+
+        df = pd.DataFrame(data)
+
+        # --- Mapeo de columnas ---
+        column_mapping = {
+            'Nº CONTRATO': 'num_contrato',
+            'CLIENTE': 'cliente',
+            'DIRECCIÓN O COORDENADAS': 'coordenadas',
+            'ESTADO': 'estado',
+            'FECHA INICIO CONTRATO': 'fecha_inicio_contrato',
+            'FECHA INGRESO': 'fecha_ingreso',
+            'COMERCIAL': 'comercial',
+            'FECHA INSTALACIÓN': 'fecha_instalacion',
+            'APARTMENT ID': 'apartment_id',
+            'FECHA FIN CONTRATO': 'fecha_fin_contrato',
+            'COMENTARIOS': 'comentarios'
+        }
+        df.rename(columns=column_mapping, inplace=True)
+
+        # --- Normalizar fechas ---
+        for date_col in ['fecha_inicio_contrato', 'fecha_ingreso', 'fecha_instalacion', 'fecha_fin_contrato']:
+            if date_col in df.columns:
+                try:
+                    df[date_col] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                except Exception:
+                    df[date_col] = df[date_col].astype(str)
+
+        return df
+
+    except Exception as e:
+        raise RuntimeError(f"Error al cargar contratos desde Google Sheets: {e}")
 
 def cargar_usuarios():
     """Carga los usuarios desde la base de datos."""
@@ -738,6 +789,10 @@ def viabilidades_seccion():
 
                 if tiene_presupuesto:
                     marker_color = 'orange'
+                elif row.get('estado') == "No interesado":
+                    marker_color = 'black'
+                elif row.get('estado') == "Incidencia":
+                    marker_color = 'purple'
                 elif serviciable == "No":
                     marker_color = 'red'
                 elif serviciable == "Sí" and apartment_id not in ["", "N/D"]:
@@ -1624,165 +1679,123 @@ def admin_dashboard():
                 'CLIENTE': 'cliente',
                 'DIRECCIÓN O COORDENADAS': 'coordenadas',
                 'ESTADO': 'estado',
-                'Fecha contrato': 'fecha_contrato',
-                'Fecha petición ADAMO': 'fecha_peticion_adamo',
-                '¿Quién solicita a ADAMO?': 'quien_solicita_a_adamo',
+                'FECHA INICIO CONTRATO': 'fecha_inicio_contrato',
+                'FECHA INGRESO': 'fecha_ingreso',
+                'COMERCIAL': 'comercial',
                 'FECHA INSTALACIÓN': 'fecha_instalacion',
-                'ID': 'apartment_id'
+                'APARTMENT ID': 'apartment_id',
+                'FECHA FIN CONTRATO': 'fecha_fin_contrato',
+                'COMENTARIOS': 'comentarios'
             }
 
-            uploaded = st.file_uploader(
-                label="Carga tu archivo de contratos",
-                type=["xlsx", "xls", "csv"],
-                help="El archivo debe tener columnas: " + ", ".join(column_mapping.keys())
-            )
+            if st.button("🔄 Actualizar contratos desde Google"):
+                with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
+                    try:
+                        # 1. Cargar datos desde Google Sheets (ya renombrados en la función)
+                        df = cargar_contratos_google()
+                        st.success(f"✅ Datos cargados desde Google. Total filas: {len(df)}")
 
-            if uploaded:
-                try:
-                    df = pd.read_csv(uploaded) if uploaded.name.lower().endswith('.csv') else pd.read_excel(uploaded)
-                    df.rename(columns=column_mapping, inplace=True)
+                        # 2. Guardar en la base de datos
+                        conn = obtener_conexion()
+                        cur = conn.cursor()
 
-                    # Convertir fechas a texto
-                    for date_col in ['fecha_contrato', 'fecha_peticion_adamo', 'fecha_instalacion']:
-                        if date_col in df.columns:
+                        # Borrar registros anteriores
+                        cur.execute("DELETE FROM seguimiento_contratos")
+                        conn.commit()
+                        cur.execute("DELETE FROM sqlite_sequence WHERE name='seguimiento_contratos'")
+                        conn.commit()
+
+                        total = len(df)
+                        progress = st.progress(0)
+
+                        insert_sql = '''INSERT INTO seguimiento_contratos (
+                            num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
+                            comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, comentarios
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+
+                        for i, row in df.iterrows():
+                            ap_id = row.get('apartment_id')
                             try:
-                                df[date_col] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
-                            except Exception:
-                                df[date_col] = df[date_col].astype(str)
+                                ap_id_int = int(ap_id)
+                                padded_id = 'P' + str(ap_id_int).zfill(10)
+                            except (ValueError, TypeError):
+                                padded_id = None
 
-                    st.success(f"✅ Archivo cargado y columnas mapeadas correctamente. Total filas: {len(df)}")
+                            cur.execute(insert_sql, (
+                                row.get('num_contrato'),
+                                row.get('cliente'),
+                                row.get('coordenadas'),
+                                row.get('estado'),
+                                row.get('fecha_inicio_contrato'),
+                                row.get('fecha_ingreso'),
+                                row.get('comercial'),
+                                row.get('fecha_instalacion'),
+                                padded_id,
+                                row.get('fecha_fin_contrato'),
+                                row.get('comentarios')
+                            ))
+                            progress.progress((i + 1) / total)
 
-                    if st.button("💾 Guardar seguimiento en base de datos"):
-                        with st.spinner("Guardando datos en la base de datos..."):
-                            conn = obtener_conexion()
+                        conn.commit()
+
+                        # 3. Actualizar datos_uis
+                        with obtener_conexion() as conn:
                             cur = conn.cursor()
 
-                            # Crear tabla si no existe
-                            cur.execute(
-                                '''CREATE TABLE IF NOT EXISTS seguimiento_contratos (
-                                    id INTEGER PRIMARY KEY,
-                                    num_contrato TEXT,
-                                    cliente TEXT,
-                                    coordenadas TEXT,
-                                    estado TEXT,
-                                    fecha_contrato TEXT,
-                                    fecha_peticion_adamo TEXT,
-                                    quien_solicita_a_adamo TEXT,
-                                    fecha_instalacion TEXT,
-                                    apartment_id TEXT
-                                )'''
-                            )
-
-                            # Borrar registros anteriores
-                            cur.execute("SELECT COUNT(*) FROM seguimiento_contratos")
-                            count_old = cur.fetchone()[0]
-                            if count_old > 0:
-                                cur.execute("DELETE FROM seguimiento_contratos")
-                                conn.commit()
-                                cur.execute("DELETE FROM sqlite_sequence WHERE name='seguimiento_contratos'")
-                                conn.commit()
-                                st.info(
-                                    f"ℹ️ Se han borrado {count_old} registros anteriores y reiniciado el contador de IDs.")
-
-                            # Insertar nuevas filas con padding en apartment_id
-                            total = len(df)
-                            progress = st.progress(0)
-                            insert_sql = '''INSERT INTO seguimiento_contratos (
-                                        num_contrato, cliente, coordenadas, estado, fecha_contrato,
-                                        fecha_peticion_adamo, quien_solicita_a_adamo, fecha_instalacion, apartment_id
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'''
-                            for i, row in df.iterrows():
-                                ap_id = row['apartment_id']
-                                try:
-                                    ap_id_int = int(ap_id)
-                                    padded_id = 'P' + str(ap_id_int).zfill(10)
-                                except (ValueError, TypeError):
-                                    padded_id = None
-                                cur.execute(insert_sql, (
-                                    row['num_contrato'], row['cliente'], row['coordenadas'], row['estado'],
-                                    row['fecha_contrato'], row['fecha_peticion_adamo'], row['quien_solicita_a_adamo'],
-                                    row['fecha_instalacion'], padded_id
-                                ))
-                                progress.progress((i + 1) / total)
-
+                            # Actualizar estado
+                            cur.execute("""
+                                UPDATE datos_uis
+                                SET estado = (
+                                    SELECT sc.estado
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.estado IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE estado IS NOT NULL
+                                )
+                            """)
+                            updated_estado = cur.rowcount
                             conn.commit()
 
-                            # 1. Actualizar estado
-                            with obtener_conexion() as conn:
-                                cur = conn.cursor()
-                                update_estado_sql = """
-                                    UPDATE datos_uis
-                                    SET estado = (
-                                        SELECT sc.estado
-                                        FROM seguimiento_contratos sc
-                                        WHERE sc.apartment_id = datos_uis.apartment_id
-                                        AND sc.estado IS NOT NULL
-                                        LIMIT 1
-                                    )
-                                    WHERE apartment_id IN (
-                                        SELECT apartment_id FROM seguimiento_contratos WHERE estado IS NOT NULL
-                                    )
-                                """
-                                cur.execute(update_estado_sql)
-                                updated_estado = cur.rowcount
-                                conn.commit()
+                            # Actualizar contrato_uis
+                            cur.execute("""
+                                UPDATE datos_uis
+                                SET contrato_uis = (
+                                    SELECT sc.num_contrato
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.num_contrato IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE num_contrato IS NOT NULL
+                                )
+                            """)
+                            updated_contratos = cur.rowcount
+                            conn.commit()
 
-                            # 2. Actualizar contrato_uis
-                            with obtener_conexion() as conn:
-                                cur = conn.cursor()
-                                update_contrato_sql = """
-                                    UPDATE datos_uis
-                                    SET contrato_uis = (
-                                        SELECT sc.num_contrato
-                                        FROM seguimiento_contratos sc
-                                        WHERE sc.apartment_id = datos_uis.apartment_id
-                                        AND sc.num_contrato IS NOT NULL
-                                        LIMIT 1
-                                    )
-                                    WHERE apartment_id IN (
-                                        SELECT apartment_id FROM seguimiento_contratos WHERE num_contrato IS NOT NULL
-                                    )
-                                """
-                                cur.execute(update_contrato_sql)
-                                updated_contratos = cur.rowcount
-                                conn.commit()
+                            # Marcar como serviciable
+                            cur.execute("""
+                                UPDATE datos_uis
+                                SET serviciable = 'SI'
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id
+                                    FROM seguimiento_contratos
+                                    WHERE TRIM(UPPER(estado)) = 'FINALIZADO'
+                                    AND apartment_id IS NOT NULL
+                                )
+                            """)
+                            updated_serviciables = cur.rowcount
+                            conn.commit()
 
-                            # 3. Marcar como 'serviciable = SI' si estado es FINALIZADO
-                            with obtener_conexion() as conn:
-                                cur = conn.cursor()
-                                update_serviciable_sql = """
-                                    UPDATE datos_uis
-                                    SET serviciable = 'SI'
-                                    WHERE apartment_id IN (
-                                        SELECT apartment_id
-                                        FROM seguimiento_contratos
-                                        WHERE TRIM(UPPER(estado)) = 'FINALIZADO'
-                                        AND apartment_id IS NOT NULL
-                                    )
-                                """
-                                cur.execute(update_serviciable_sql)
-                                updated_serviciables = cur.rowcount
-                                conn.commit()
+                        # 4. Feedback
+                        st.success("✅ Registros insertados y sincronizados correctamente.")
+                        st.info(f"🔄 Estados sincronizados con seguimiento_contratos.")  # sin número
 
-                        # Dar feedback al usuario
-                        st.success(f"✅ Registros insertados correctamente en 'seguimiento_contratos'.")
-                        if updated_estado > 0:
-                            st.info(f"🔄 {updated_estado} registros actualizados con estado.")
-                        else:
-                            st.warning("⚠️ No se actualizó ninguna fila con estado. Revisa los datos.")
-
-                        if updated_contratos > 0:
-                            st.info(f"📝 {updated_contratos} registros actualizados con contrato_uis.")
-                        else:
-                            st.warning("⚠️ No se actualizó ninguna fila con contrato_uis.")
-
-                        if updated_serviciables > 0:
-                            st.info(f"✅ {updated_serviciables} viviendas marcadas como serviciables.")
-                        else:
-                            st.warning("⚠️ No se marcó ninguna vivienda como serviciable.")
-
-                except Exception as e:
-                    st.error(f"❌ Error procesando el archivo: {e}")
+                    except Exception as e:
+                        st.error(f"❌ Error en el proceso: {e}")
 
             if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
                 with st.spinner("Cargando registros de contratos..."):

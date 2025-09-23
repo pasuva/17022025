@@ -330,7 +330,7 @@ def comercial_dashboard_vip():
             st.session_state.pop("vip_filtered_df", None)
             st.session_state.pop("vip_filters", None)
             st.success("🧹 Filtros limpiados.")
-            st.experimental_rerun()
+            st.rerun()
 
         if aplicar:
             with st.spinner("⏳ Cargando puntos filtrados..."):

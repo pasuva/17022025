@@ -269,18 +269,19 @@ def comercial_dashboard():
                     conn.close()
                     return
 
-                query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
-                #query= """
-                #    SELECT cr.*
-                #    FROM comercial_rafa cr
-                #    LEFT JOIN datos_uis du ON cr.apartment_id = du.apartment_id
-                #    WHERE LOWER(cr.comercial) = LOWER(?)
-                #    AND (
-                #        LOWER(cr.serviciable) <> 'no'
-                #        OR UPPER(IFNULL(du.tipo_olt_rental, '')) = 'CTO COMPARTIDA'
-                #    )
-                #    """
-                df = pd.read_sql(query, conn, params=(comercial,))
+                # --- AQUÍ reemplaza tu query y df por esto ---
+                # Normalizamos a minúsculas para comparar
+                comercial = st.session_state.get("username", "").lower()
+
+                if comercial in ["nestor", "roberto"]:
+                    # Ambos ven lo de los dos
+                    query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) IN ('nestor', 'roberto')"
+                    df = pd.read_sql(query, conn)
+                else:
+                    # Solo ve sus propios registros
+                    query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
+                    df = pd.read_sql(query, conn, params=(comercial,))
+                # --- FIN del cambio ---
 
                 query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
                 ofertas_df = pd.read_sql(query_ofertas, conn)
