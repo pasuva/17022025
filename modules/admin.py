@@ -77,7 +77,7 @@ def cargar_contratos_google():
         # Crear credenciales y cliente
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
         client = gspread.authorize(creds)
-        return client
+        #return client
 
         # --- Abrir la hoja de Google Sheets ---
         # Cambia "SeguimientoContratos" por el nombre de tu documento de Sheets
