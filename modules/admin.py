@@ -1683,7 +1683,9 @@ def mostrar_formulario(click_data):
                 "Aceptado",
                 "Rechazado",
                 "Cerrar",
-                "Pasado a zona de estudio"
+                "Pasado a zona de estudio",
+                "Instalado",
+                " "
             ]
             estado_val = click_data.get("estado", "Presupuesto enviado")
             index_estado = opciones_estado.index(estado_val) if estado_val in opciones_estado else 0
