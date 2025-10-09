@@ -59,45 +59,67 @@ def safe_convert_to_numeric(col):
     except ValueError:
         return col  # Si ocurre un error, regresamos la columna original sin cambios
 
+
 def cargar_contratos_google():
-    """
-    Carga los contratos desde Google Sheets y devuelve un DataFrame normalizado.
-    Usa un archivo de secretos en Render para las credenciales del service account.
-    """
     try:
-        # --- Ruta del archivo secreto en Render ---
-        secret_path = "/etc/secrets/carga-contratos-verde-8b655d348ac0.json"
+        # --- Detectar entorno y elegir archivo de credenciales ---
+        posibles_rutas = [
+            "modules/carga-contratos-verde-c5068516c7cf.json",  # Render: secret file
+            "/etc/carga-contratos-verde-c5068516c7cf.json",      # Otra ruta posible en Render
+            os.path.join(os.path.dirname(__file__), "carga-contratos-verde-c5068516c7cf.json"),  # Local
+        ]
 
-        # Leer credenciales desde el archivo
-        with open(secret_path, "r") as f:
-            creds_dict = json.load(f)
+        ruta_credenciales = None
+        for r in posibles_rutas:
+            if os.path.exists(r):
+                ruta_credenciales = r
+                break
 
-        # Reparar el private_key (los \n se vuelven saltos reales)
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        if not ruta_credenciales and "GOOGLE_APPLICATION_CREDENTIALS_JSON" in os.environ:
+            # Si no hay archivo pero sí variable de entorno
+            creds_dict = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(creds_dict, scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ])
+        elif ruta_credenciales:
+            print(f"🔑 Usando credenciales desde: {ruta_credenciales}")
+            creds = Credentials.from_service_account_file(
+                ruta_credenciales,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive"
+                ]
+            )
+        else:
+            raise ValueError("❌ No se encontraron credenciales de Google Service Account.")
 
-        # Crear credenciales y cliente
-        SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
+        # Crear cliente
         client = gspread.authorize(creds)
 
         # --- Abrir la hoja de Google Sheets ---
         sheet = client.open("SEGUIMIENTO CLIENTES/CONTRATOS VERDE").worksheet("LISTADO DE ESTADO DE CONTRATOS")
         data = sheet.get_all_records()
 
+        if not data:
+            print("⚠️ Hoja cargada pero sin registros. Revisa si la primera fila tiene encabezados correctos.")
+            return pd.DataFrame()
+
         df = pd.DataFrame(data)
 
         # --- Mapeo de columnas ---
         column_mapping = {
             'Nº CONTRATO': 'num_contrato',
-            'CLIENTE': 'cliente',
-            'DIRECCIÓN O COORDENADAS': 'coordenadas',
-            'ESTADO': 'estado',
-            'FECHA INICIO CONTRATO': 'fecha_inicio_contrato',
-            'FECHA INGRESO': 'fecha_ingreso',
-            'COMERCIAL': 'comercial',
-            'FECHA INSTALACIÓN': 'fecha_instalacion',
             'APARTMENT ID': 'apartment_id',
+            'CLIENTE': 'cliente',
+            'COORDENADAS': 'coordenadas',
+            'ESTADO': 'estado',
+            'COMERCIAL': 'comercial',
+            'FECHA INGRESO': 'fecha_ingreso',
+            'FECHA INSTALACIÓN': 'fecha_instalacion',
             'FECHA FIN CONTRATO': 'fecha_fin_contrato',
+            'FECHA INICIO CONTRATO': 'fecha_inicio_contrato',
             'COMENTARIOS': 'comentarios'
         }
         df.rename(columns=column_mapping, inplace=True)
@@ -110,10 +132,14 @@ def cargar_contratos_google():
                 except Exception:
                     df[date_col] = df[date_col].astype(str)
 
+        print("✅ Datos cargados. Columnas:", df.columns.tolist(), "Total filas:", len(df))
         return df
+
     except Exception as e:
-        print(f"Error cargando contratos desde Google Sheets: {e}")
+        print(f"❌ Error cargando contratos desde Google Sheets: {e}")
         return pd.DataFrame()
+
+
 
 def cargar_usuarios():
     """Carga los usuarios desde la base de datos."""
@@ -1683,25 +1709,17 @@ def admin_dashboard():
             # NUEVO: Seguimiento de contratos
             # -----------------------------------------------------------
             # Mapeo de columnas del Excel a la BD
-            column_mapping = {
-                'Nº CONTRATO': 'num_contrato',
-                'CLIENTE': 'cliente',
-                'DIRECCIÓN O COORDENADAS': 'coordenadas',
-                'ESTADO': 'estado',
-                'FECHA INICIO CONTRATO': 'fecha_inicio_contrato',
-                'FECHA INGRESO': 'fecha_ingreso',
-                'COMERCIAL': 'comercial',
-                'FECHA INSTALACIÓN': 'fecha_instalacion',
-                'APARTMENT ID': 'apartment_id',
-                'FECHA FIN CONTRATO': 'fecha_fin_contrato',
-                'COMENTARIOS': 'comentarios'
-            }
 
             if st.button("🔄 Actualizar contratos desde Google"):
                 with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
                     try:
                         # 1. Cargar datos desde Google Sheets (ya renombrados en la función)
                         df = cargar_contratos_google()
+
+                        # Debug prints
+                        print("Columnas cargadas:", df.columns.tolist())
+                        print("Primeras filas:", df.head())
+
                         st.success(f"✅ Datos cargados desde Google. Total filas: {len(df)}")
 
                         # 2. Guardar en la base de datos
@@ -1739,7 +1757,8 @@ def admin_dashboard():
                                 row.get('fecha_ingreso'),
                                 row.get('comercial'),
                                 row.get('fecha_instalacion'),
-                                padded_id,
+                                padded_id,  # <-- apartment_id corregido
+                                None,  # <-- fecha_estado (no viene en el Excel)
                                 row.get('fecha_fin_contrato'),
                                 row.get('comentarios')
                             ))
