@@ -2,7 +2,7 @@ import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes
+from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, correo_viabilidad_comercial
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
@@ -620,536 +620,853 @@ def guardar_comentario(apartment_id, comentario, tabla):
 
 
 def viabilidades_seccion():
-    log_trazabilidad("Administrador", "Visualización de Viabilidades",
-                     "El administrador visualizó la sección de viabilidades.")
+    # 🟩 Submenú horizontal
+    sub_seccion = option_menu(
+        menu_title=None,
+        options=["Ver Viabilidades", "Crear Viabilidades"],
+        icons=["map", "plus-circle"],
+        default_index=0,
+        orientation="horizontal",
+        styles={
+            "container": {
+                "padding": "0!important",
+                "margin": "0px",
+                "background-color": "#F0F7F2",
+                "border-radius": "0px",
+                "max-width": "none"
+            },
+            "icon": {
+                "color": "#2C5A2E",
+                "font-size": "25px"
+            },
+            "nav-link": {
+                "color": "#2C5A2E",
+                "font-size": "18px",
+                "text-align": "center",
+                "margin": "0px",
+                "--hover-color": "#66B032",
+                "border-radius": "0px",
+            },
+            "nav-link-selected": {
+                "background-color": "#66B032",
+                "color": "white",
+                "font-weight": "bold"
+            }
+        }
+    )
+    # 🧩 Sección 1: Ver Viabilidades (tu código actual)
+    if sub_seccion == "Ver Viabilidades":
+        log_trazabilidad("Administrador", "Visualización de Viabilidades",
+                         "El administrador visualizó la sección de viabilidades.")
 
-    # Inicializamos el estado si no existe
-    if "map_center" not in st.session_state:
-        st.session_state["map_center"] = [43.463444, -3.790476]
-    if "map_zoom" not in st.session_state:
-        st.session_state["map_zoom"] = 12
-    if "selected_ticket" not in st.session_state:
-        st.session_state["selected_ticket"] = None
+        # Inicializamos el estado si no existe
+        if "map_center" not in st.session_state:
+            st.session_state["map_center"] = [43.463444, -3.790476]
+        if "map_zoom" not in st.session_state:
+            st.session_state["map_zoom"] = 12
+        if "selected_ticket" not in st.session_state:
+            st.session_state["selected_ticket"] = None
 
-    # Cargar datos
-    with st.spinner("⏳ Cargando los datos de viabilidades..."):
+        # Cargar datos
+        with st.spinner("⏳ Cargando los datos de viabilidades..."):
+            try:
+                conn = obtener_conexion()
+                tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
+                if 'viabilidades' not in tables['name'].values:
+                    st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
+                    conn.close()
+                    return
+
+                viabilidades_df = pd.read_sql("SELECT * FROM viabilidades", conn)
+                conn.close()
+
+                if viabilidades_df.empty:
+                    st.warning("⚠️ No hay viabilidades disponibles.")
+                    return
+
+            except Exception as e:
+                st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
+                return
+
+        # Verificamos columnas necesarias
+        for col in ['latitud', 'longitud', 'ticket']:
+            if col not in viabilidades_df.columns:
+                st.error(f"❌ Falta la columna '{col}'.")
+                return
+
+        # Agregamos columna de duplicados
+        viabilidades_df['is_duplicate'] = viabilidades_df['apartment_id'].duplicated(keep=False)
+        # ✅ Agregamos columna que indica si tiene presupuesto asociado
         try:
             conn = obtener_conexion()
-            tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
-            if 'viabilidades' not in tables['name'].values:
-                st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
-                conn.close()
-                return
-
-            viabilidades_df = pd.read_sql("SELECT * FROM viabilidades", conn)
+            presupuestos_df = pd.read_sql("SELECT DISTINCT ticket FROM presupuestos_viabilidades", conn)
             conn.close()
 
-            if viabilidades_df.empty:
-                st.warning("⚠️ No hay viabilidades disponibles.")
-                return
+            viabilidades_df['tiene_presupuesto'] = viabilidades_df['ticket'].isin(presupuestos_df['ticket'])
 
         except Exception as e:
-            st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
-            return
+            #st.warning(f"No se pudo verificar si hay presupuestos: {e}")
+            viabilidades_df['tiene_presupuesto'] = False
 
-    # Verificamos columnas necesarias
-    for col in ['latitud', 'longitud', 'ticket']:
-        if col not in viabilidades_df.columns:
-            st.error(f"❌ Falta la columna '{col}'.")
-            return
+        def highlight_duplicates(val):
+            if isinstance(val, str) and val in viabilidades_df[viabilidades_df['is_duplicate']]['apartment_id'].values:
+                return 'background-color: yellow'
+            return ''
 
-    # Agregamos columna de duplicados
-    viabilidades_df['is_duplicate'] = viabilidades_df['apartment_id'].duplicated(keep=False)
-    # ✅ Agregamos columna que indica si tiene presupuesto asociado
-    try:
-        conn = obtener_conexion()
-        presupuestos_df = pd.read_sql("SELECT DISTINCT ticket FROM presupuestos_viabilidades", conn)
-        conn.close()
+        # Interfaz: columnas para mapa y tabla
+        col1, col2 = st.columns([3, 3])
 
-        viabilidades_df['tiene_presupuesto'] = viabilidades_df['ticket'].isin(presupuestos_df['ticket'])
+        with col2:
 
-    except Exception as e:
-        #st.warning(f"No se pudo verificar si hay presupuestos: {e}")
-        viabilidades_df['tiene_presupuesto'] = False
+            # Reordenamos para que 'ticket' quede primero
+            cols = viabilidades_df.columns.tolist()
+            if 'ticket' in cols:
+                cols.remove('ticket')
+                cols = ['ticket'] + cols
+            df_reordered = viabilidades_df[cols]
 
-    def highlight_duplicates(val):
-        if isinstance(val, str) and val in viabilidades_df[viabilidades_df['is_duplicate']]['apartment_id'].values:
-            return 'background-color: yellow'
-        return ''
-
-    # Interfaz: columnas para mapa y tabla
-    col1, col2 = st.columns([3, 3])
-
-    with col2:
-
-        # Reordenamos para que 'ticket' quede primero
-        cols = viabilidades_df.columns.tolist()
-        if 'ticket' in cols:
-            cols.remove('ticket')
-            cols = ['ticket'] + cols
-        df_reordered = viabilidades_df[cols]
-
-        # Preparamos la configuración con filtros y anchos
-        gb = GridOptionsBuilder.from_dataframe(df_reordered)
-        gb.configure_default_column(
-            filter=True,
-            floatingFilter=True,
-            sortable=True,
-            resizable=True,
-            minWidth=100,  # ancho mínimo
-            flex=1  # reparte espacio extra
-        )
-        # (Opcional) Para resaltar duplicados en apartment_id sin pandas styling:
-        dup_ids = viabilidades_df.loc[viabilidades_df['is_duplicate'], 'apartment_id'].unique().tolist()
-        # Configurar estilo para apartment_id (duplicados en amarillo)
-        gb.configure_column(
-            'apartment_id',
-            cellStyle={
-                'function': f"""
-                            function(params) {{
-                                if (params.value && {dup_ids}.includes(params.value)) {{
-                                    return {{'backgroundColor': 'yellow'}};
+            # Preparamos la configuración con filtros y anchos
+            gb = GridOptionsBuilder.from_dataframe(df_reordered)
+            gb.configure_default_column(
+                filter=True,
+                floatingFilter=True,
+                sortable=True,
+                resizable=True,
+                minWidth=100,  # ancho mínimo
+                flex=1  # reparte espacio extra
+            )
+            # (Opcional) Para resaltar duplicados en apartment_id sin pandas styling:
+            dup_ids = viabilidades_df.loc[viabilidades_df['is_duplicate'], 'apartment_id'].unique().tolist()
+            # Configurar estilo para apartment_id (duplicados en amarillo)
+            gb.configure_column(
+                'apartment_id',
+                cellStyle={
+                    'function': f"""
+                                function(params) {{
+                                    if (params.value && {dup_ids}.includes(params.value)) {{
+                                        return {{'backgroundColor': 'yellow'}};
+                                    }}
                                 }}
-                            }}
-                        """
-            }
-        )
-
-        gridOptions = gb.build()
-
-        # Aplicar estilo rojo para filas con resultado "NO"
-        for col_def in gridOptions['columnDefs']:
-            if col_def['field'] != 'apartment_id':  # No aplicar a apartment_id (ya tiene estilo)
-                col_def['cellStyle'] = {
-                    'function': """
-                                function(params) {
-                                    if (params.data.resultado.toUpperCase() === 'NO') {
-                                        return {'backgroundColor': 'red'};
-                                    }
-                                }
                             """
                 }
-
-        AgGrid(
-            df_reordered,
-            gridOptions=gridOptions,
-            enable_enterprise_modules=True,
-            update_mode=GridUpdateMode.NO_UPDATE,
-            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-            fit_columns_on_grid_load=False,
-            height=400,
-            theme='alpine-dark'
-        )
-
-        if st.session_state.get("selected_ticket"):
-            selected_viabilidad = \
-            viabilidades_df[viabilidades_df["ticket"] == st.session_state["selected_ticket"]].iloc[0]
-        # Orden y renombrado de columnas
-        orden_columnas_excel = [
-            "ticket", "usuario", "nuevapromocion", "resultado", "justificacion",
-            "coste", "zona_estudio", "contratos", "latitud", "longitud",
-            "provincia", "municipio", "poblacion", "vial", "numero", "letra",
-            "cp", "olt", "cto_admin", "id_cto", "fecha_viabilidad",
-            "apartment_id", "nombre_cliente", "telefono", "comentarios_internos", "respuesta_comercial"
-        ]
-
-        nombres_excel = {
-            "usuario": "SOLICITANTE",
-            "nuevapromocion": "Nueva Promoción",
-            "zona_estudio": "UUII",
-            "coste": "PRESUPUESTO",
-            "nombre_cliente": "nombre cliente",
-            "comentarios_internos": "comentarios internos",
-            "fecha_viabilidad": "fecha viabilidad",
-            "apartment_id": "apartment id"
-        }
-
-        # Limpiar y preparar DataFrame
-        df_export = viabilidades_df.copy()
-
-        # Duplicar filas por múltiples apartment_id
-        def expand_apartments(df):
-            rows = []
-            for _, row in df.iterrows():
-                ids = str(row.get("apartment_id", "")).split(",")
-                for apt in ids:
-                    new_row = row.copy()
-                    new_row["apartment_id"] = apt.strip()
-                    rows.append(new_row)
-            return pd.DataFrame(rows)
-
-        df_export = viabilidades_df.copy()
-
-        # Convertir a Excel en memoria
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            df_export.to_excel(writer, index=False, sheet_name="Viabilidades")
-        output.seek(0)
-
-        # Botones alineados a los extremos
-        col_b1, _, col_b2 = st.columns([1, 2.3, 1])
-
-        with col_b1:
-            if st.button("🔄 Refrescar Tabla"):
-                st.rerun()
-
-        with col_b2:
-            st.download_button(
-                label="📥 Descargar Excel",
-                data=output,
-                file_name="viabilidades_export.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-    with col1:
+            gridOptions = gb.build()
 
-        def draw_map(df, center, zoom):
-            m = folium.Map(location=center, zoom_start=zoom,
-                           tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-                           attr="Google")
-            marker_cluster = MarkerCluster().add_to(m)
+            # Aplicar estilo rojo para filas con resultado "NO"
+            for col_def in gridOptions['columnDefs']:
+                if col_def['field'] != 'apartment_id':  # No aplicar a apartment_id (ya tiene estilo)
+                    col_def['cellStyle'] = {
+                        'function': """
+                                    function(params) {
+                                        if (params.data.resultado.toUpperCase() === 'NO') {
+                                            return {'backgroundColor': 'red'};
+                                        }
+                                    }
+                                """
+                    }
 
-            for _, row in df.iterrows():
-                popup = f"🏠 {row['ticket']} - 📍 {row['latitud']}, {row['longitud']}"
+            AgGrid(
+                df_reordered,
+                gridOptions=gridOptions,
+                enable_enterprise_modules=True,
+                update_mode=GridUpdateMode.NO_UPDATE,
+                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                fit_columns_on_grid_load=False,
+                height=400,
+                theme='alpine-dark'
+            )
 
-                serviciable = str(row.get('serviciable', '')).strip()
-                apartment_id = str(row.get('apartment_id', '')).strip()
-                tiene_presupuesto = row.get('tiene_presupuesto', False)
+            if st.session_state.get("selected_ticket"):
+                selected_viabilidad = \
+                viabilidades_df[viabilidades_df["ticket"] == st.session_state["selected_ticket"]].iloc[0]
+            # Orden y renombrado de columnas
+            orden_columnas_excel = [
+                "ticket", "usuario", "nuevapromocion", "resultado", "justificacion",
+                "coste", "zona_estudio", "contratos", "latitud", "longitud",
+                "provincia", "municipio", "poblacion", "vial", "numero", "letra",
+                "cp", "olt", "cto_admin", "id_cto", "fecha_viabilidad",
+                "apartment_id", "nombre_cliente", "telefono", "comentarios_internos", "respuesta_comercial"
+            ]
 
-                # 🎯 Prioridad del color:
-                # 1. Si tiene presupuesto → naranja
-                # 2. Si no es serviciable → rojo
-                # 3. Si es serviciable y tiene apartment_id → verde
-                # 4. Otro caso → azul
+            nombres_excel = {
+                "usuario": "SOLICITANTE",
+                "nuevapromocion": "Nueva Promoción",
+                "zona_estudio": "UUII",
+                "coste": "PRESUPUESTO",
+                "nombre_cliente": "nombre cliente",
+                "comentarios_internos": "comentarios internos",
+                "fecha_viabilidad": "fecha viabilidad",
+                "apartment_id": "apartment id"
+            }
 
-                if tiene_presupuesto:
-                    marker_color = 'orange'
-                elif row.get('estado') == "No interesado":
-                    marker_color = 'black'
-                elif row.get('estado') == "Incidencia":
-                    marker_color = 'purple'
-                elif serviciable == "No":
-                    marker_color = 'red'
-                elif serviciable == "Sí" and apartment_id not in ["", "N/D"]:
-                    marker_color = 'green'
-                else:
-                    marker_color = 'blue'
+            # Limpiar y preparar DataFrame
+            df_export = viabilidades_df.copy()
 
-                folium.Marker(
-                    location=[row['latitud'], row['longitud']],
-                    popup=popup,
-                    icon=folium.Icon(color=marker_color, icon='info-sign')
-                ).add_to(marker_cluster)
+            # Duplicar filas por múltiples apartment_id
+            def expand_apartments(df):
+                rows = []
+                for _, row in df.iterrows():
+                    ids = str(row.get("apartment_id", "")).split(",")
+                    for apt in ids:
+                        new_row = row.copy()
+                        new_row["apartment_id"] = apt.strip()
+                        rows.append(new_row)
+                return pd.DataFrame(rows)
 
-            return m
+            df_export = viabilidades_df.copy()
 
-        m_to_show = draw_map(viabilidades_df, st.session_state["map_center"], st.session_state["map_zoom"])
-        legend = """
-                            {% macro html(this, kwargs) %}
-                            <div style="
-                                position: fixed; 
-                                bottom: 0px; left: 0px; width: 150px; 
-                                z-index:9999; 
-                                font-size:14px;
-                                background-color: white;
-                                color: black;
-                                border:2px solid grey;
-                                border-radius:8px;
-                                padding: 10px;
-                                box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-                            ">
-                            <b>Leyenda</b><br>
-                            <i style="color:green;">●</i> Serviciado<br>
-                            <i style="color:red;">●</i> No serviciable<br>
-                            <i style="color:orange;">●</i> Presupuesto Sí<br>
-                            <i style="color:black;">●</i> No interesado<br>
-                            <i style="color:purple;">●</i> Incidencia<br>
-                            <i style="color:blue;">●</i> Sin estudio<br>
-                            </div>
-                            {% endmacro %}
-                            """
+            # Convertir a Excel en memoria
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                df_export.to_excel(writer, index=False, sheet_name="Viabilidades")
+            output.seek(0)
 
-        macro = MacroElement()
-        macro._template = Template(legend)
-        m_to_show.get_root().add_child(macro)
-        map_output = st_folium(m_to_show, height=500, width=700, key="main_map",
-                               returned_objects=["last_object_clicked"])
+            # Botones alineados a los extremos
+            col_b1, _, col_b2 = st.columns([1, 2.3, 1])
 
-        # ⬇️ NUEVO BLOQUE: detectar clic en el mapa
-        if map_output and map_output.get("last_object_clicked"):
-            clicked_lat = map_output["last_object_clicked"]["lat"]
-            clicked_lng = map_output["last_object_clicked"]["lng"]
-
-            # Buscar el punto más cercano en el DataFrame (tolerancia ajustable)
-            tolerance = 0.0001  # aproximadamente 11m
-            match = viabilidades_df[
-                (viabilidades_df["latitud"].between(clicked_lat - tolerance, clicked_lat + tolerance)) &
-                (viabilidades_df["longitud"].between(clicked_lng - tolerance, clicked_lng + tolerance))
-                ]
-
-            if not match.empty:
-                clicked_ticket = match.iloc[0]["ticket"]
-                if clicked_ticket != st.session_state.get("selected_ticket"):
-                    st.session_state["selected_ticket"] = clicked_ticket
+            with col_b1:
+                if st.button("🔄 Refrescar Tabla"):
                     st.rerun()
 
-    # Mostrar formulario debajo
-    if st.session_state["selected_ticket"]:
-        st.markdown("---")
-        st.subheader(f"📝 Formulario para Ticket: {st.session_state['selected_ticket']}")
-        mostrar_formulario(selected_viabilidad)
+            with col_b2:
+                st.download_button(
+                    label="📥 Descargar Excel",
+                    data=output,
+                    file_name="viabilidades_export.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
-        if st.session_state.get("selected_ticket"):
+        with col1:
+
+            def draw_map(df, center, zoom):
+                m = folium.Map(location=center, zoom_start=zoom,
+                               tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+                               attr="Google")
+                marker_cluster = MarkerCluster().add_to(m)
+
+                for _, row in df.iterrows():
+                    popup = f"🏠 {row['ticket']} - 📍 {row['latitud']}, {row['longitud']}"
+
+                    serviciable = str(row.get('serviciable', '')).strip()
+                    apartment_id = str(row.get('apartment_id', '')).strip()
+                    tiene_presupuesto = row.get('tiene_presupuesto', False)
+
+                    # 🎯 Prioridad del color:
+                    # 1. Si tiene presupuesto → naranja
+                    # 2. Si no es serviciable → rojo
+                    # 3. Si es serviciable y tiene apartment_id → verde
+                    # 4. Otro caso → azul
+
+                    if tiene_presupuesto:
+                        marker_color = 'orange'
+                    elif row.get('estado') == "No interesado":
+                        marker_color = 'black'
+                    elif row.get('estado') == "Incidencia":
+                        marker_color = 'purple'
+                    elif serviciable == "No":
+                        marker_color = 'red'
+                    elif serviciable == "Sí" and apartment_id not in ["", "N/D"]:
+                        marker_color = 'green'
+                    else:
+                        marker_color = 'blue'
+
+                    folium.Marker(
+                        location=[row['latitud'], row['longitud']],
+                        popup=popup,
+                        icon=folium.Icon(color=marker_color, icon='info-sign')
+                    ).add_to(marker_cluster)
+
+                return m
+
+            m_to_show = draw_map(viabilidades_df, st.session_state["map_center"], st.session_state["map_zoom"])
+            legend = """
+                                {% macro html(this, kwargs) %}
+                                <div style="
+                                    position: fixed; 
+                                    bottom: 0px; left: 0px; width: 150px; 
+                                    z-index:9999; 
+                                    font-size:14px;
+                                    background-color: white;
+                                    color: black;
+                                    border:2px solid grey;
+                                    border-radius:8px;
+                                    padding: 10px;
+                                    box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+                                ">
+                                <b>Leyenda</b><br>
+                                <i style="color:green;">●</i> Serviciado<br>
+                                <i style="color:red;">●</i> No serviciable<br>
+                                <i style="color:orange;">●</i> Presupuesto Sí<br>
+                                <i style="color:black;">●</i> No interesado<br>
+                                <i style="color:purple;">●</i> Incidencia<br>
+                                <i style="color:blue;">●</i> Sin estudio<br>
+                                </div>
+                                {% endmacro %}
+                                """
+
+            macro = MacroElement()
+            macro._template = Template(legend)
+            m_to_show.get_root().add_child(macro)
+            map_output = st_folium(m_to_show, height=500, width=700, key="main_map",
+                                   returned_objects=["last_object_clicked"])
+
+            # ⬇️ NUEVO BLOQUE: detectar clic en el mapa
+            if map_output and map_output.get("last_object_clicked"):
+                clicked_lat = map_output["last_object_clicked"]["lat"]
+                clicked_lng = map_output["last_object_clicked"]["lng"]
+
+                # Buscar el punto más cercano en el DataFrame (tolerancia ajustable)
+                tolerance = 0.0001  # aproximadamente 11m
+                match = viabilidades_df[
+                    (viabilidades_df["latitud"].between(clicked_lat - tolerance, clicked_lat + tolerance)) &
+                    (viabilidades_df["longitud"].between(clicked_lng - tolerance, clicked_lng + tolerance))
+                    ]
+
+                if not match.empty:
+                    clicked_ticket = match.iloc[0]["ticket"]
+                    if clicked_ticket != st.session_state.get("selected_ticket"):
+                        st.session_state["selected_ticket"] = clicked_ticket
+                        st.rerun()
+
+        # Mostrar formulario debajo
+        if st.session_state["selected_ticket"]:
             st.markdown("---")
-            st.subheader(f"Subir y Enviar Presupuesto para Ticket {st.session_state['selected_ticket']}")
+            st.subheader(f"📝 Formulario para Ticket: {st.session_state['selected_ticket']}")
+            mostrar_formulario(selected_viabilidad)
 
-            archivo = st.file_uploader("📁 Sube el archivo Excel del presupuesto", type=["xlsx"])
+            if st.session_state.get("selected_ticket"):
+                st.markdown("---")
+                st.subheader(f"Subir y Enviar Presupuesto para Ticket {st.session_state['selected_ticket']}")
 
-            if archivo:
-                st.success("✅ Archivo cargado correctamente.")
+                archivo = st.file_uploader("📁 Sube el archivo Excel del presupuesto", type=["xlsx"])
 
-                proyecto = st.text_input("🔖 Proyecto / Nombre del presupuesto",
-                                         value=f"Ticket {st.session_state['selected_ticket']}")
-                mensaje = st.text_area("📝 Mensaje para los destinatarios",
-                                       value="Adjunto presupuesto para su revisión.")
+                if archivo:
+                    st.success("✅ Archivo cargado correctamente.")
 
-                # Define los destinatarios disponibles
-                destinatarios_posibles = {
-                    "Rafa Sanz": "rafasanz9@gmail.com",
-                    "Juan AsturPhone": "admin@asturphone.com",
-                    "Correo para pruebas": "patricia@verdetuoperador.com"
-                }
+                    proyecto = st.text_input("🔖 Proyecto / Nombre del presupuesto",
+                                             value=f"Ticket {st.session_state['selected_ticket']}")
+                    mensaje = st.text_area("📝 Mensaje para los destinatarios",
+                                           value="Adjunto presupuesto para su revisión.")
 
-                seleccionados = st.multiselect("👥 Selecciona destinatarios", list(destinatarios_posibles.keys()))
+                    # Define los destinatarios disponibles
+                    destinatarios_posibles = {
+                        "Rafa Sanz": "rafasanz9@gmail.com",
+                        "Juan AsturPhone": "admin@asturphone.com",
+                        "Correo para pruebas": "patricia@verdetuoperador.com"
+                    }
 
-                if seleccionados and st.button("🚀 Enviar presupuesto por correo"):
-                    try:
-                        archivo_bytes = archivo.read()
-                        nombre_archivo = archivo.name
+                    seleccionados = st.multiselect("👥 Selecciona destinatarios", list(destinatarios_posibles.keys()))
 
-                        for nombre in seleccionados:
-                            correo = destinatarios_posibles[nombre]
+                    if seleccionados and st.button("🚀 Enviar presupuesto por correo"):
+                        try:
+                            archivo_bytes = archivo.read()
+                            nombre_archivo = archivo.name
 
-                            # Enviar correo
-                            correo_envio_presupuesto_manual(
-                                destinatario=correo,
-                                proyecto=proyecto,
-                                mensaje_usuario=mensaje,
-                                archivo_bytes=archivo_bytes,
-                                nombre_archivo=nombre_archivo
-                            )
+                            for nombre in seleccionados:
+                                correo = destinatarios_posibles[nombre]
 
-                            # Registrar envío en la BBDD
+                                # Enviar correo
+                                correo_envio_presupuesto_manual(
+                                    destinatario=correo,
+                                    proyecto=proyecto,
+                                    mensaje_usuario=mensaje,
+                                    archivo_bytes=archivo_bytes,
+                                    nombre_archivo=nombre_archivo
+                                )
+
+                                # Registrar envío en la BBDD
+                                try:
+                                    conn = obtener_conexion()
+                                    cursor = conn.cursor()
+                                    cursor.execute("""
+                                        INSERT INTO envios_presupuesto_viabilidad (ticket, destinatario, proyecto, fecha_envio, archivo_nombre)
+                                        VALUES (?, ?, ?, ?, ?)
+                                    """, (
+                                        st.session_state["selected_ticket"],
+                                        correo,
+                                        proyecto,
+                                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                        nombre_archivo
+                                    ))
+                                    conn.commit()
+                                    conn.close()
+                                except Exception as db_error:
+                                    st.warning(
+                                        f"⚠️ Correo enviado a {correo}, pero no se registró en la base de datos: {db_error}")
+
+                            # ✅ Marcar en la base de datos que se ha enviado
                             try:
                                 conn = obtener_conexion()
                                 cursor = conn.cursor()
                                 cursor.execute("""
-                                    INSERT INTO envios_presupuesto_viabilidad (ticket, destinatario, proyecto, fecha_envio, archivo_nombre)
-                                    VALUES (?, ?, ?, ?, ?)
-                                """, (
-                                    st.session_state["selected_ticket"],
-                                    correo,
-                                    proyecto,
-                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                    nombre_archivo
-                                ))
+                                    UPDATE viabilidades
+                                    SET presupuesto_enviado = 1
+                                    WHERE ticket = ?
+                                """, (st.session_state["selected_ticket"],))
                                 conn.commit()
                                 conn.close()
+                                st.info("🗂️ Se ha registrado en la BBDD que el presupuesto ha sido enviado.")
                             except Exception as db_error:
                                 st.warning(
-                                    f"⚠️ Correo enviado a {correo}, pero no se registró en la base de datos: {db_error}")
+                                    f"⚠️ El correo fue enviado, pero hubo un error al actualizar la BBDD: {db_error}")
 
-                        # ✅ Marcar en la base de datos que se ha enviado
-                        try:
-                            conn = obtener_conexion()
-                            cursor = conn.cursor()
-                            cursor.execute("""
-                                UPDATE viabilidades
-                                SET presupuesto_enviado = 1
-                                WHERE ticket = ?
-                            """, (st.session_state["selected_ticket"],))
-                            conn.commit()
-                            conn.close()
-                            st.info("🗂️ Se ha registrado en la BBDD que el presupuesto ha sido enviado.")
-                        except Exception as db_error:
-                            st.warning(
-                                f"⚠️ El correo fue enviado, pero hubo un error al actualizar la BBDD: {db_error}")
-
-                        st.success("✅ Presupuesto enviado correctamente.")
-                    except Exception as e:
-                        st.error(f"❌ Error al enviar el presupuesto: {e}")
-
-    with st.expander("📜 Historial de Envíos de Presupuesto"):
-        try:
-            conn = obtener_conexion()
-            df_historial = pd.read_sql_query("""
-                SELECT fecha_envio, destinatario, proyecto, archivo_nombre
-                FROM envios_presupuesto_viabilidad
-                WHERE ticket = ?
-                ORDER BY datetime(fecha_envio) DESC
-            """, conn, params=(st.session_state["selected_ticket"],))
-            conn.close()
-
-            if df_historial.empty:
-                st.info("No se han registrado envíos de presupuesto aún.")
-            else:
-                df_historial["fecha_envio"] = pd.to_datetime(df_historial["fecha_envio"]).dt.strftime("%d/%m/%Y %H:%M")
-                st.dataframe(df_historial, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"❌ Error al cargar el historial de envíos: {e}")
-
-    DB_URL = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-
-    with st.expander("📤 Subir Excel de Viabilidades para actualizar base de datos"):
-        uploaded_file = st.file_uploader("Selecciona un archivo Excel (.xlsx)", type=["xlsx"])
-
-        if uploaded_file is not None:
-            try:
-                # Leer Excel en DataFrame
-                df = pd.read_excel(io.BytesIO(uploaded_file.read()))
-
-                # Normalizar latitud, longitud y coste
-                for col in ["latitud", "longitud", "PRESUPUESTO"]:
-                    if col in df.columns:
-                        df[col] = df[col].astype(str).str.replace(",", ".").astype(float)
-
-                # Mapeo Excel → BD
-                mapa_columnas = {
-                    "ticket": "ticket",
-                    "SOLICITANTE": "usuario",
-                    "Nueva Promoción": "nuevapromocion",
-                    "RESULTADO": "resultado",
-                    "JUSTIFICACIÓN": "justificacion",
-                    "PRESUPUESTO": "coste",
-                    "UUII": "zona_estudio",
-                    "CONTRATOS": "contratos",
-                    "latitud": "latitud",
-                    "longitud": "longitud",
-                    "provincia": "provincia",
-                    "municipio": "municipio",
-                    "poblacion": "poblacion",
-                    "vial": "vial",
-                    "numero": "numero",
-                    "letra": "letra",
-                    "cp": "cp",
-                    "olt": "olt",
-                    "cto_admin": "cto_admin",
-                    "id_cto": "id_cto",
-                    "fecha_viabilidad": "fecha_viabilidad",
-                    "apartment_id": "apartment_id",
-                    "nombre_cliente": "nombre_cliente",
-                    "telefono": "telefono",
-                    "comentarios_internos": "comentarios_internos",
-                    "ESTADO": "estado",
-                    "comentarios_comercial": "comentarios_comercial"
-                }
-
-                # Renombrar columnas válidas
-                df = df.rename(columns={col: mapa_columnas[col] for col in df.columns if col in mapa_columnas})
-
-                # Conectar a la base de datos
-                conn = sqlitecloud.connect(DB_URL)
-                cursor = conn.cursor()
-
-                # Obtener columnas existentes en la tabla viabilidades
-                cursor.execute("PRAGMA table_info(viabilidades);")
-                columnas_bd = {row[1] for row in cursor.fetchall()}
-
-                insertados = 0
-                errores = []
-                actualizados = []
-
-                # Columnas que deben completarse si están vacías
-                columnas_rellenables = [
-                    "nuevapromocion", "resultado", "justificacion",
-                    "coste", "zona_estudio", "contratos", "comentarios_comercial"
-                ]
-
-                for _, fila in df.iterrows():
-                    datos_validos = {col: fila[col] for col in fila.index if col in columnas_bd and pd.notna(fila[col])}
-                    if not datos_validos:
-                        continue
-
-                    ticket_id = fila.get("ticket")
-
-                    # Comprobar si el ticket ya existe en la BD
-                    cursor.execute("SELECT * FROM viabilidades WHERE ticket = ?", (ticket_id,))
-                    existente = cursor.fetchone()
-
-                    if existente:
-                        # Crear dict con valores actuales de la BD
-                        cursor.execute("PRAGMA table_info(viabilidades);")
-                        cols_info = cursor.fetchall()
-                        nombres_cols = [c[1] for c in cols_info]
-                        existente_dict = dict(zip(nombres_cols, existente))
-
-                        # Preparar actualizaciones solo si la BD tiene vacío
-                        updates = {}
-                        for col in columnas_rellenables:
-                            if col in datos_validos and (
-                                    existente_dict.get(col) is None or str(existente_dict.get(col)).strip() == ""):
-                                updates[col] = datos_validos[col]
-
-                        if updates:
-                            set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
-                            valores = list(updates.values()) + [ticket_id]
-                            sql = f"UPDATE viabilidades SET {set_clause} WHERE ticket = ?"
-                            try:
-                                cursor.execute(sql, valores)
-                                actualizados.append(
-                                    f"✅ Ticket {ticket_id} → columnas actualizadas: {', '.join(updates.keys())}")
-                                insertados += 1
-                            except Exception as e:
-                                errores.append(f"❌ Error al actualizar ticket {ticket_id}: {e}")
-                    else:
-                        # Insertar nuevo registro
-                        columnas_sql = ", ".join(datos_validos.keys())
-                        placeholders = ", ".join(["?"] * len(datos_validos))
-                        valores = list(datos_validos.values())
-                        sql = f"INSERT INTO viabilidades ({columnas_sql}) VALUES ({placeholders})"
-
-                        try:
-                            cursor.execute(sql, valores)
-                            insertados += 1
+                            st.success("✅ Presupuesto enviado correctamente.")
                         except Exception as e:
-                            errores.append(f"❌ Error al insertar ticket {ticket_id}: {e}")
+                            st.error(f"❌ Error al enviar el presupuesto: {e}")
 
-                conn.commit()
+        with st.expander("📜 Historial de Envíos de Presupuesto"):
+            try:
+                conn = obtener_conexion()
+                df_historial = pd.read_sql_query("""
+                    SELECT fecha_envio, destinatario, proyecto, archivo_nombre
+                    FROM envios_presupuesto_viabilidad
+                    WHERE ticket = ?
+                    ORDER BY datetime(fecha_envio) DESC
+                """, conn, params=(st.session_state["selected_ticket"],))
                 conn.close()
 
-                # Mostrar resultados al usuario
-                st.success(f"✅ Registros insertados/actualizados correctamente: {insertados}")
-
-                if actualizados:
-                    st.info("ℹ️ Detalle de actualizaciones realizadas:")
-                    for msg in actualizados:
-                        st.write(msg)
-
-                if errores:
-                    st.error(f"❌ Se encontraron {len(errores)} errores durante la inserción/actualización.")
-                    for e in errores:
-                        st.write(e)
-
-                # Comparar columnas esperadas y recibidas
-                columnas_excel_original = set(mapa_columnas.keys())
-                columnas_recibidas = set(df.columns)
-                columnas_omitidas = columnas_excel_original - columnas_recibidas
-                columnas_no_existentes = [col for col in df.columns if col not in columnas_bd]
-
-                if columnas_omitidas:
-                    st.warning("⚠️ Columnas esperadas en Excel pero que no llegaron:")
-                    for c in columnas_omitidas:
-                        st.write(f" - {c}")
-
-                if columnas_no_existentes:
-                    st.warning("⚠️ Columnas en Excel ignoradas porque no existen en la base de datos:")
-                    for c in columnas_no_existentes:
-                        st.write(f" - {c}")
+                if df_historial.empty:
+                    st.info("No se han registrado envíos de presupuesto aún.")
+                else:
+                    df_historial["fecha_envio"] = pd.to_datetime(df_historial["fecha_envio"]).dt.strftime("%d/%m/%Y %H:%M")
+                    st.dataframe(df_historial, use_container_width=True)
 
             except Exception as e:
-                st.error(f"❌ Error al procesar el archivo: {e}")
+                st.error(f"❌ Error al cargar el historial de envíos: {e}")
 
+        DB_URL = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+
+        with st.expander("📤 Subir Excel de Viabilidades para actualizar base de datos"):
+            uploaded_file = st.file_uploader("Selecciona un archivo Excel (.xlsx)", type=["xlsx"])
+
+            if uploaded_file is not None:
+                try:
+                    # Leer Excel en DataFrame
+                    df = pd.read_excel(io.BytesIO(uploaded_file.read()))
+
+                    # Normalizar latitud, longitud y coste
+                    for col in ["latitud", "longitud", "PRESUPUESTO"]:
+                        if col in df.columns:
+                            df[col] = df[col].astype(str).str.replace(",", ".").astype(float)
+
+                    # Mapeo Excel → BD
+                    mapa_columnas = {
+                        "ticket": "ticket",
+                        "SOLICITANTE": "usuario",
+                        "Nueva Promoción": "nuevapromocion",
+                        "RESULTADO": "resultado",
+                        "JUSTIFICACIÓN": "justificacion",
+                        "PRESUPUESTO": "coste",
+                        "UUII": "zona_estudio",
+                        "CONTRATOS": "contratos",
+                        "latitud": "latitud",
+                        "longitud": "longitud",
+                        "provincia": "provincia",
+                        "municipio": "municipio",
+                        "poblacion": "poblacion",
+                        "vial": "vial",
+                        "numero": "numero",
+                        "letra": "letra",
+                        "cp": "cp",
+                        "olt": "olt",
+                        "cto_admin": "cto_admin",
+                        "id_cto": "id_cto",
+                        "fecha_viabilidad": "fecha_viabilidad",
+                        "apartment_id": "apartment_id",
+                        "nombre_cliente": "nombre_cliente",
+                        "telefono": "telefono",
+                        "comentarios_internos": "comentarios_internos",
+                        "ESTADO": "estado",
+                        "comentarios_comercial": "comentarios_comercial"
+                    }
+
+                    # Renombrar columnas válidas
+                    df = df.rename(columns={col: mapa_columnas[col] for col in df.columns if col in mapa_columnas})
+
+                    # Conectar a la base de datos
+                    conn = sqlitecloud.connect(DB_URL)
+                    cursor = conn.cursor()
+
+                    # Obtener columnas existentes en la tabla viabilidades
+                    cursor.execute("PRAGMA table_info(viabilidades);")
+                    columnas_bd = {row[1] for row in cursor.fetchall()}
+
+                    insertados = 0
+                    errores = []
+                    actualizados = []
+
+                    # Columnas que deben completarse si están vacías
+                    columnas_rellenables = [
+                        "nuevapromocion", "resultado", "justificacion",
+                        "coste", "zona_estudio", "contratos", "comentarios_comercial"
+                    ]
+
+                    for _, fila in df.iterrows():
+                        datos_validos = {col: fila[col] for col in fila.index if col in columnas_bd and pd.notna(fila[col])}
+                        if not datos_validos:
+                            continue
+
+                        ticket_id = fila.get("ticket")
+
+                        # Comprobar si el ticket ya existe en la BD
+                        cursor.execute("SELECT * FROM viabilidades WHERE ticket = ?", (ticket_id,))
+                        existente = cursor.fetchone()
+
+                        if existente:
+                            # Crear dict con valores actuales de la BD
+                            cursor.execute("PRAGMA table_info(viabilidades);")
+                            cols_info = cursor.fetchall()
+                            nombres_cols = [c[1] for c in cols_info]
+                            existente_dict = dict(zip(nombres_cols, existente))
+
+                            # Preparar actualizaciones solo si la BD tiene vacío
+                            updates = {}
+                            for col in columnas_rellenables:
+                                if col in datos_validos and (
+                                        existente_dict.get(col) is None or str(existente_dict.get(col)).strip() == ""):
+                                    updates[col] = datos_validos[col]
+
+                            if updates:
+                                set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
+                                valores = list(updates.values()) + [ticket_id]
+                                sql = f"UPDATE viabilidades SET {set_clause} WHERE ticket = ?"
+                                try:
+                                    cursor.execute(sql, valores)
+                                    actualizados.append(
+                                        f"✅ Ticket {ticket_id} → columnas actualizadas: {', '.join(updates.keys())}")
+                                    insertados += 1
+                                except Exception as e:
+                                    errores.append(f"❌ Error al actualizar ticket {ticket_id}: {e}")
+                        else:
+                            # Insertar nuevo registro
+                            columnas_sql = ", ".join(datos_validos.keys())
+                            placeholders = ", ".join(["?"] * len(datos_validos))
+                            valores = list(datos_validos.values())
+                            sql = f"INSERT INTO viabilidades ({columnas_sql}) VALUES ({placeholders})"
+
+                            try:
+                                cursor.execute(sql, valores)
+                                insertados += 1
+                            except Exception as e:
+                                errores.append(f"❌ Error al insertar ticket {ticket_id}: {e}")
+
+                    conn.commit()
+                    conn.close()
+
+                    # Mostrar resultados al usuario
+                    st.success(f"✅ Registros insertados/actualizados correctamente: {insertados}")
+
+                    if actualizados:
+                        st.info("ℹ️ Detalle de actualizaciones realizadas:")
+                        for msg in actualizados:
+                            st.write(msg)
+
+                    if errores:
+                        st.error(f"❌ Se encontraron {len(errores)} errores durante la inserción/actualización.")
+                        for e in errores:
+                            st.write(e)
+
+                    # Comparar columnas esperadas y recibidas
+                    columnas_excel_original = set(mapa_columnas.keys())
+                    columnas_recibidas = set(df.columns)
+                    columnas_omitidas = columnas_excel_original - columnas_recibidas
+                    columnas_no_existentes = [col for col in df.columns if col not in columnas_bd]
+
+                    if columnas_omitidas:
+                        st.warning("⚠️ Columnas esperadas en Excel pero que no llegaron:")
+                        for c in columnas_omitidas:
+                            st.write(f" - {c}")
+
+                    if columnas_no_existentes:
+                        st.warning("⚠️ Columnas en Excel ignoradas porque no existen en la base de datos:")
+                        for c in columnas_no_existentes:
+                            st.write(f" - {c}")
+
+                except Exception as e:
+                    st.error(f"❌ Error al procesar el archivo: {e}")
+        # 🧩 Sección 2: Crear Viabilidades (vacía por ahora)
+    elif sub_seccion == "Crear Viabilidades":
+        st.info("🆕 Aquí podrás crear nuevas viabilidades manualmente (en desarrollo).")
+        st.markdown("""**Leyenda:**
+                         ⚫ Viabilidad ya existente
+                         🔵 Viabilidad nueva aún sin estudio
+                         🟢 Viabilidad serviciable y con Apartment ID ya asociado
+                         🔴 Viabilidad no serviciable
+                        """)
+
+        # Inicializar estados de sesión si no existen
+        if "viabilidad_marker" not in st.session_state:
+            st.session_state.viabilidad_marker = None
+        if "map_center" not in st.session_state:
+            st.session_state.map_center = (43.463444, -3.790476)  # Ubicación inicial predeterminada
+        if "map_zoom" not in st.session_state:
+            st.session_state.map_zoom = 12  # Zoom inicial
+
+        # Crear el mapa centrado en la última ubicación guardada
+        m = folium.Map(
+            location=st.session_state.map_center,
+            zoom_start=st.session_state.map_zoom,
+            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+            attr="Google"
+        )
+
+        viabilidades = obtener_viabilidades()
+        for v in viabilidades:
+            lat, lon, ticket, serviciable, apartment_id = v
+
+            # Determinar el color del marcador según las condiciones
+            if serviciable is not None and str(serviciable).strip() != "":
+                serv = str(serviciable).strip()
+                apt = str(apartment_id).strip() if apartment_id is not None else ""
+                if serv == "No":
+                    marker_color = "red"
+                elif serv == "Sí" and apt not in ["", "N/D"]:
+                    marker_color = "green"
+                else:
+                    marker_color = "black"
+            else:
+                marker_color = "black"
+
+            folium.Marker(
+                [lat, lon],
+                icon=folium.Icon(color=marker_color),
+                popup=f"Ticket: {ticket}"
+            ).add_to(m)
+
+        # Si hay un marcador nuevo, agregarlo al mapa en azul
+        if st.session_state.viabilidad_marker:
+            lat = st.session_state.viabilidad_marker["lat"]
+            lon = st.session_state.viabilidad_marker["lon"]
+            folium.Marker(
+                [lat, lon],
+                icon=folium.Icon(color="blue")
+            ).add_to(m)
+
+        # Mostrar el mapa y capturar clics
+        Geocoder().add_to(m)
+        map_data = st_folium(m, height=680, width="100%")
+
+        # Detectar el clic para agregar el marcador nuevo
+        if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+            click = map_data["last_clicked"]
+            st.session_state.viabilidad_marker = {"lat": click["lat"], "lon": click["lng"]}
+            st.session_state.map_center = (click["lat"], click["lng"])  # Guardar la nueva vista
+            st.session_state.map_zoom = map_data["zoom"]  # Actualizar el zoom también
+            st.rerun()  # Actualizamos cuando se coloca un marcador
+
+        # Botón para eliminar el marcador y crear uno nuevo
+        if st.session_state.viabilidad_marker:
+            if st.button("Eliminar marcador y crear uno nuevo"):
+                st.session_state.viabilidad_marker = None
+                st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
+                st.rerun()
+
+        # Mostrar el formulario si hay un marcador nuevo
+        if st.session_state.viabilidad_marker:
+            lat = st.session_state.viabilidad_marker["lat"]
+            lon = st.session_state.viabilidad_marker["lon"]
+
+            st.subheader("Completa los datos del punto de viabilidad")
+            with st.form("viabilidad_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text_input("📍 Latitud", value=str(lat), disabled=True)
+                with col2:
+                    st.text_input("📍 Longitud", value=str(lon), disabled=True)
+
+                col3, col4, col5 = st.columns(3)
+                with col3:
+                    provincia = st.text_input("🏞️ Provincia")
+                with col4:
+                    municipio = st.text_input("🏘️ Municipio")
+                with col5:
+                    poblacion = st.text_input("👥 Población")
+
+                col6, col7, col8, col9 = st.columns([3, 1, 1, 2])
+                with col6:
+                    vial = st.text_input("🛣️ Vial")
+                with col7:
+                    numero = st.text_input("🔢 Número")
+                with col8:
+                    letra = st.text_input("🔤 Letra")
+                with col9:
+                    cp = st.text_input("📮 Código Postal")
+
+                col10, col11 = st.columns(2)
+                with col10:
+                    nombre_cliente = st.text_input("👤 Nombre Cliente")
+                with col11:
+                    telefono = st.text_input("📞 Teléfono")
+                # ✅ NUEVOS CAMPOS
+                col12, col13 = st.columns(2)
+                # Conexión para cargar los OLT desde la tabla
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY nombre_olt")
+                lista_olt = [f"{fila[0]}. {fila[1]}" for fila in cursor.fetchall()]
+                conn.close()
+
+                with col12:
+                    olt = st.selectbox("🏢 OLT", options=lista_olt)
+                with col13:
+                    apartment_id = st.text_input("🏘️ Apartment ID")
+                comentario = st.text_area("📝 Comentario")
+
+                # ✅ Campo para seleccionar el comercial
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT username FROM usuarios ORDER BY username")
+                lista_usuarios = [fila[0] for fila in cursor.fetchall()]
+                conn.close()
+
+                comercial = st.selectbox("🧑‍💼 Comercial responsable", options=lista_usuarios)
+                submit = st.form_submit_button("Enviar Formulario")
+
+                if submit:
+                    # Generar ticket único
+                    ticket = generar_ticket()
+
+                    guardar_viabilidad((
+                        lat,
+                        lon,
+                        provincia,
+                        municipio,
+                        poblacion,
+                        vial,
+                        numero,
+                        letra,
+                        cp,
+                        comentario,
+                        ticket,
+                        nombre_cliente,
+                        telefono,
+                        #st.session_state["username"],
+                        comercial,
+                        olt,  # nuevo campo
+                        apartment_id  # nuevo campo
+                    ))
+
+                    st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+
+                    # Resetear marcador para permitir nuevas viabilidades
+                    st.session_state.viabilidad_marker = None
+                    st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
+                    st.rerun()
+
+# Función para obtener conexión a la base de datos (SQLite Cloud)
+def get_db_connection():
+    return sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+    )
+
+def generar_ticket():
+    """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    fecha_actual = datetime.now().strftime("%Y%m%d")
+
+    # Buscar el mayor número consecutivo para la fecha actual
+    cursor.execute("SELECT MAX(CAST(SUBSTR(ticket, 9, 3) AS INTEGER)) FROM viabilidades WHERE ticket LIKE ?",
+                   (f"{fecha_actual}%",))
+    max_consecutivo = cursor.fetchone()[0]
+
+    # Si no hay tickets previos, empezar desde 1
+    if max_consecutivo is None:
+        max_consecutivo = 0
+
+    # Generar el nuevo ticket con el siguiente consecutivo
+    ticket = f"{fecha_actual}{max_consecutivo + 1:03d}"
+    conn.close()
+    return ticket
+
+def guardar_viabilidad(datos):
+    """
+    Inserta los datos en la tabla Viabilidades.
+    Se espera que 'datos' sea una tupla con el siguiente orden:
+    (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
+    """
+    # Guardar los datos en la base de datos
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO viabilidades (
+            latitud, 
+            longitud, 
+            provincia, 
+            municipio, 
+            poblacion, 
+            vial, 
+            numero, 
+            letra, 
+            cp, 
+            comentario, 
+            fecha_viabilidad, 
+            ticket, 
+            nombre_cliente, 
+            telefono, 
+            usuario,
+            olt,
+            apartment_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)
+    """, datos)
+    conn.commit()
+
+    # Obtener los emails de todos los administradores
+    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+    resultados = cursor.fetchall()
+    emails_admin = [fila[0] for fila in resultados]
+
+    conn.close()
+
+    # Información de la viabilidad
+    ticket_id = datos[10]  # 'ticket'
+    #nombre_comercial = st.session_state.get("username")
+    nombre_comercial = datos[13]  # 👈 el comercial elegido en el formulario
+    descripcion_viabilidad = (
+        f"📝 Viabilidad para el ticket {ticket_id}:<br><br>"
+        f"🧑‍💼 Comercial: {nombre_comercial}<br><br>"
+        f"📍 Latitud: {datos[0]}<br>"
+        f"📍 Longitud: {datos[1]}<br>"
+        f"🏞️ Provincia: {datos[2]}<br>"
+        f"🏙️ Municipio: {datos[3]}<br>"
+        f"🏘️ Población: {datos[4]}<br>"
+        f"🛣️ Vial: {datos[5]}<br>"
+        f"🔢 Número: {datos[6]}<br>"
+        f"🔤 Letra: {datos[7]}<br>"
+        f"🏷️ Código Postal (CP): {datos[8]}<br>"
+        f"💬 Comentario: {datos[9]}<br>"
+        f"👥 Nombre Cliente: {datos[11]}<br>"
+        f"📞 Teléfono: {datos[12]}<br><br>"
+        f"🏢 OLT: {datos[14]}<br>"
+        f"🏘️ Apartment ID: {datos[15]}<br><br>"
+        f"ℹ️ Por favor, revise todos los detalles de la viabilidad para asegurar que toda la información esté correcta. "
+        f"Si tiene alguna pregunta o necesita más detalles, no dude en ponerse en contacto con el comercial {nombre_comercial} o con el equipo responsable."
+    )
+
+    # Enviar la notificación por correo a cada administrador
+    if emails_admin:
+        for email in emails_admin:
+            correo_viabilidad_comercial(email, ticket_id, descripcion_viabilidad)
+        st.info(
+            f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada."
+        )
+    else:
+        st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
+
+    # Mostrar mensaje de éxito en Streamlit
+    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
+
+# Función para obtener viabilidades guardadas en la base de datos
+def obtener_viabilidades():
+    """Recupera las viabilidades asociadas al usuario logueado."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # Se asume que el usuario logueado está guardado en st.session_state["username"]
+    cursor.execute("SELECT latitud, longitud, ticket, serviciable, apartment_id FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
+    viabilidades = cursor.fetchall()
+    conn.close()
+    return viabilidades
 
 def mostrar_formulario(click_data):
     """Muestra el formulario para editar los datos de la viabilidad y guarda los cambios en la base de datos."""
@@ -2243,7 +2560,8 @@ def admin_dashboard():
             "ℹ️ En esta sección puedes consultar y completar los tickets de viabilidades según el comercial, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
             "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
             "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
-            " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos.")
+            " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos. Si pinchas en"
+            " Crear Viabilidades: Haz click en el mapa para agregar un marcador que represente el punto de viabilidad.")
         viabilidades_seccion()
 
         # Opción: Viabilidades (En construcción)
