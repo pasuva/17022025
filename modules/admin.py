@@ -1187,7 +1187,6 @@ def viabilidades_seccion():
                     st.error(f"❌ Error al procesar el archivo: {e}")
         # 🧩 Sección 2: Crear Viabilidades (vacía por ahora)
     elif sub_seccion == "Crear Viabilidades":
-        st.info("🆕 Aquí podrás crear nuevas viabilidades manualmente (en desarrollo).")
         st.markdown("""**Leyenda:**
                          ⚫ Viabilidad ya existente
                          🔵 Viabilidad nueva aún sin estudio

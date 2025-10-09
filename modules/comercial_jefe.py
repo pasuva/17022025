@@ -6,8 +6,8 @@ from streamlit_option_menu import option_menu
 
 from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion, \
     correo_asignacion_administracion2, correo_reasignacion_saliente, \
-    correo_reasignacion_entrante, correo_confirmacion_viab_admin
-from folium.plugins import MarkerCluster
+    correo_reasignacion_entrante, correo_confirmacion_viab_admin, correo_viabilidad_comercial
+from folium.plugins import MarkerCluster, Geocoder
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 from datetime import datetime
 
@@ -942,8 +942,8 @@ def mostrar_descarga_datos():
 def mostrar_viabilidades():
     sub_seccion = option_menu(
         menu_title=None,  # Sin título encima del menú
-        options=["Viabilidades pendientes de confirmación", "Seguimiento de viabilidades"],
-        icons=["exclamation-circle", "clipboard-check"],  # Puedes cambiar iconos
+        options=["Viabilidades pendientes de confirmación", "Seguimiento de viabilidades", "Crear viabilidades"],
+        icons=["exclamation-circle", "clipboard-check", "plus-circle"],  # Puedes cambiar iconos
         default_index=0,
         orientation="horizontal",  # horizontal para que quede tipo pestañas arriba
         styles={
@@ -1158,6 +1158,329 @@ def mostrar_viabilidades():
         st.info("ℹ️ Listado completo de viabilidades y su estado actual.")
         st.dataframe(viabilidades, use_container_width=True)
 
+    if sub_seccion == "Crear viabilidades":
+        st.info("🆕 Aquí podrás crear nuevas viabilidades manualmente (en desarrollo).")
+        st.markdown("""**Leyenda:**
+                                 ⚫ Viabilidad ya existente
+                                 🔵 Viabilidad nueva aún sin estudio
+                                 🟢 Viabilidad serviciable y con Apartment ID ya asociado
+                                 🔴 Viabilidad no serviciable
+                                """)
+
+        # Inicializar estados de sesión si no existen
+        if "viabilidad_marker" not in st.session_state:
+            st.session_state.viabilidad_marker = None
+        if "map_center" not in st.session_state:
+            st.session_state.map_center = (43.463444, -3.790476)  # Ubicación inicial predeterminada
+        if "map_zoom" not in st.session_state:
+            st.session_state.map_zoom = 12  # Zoom inicial
+
+        # Crear el mapa centrado en la última ubicación guardada
+        m = folium.Map(
+            location=st.session_state.map_center,
+            zoom_start=st.session_state.map_zoom,
+            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+            attr="Google"
+        )
+
+        viabilidades = obtener_viabilidades()
+        for v in viabilidades:
+            lat, lon, ticket, serviciable, apartment_id = v
+
+            # Determinar el color del marcador según las condiciones
+            if serviciable is not None and str(serviciable).strip() != "":
+                serv = str(serviciable).strip()
+                apt = str(apartment_id).strip() if apartment_id is not None else ""
+                if serv == "No":
+                    marker_color = "red"
+                elif serv == "Sí" and apt not in ["", "N/D"]:
+                    marker_color = "green"
+                else:
+                    marker_color = "black"
+            else:
+                marker_color = "black"
+
+            folium.Marker(
+                [lat, lon],
+                icon=folium.Icon(color=marker_color),
+                popup=f"Ticket: {ticket}"
+            ).add_to(m)
+
+        # Si hay un marcador nuevo, agregarlo al mapa en azul
+        if st.session_state.viabilidad_marker:
+            lat = st.session_state.viabilidad_marker["lat"]
+            lon = st.session_state.viabilidad_marker["lon"]
+            folium.Marker(
+                [lat, lon],
+                icon=folium.Icon(color="blue")
+            ).add_to(m)
+
+        # Mostrar el mapa y capturar clics
+        Geocoder().add_to(m)
+        map_data = st_folium(m, height=680, width="100%")
+
+        # Detectar el clic para agregar el marcador nuevo
+        if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+            click = map_data["last_clicked"]
+            st.session_state.viabilidad_marker = {"lat": click["lat"], "lon": click["lng"]}
+            st.session_state.map_center = (click["lat"], click["lng"])  # Guardar la nueva vista
+            st.session_state.map_zoom = map_data["zoom"]  # Actualizar el zoom también
+            st.rerun()  # Actualizamos cuando se coloca un marcador
+
+        # Botón para eliminar el marcador y crear uno nuevo
+        if st.session_state.viabilidad_marker:
+            if st.button("Eliminar marcador y crear uno nuevo"):
+                st.session_state.viabilidad_marker = None
+                st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
+                st.rerun()
+
+        # Mostrar el formulario si hay un marcador nuevo
+        if st.session_state.viabilidad_marker:
+            lat = st.session_state.viabilidad_marker["lat"]
+            lon = st.session_state.viabilidad_marker["lon"]
+
+            st.subheader("Completa los datos del punto de viabilidad")
+            with st.form("viabilidad_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text_input("📍 Latitud", value=str(lat), disabled=True)
+                with col2:
+                    st.text_input("📍 Longitud", value=str(lon), disabled=True)
+
+                col3, col4, col5 = st.columns(3)
+                with col3:
+                    provincia = st.text_input("🏞️ Provincia")
+                with col4:
+                    municipio = st.text_input("🏘️ Municipio")
+                with col5:
+                    poblacion = st.text_input("👥 Población")
+
+                col6, col7, col8, col9 = st.columns([3, 1, 1, 2])
+                with col6:
+                    vial = st.text_input("🛣️ Vial")
+                with col7:
+                    numero = st.text_input("🔢 Número")
+                with col8:
+                    letra = st.text_input("🔤 Letra")
+                with col9:
+                    cp = st.text_input("📮 Código Postal")
+
+                col10, col11 = st.columns(2)
+                with col10:
+                    nombre_cliente = st.text_input("👤 Nombre Cliente")
+                with col11:
+                    telefono = st.text_input("📞 Teléfono")
+                # ✅ NUEVOS CAMPOS
+                col12, col13 = st.columns(2)
+                # Conexión para cargar los OLT desde la tabla
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY nombre_olt")
+                lista_olt = [f"{fila[0]}. {fila[1]}" for fila in cursor.fetchall()]
+                conn.close()
+
+                with col12:
+                    olt = st.selectbox("🏢 OLT", options=lista_olt)
+                with col13:
+                    apartment_id = st.text_input("🏘️ Apartment ID")
+                comentario = st.text_area("📝 Comentario")
+
+                # ✅ Campo para seleccionar el comercial con lógica por usuario
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT username FROM usuarios ORDER BY username")
+                todos_los_usuarios = [fila[0] for fila in cursor.fetchall()]
+                conn.close()
+
+                usuario_actual = st.session_state.get("username", "")
+                rol_actual = st.session_state.get("role", "")
+
+                # Lógica de filtrado personalizada
+                if usuario_actual == "rafa sanz":  # comercial_jefe
+                    lista_usuarios = ["roberto", "nestor", "rafaela", "jose ramon", "rafa sanz"]
+                elif usuario_actual == "juan":  # otro gestor comercial
+                    lista_usuarios = ["juan", "Comercial2", "Comercial3"]
+                else:
+                    # Comerciales normales solo se ven a sí mismos
+                    lista_usuarios = [usuario_actual]
+
+                # Verificar que existan en la tabla usuarios (por si algún nombre falta)
+                lista_usuarios = [u for u in lista_usuarios if u in todos_los_usuarios]
+
+                comercial = st.selectbox("🧑‍💼 Comercial responsable", options=lista_usuarios)
+                submit = st.form_submit_button("Enviar Formulario")
+
+                if submit:
+                    # Generar ticket único
+                    ticket = generar_ticket()
+
+                    guardar_viabilidad((
+                        lat,
+                        lon,
+                        provincia,
+                        municipio,
+                        poblacion,
+                        vial,
+                        numero,
+                        letra,
+                        cp,
+                        comentario,
+                        ticket,
+                        nombre_cliente,
+                        telefono,
+                        # st.session_state["username"],
+                        comercial,
+                        olt,  # nuevo campo
+                        apartment_id  # nuevo campo
+                    ))
+
+                    st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+
+                    # Resetear marcador para permitir nuevas viabilidades
+                    st.session_state.viabilidad_marker = None
+                    st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
+                    st.rerun()
+
+def generar_ticket():
+    """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    fecha_actual = datetime.now().strftime("%Y%m%d")
+
+    # Buscar el mayor número consecutivo para la fecha actual
+    cursor.execute("SELECT MAX(CAST(SUBSTR(ticket, 9, 3) AS INTEGER)) FROM viabilidades WHERE ticket LIKE ?",
+                   (f"{fecha_actual}%",))
+    max_consecutivo = cursor.fetchone()[0]
+
+    # Si no hay tickets previos, empezar desde 1
+    if max_consecutivo is None:
+        max_consecutivo = 0
+
+    # Generar el nuevo ticket con el siguiente consecutivo
+    ticket = f"{fecha_actual}{max_consecutivo + 1:03d}"
+    conn.close()
+    return ticket
+
+def guardar_viabilidad(datos):
+    """
+    Inserta los datos en la tabla Viabilidades.
+    Se espera que 'datos' sea una tupla con el siguiente orden:
+    (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
+    """
+    # Guardar los datos en la base de datos
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO viabilidades (
+            latitud, 
+            longitud, 
+            provincia, 
+            municipio, 
+            poblacion, 
+            vial, 
+            numero, 
+            letra, 
+            cp, 
+            comentario, 
+            fecha_viabilidad, 
+            ticket, 
+            nombre_cliente, 
+            telefono, 
+            usuario,
+            olt,
+            apartment_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)
+    """, datos)
+    conn.commit()
+
+    # Obtener los emails de todos los administradores
+    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+    resultados = cursor.fetchall()
+    emails_admin = [fila[0] for fila in resultados]
+
+    conn.close()
+
+    # Información de la viabilidad
+    ticket_id = datos[10]  # 'ticket'
+    #nombre_comercial = st.session_state.get("username")
+    nombre_comercial = datos[13]  # 👈 el comercial elegido en el formulario
+    descripcion_viabilidad = (
+        f"📝 Viabilidad para el ticket {ticket_id}:<br><br>"
+        f"🧑‍💼 Comercial: {nombre_comercial}<br><br>"
+        f"📍 Latitud: {datos[0]}<br>"
+        f"📍 Longitud: {datos[1]}<br>"
+        f"🏞️ Provincia: {datos[2]}<br>"
+        f"🏙️ Municipio: {datos[3]}<br>"
+        f"🏘️ Población: {datos[4]}<br>"
+        f"🛣️ Vial: {datos[5]}<br>"
+        f"🔢 Número: {datos[6]}<br>"
+        f"🔤 Letra: {datos[7]}<br>"
+        f"🏷️ Código Postal (CP): {datos[8]}<br>"
+        f"💬 Comentario: {datos[9]}<br>"
+        f"👥 Nombre Cliente: {datos[11]}<br>"
+        f"📞 Teléfono: {datos[12]}<br><br>"
+        f"🏢 OLT: {datos[14]}<br>"
+        f"🏘️ Apartment ID: {datos[15]}<br><br>"
+        f"ℹ️ Por favor, revise todos los detalles de la viabilidad para asegurar que toda la información esté correcta. "
+        f"Si tiene alguna pregunta o necesita más detalles, no dude en ponerse en contacto con el comercial {nombre_comercial} o con el equipo responsable."
+    )
+
+    # Enviar la notificación por correo a cada administrador
+    if emails_admin:
+        for email in emails_admin:
+            correo_viabilidad_comercial(email, ticket_id, descripcion_viabilidad)
+        st.info(
+            f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada."
+        )
+    else:
+        st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
+
+    # Mostrar mensaje de éxito en Streamlit
+    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
+
+def obtener_viabilidades():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    usuario_actual = st.session_state.get("username", "")
+    rol_actual = st.session_state.get("role", "")
+
+    if rol_actual == "admin":
+        # Admin ve todas
+        cursor.execute("""
+            SELECT latitud, longitud, ticket, serviciable, apartment_id 
+            FROM viabilidades
+        """)
+
+    elif usuario_actual == "rafa sanz":
+        # Gestor comercial Rafa ve sus comerciales
+        comerciales_permitidos = ("roberto", "nestor", "rafaela", "jose ramon", "rafa sanz")
+        cursor.execute(f"""
+            SELECT latitud, longitud, ticket, serviciable, apartment_id 
+            FROM viabilidades
+            WHERE usuario IN ({','.join(['?'] * len(comerciales_permitidos))})
+        """, comerciales_permitidos)
+
+    elif usuario_actual == "juan":
+        # Gestor comercial Juan ve sus comerciales
+        comerciales_permitidos = ("juan", "Comercial2", "Comercial3")
+        cursor.execute(f"""
+            SELECT latitud, longitud, ticket, serviciable, apartment_id 
+            FROM viabilidades
+            WHERE usuario IN ({','.join(['?'] * len(comerciales_permitidos))})
+        """, comerciales_permitidos)
+
+    else:
+        # Comerciales normales solo sus propias viabilidades
+        cursor.execute("""
+            SELECT latitud, longitud, ticket, serviciable, apartment_id 
+            FROM viabilidades
+            WHERE usuario = ?
+        """, (usuario_actual,))
+
+    viabilidades = cursor.fetchall()
+    conn.close()
+    return viabilidades
 
 def download_datos(datos_uis, total_ofertas, viabilidades):
     st.info("ℹ️ Dependiendo del tamaño de los datos, la descarga puede tardar algunos segundos.")
