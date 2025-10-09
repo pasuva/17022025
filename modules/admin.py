@@ -65,7 +65,7 @@ def cargar_contratos_google():
         # --- Detectar entorno y elegir archivo de credenciales ---
         posibles_rutas = [
             "modules/carga-contratos-verde-c5068516c7cf.json",  # Render: secret file
-            "/etc/carga-contratos-verde-c5068516c7cf.json",      # Otra ruta posible en Render
+            "/etc/secret/carga-contratos-verde-c5068516c7cf.json",      # Otra ruta posible en Render
             os.path.join(os.path.dirname(__file__), "carga-contratos-verde-c5068516c7cf.json"),  # Local
         ]
 
