@@ -1527,6 +1527,19 @@ def mostrar_formulario(click_data):
         col11 = st.columns(1)[0]
         with col11:
             st.text_area("💬 Comentarios", value=comentario, disabled=True, key="comentario_input")
+        # 👨‍💼 Comentarios del gestor (solo lectura)
+        col11b = st.columns(1)[0]
+        with col11b:
+            comentarios_gestor = click_data.get("comentarios_gestor", "")
+            if comentarios_gestor:
+                st.text_area(
+                    "🗒️ Comentarios del Gestor",
+                    value=comentarios_gestor,
+                    disabled=True,
+                    key="comentarios_gestor_input"
+                )
+            else:
+                st.info("ℹ️ No hay comentarios del gestor registrados para esta viabilidad.")
 
         col12, col13 = st.columns([1, 1])
         with col12:
@@ -1679,13 +1692,13 @@ def mostrar_formulario(click_data):
             )
         with col25:
             opciones_estado = [
+                " ",
                 "Presupuesto enviado",
                 "Aceptado",
                 "Rechazado",
                 "Cerrar",
                 "Pasado a zona de estudio",
-                "Instalado",
-                " "
+                "Instalado"
             ]
             estado_val = click_data.get("estado", "Presupuesto enviado")
             index_estado = opciones_estado.index(estado_val) if estado_val in opciones_estado else 0
@@ -3279,6 +3292,148 @@ def generar_informe(fecha_inicio, fecha_fin):
         st.markdown(resumen_trazabilidad, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
     st.write("----------------------")
+
+    # ─────────────────────────────────────────────
+    # 🔹 VIABILIDADES: Resumen Detallado (Serviciable / Estado / Resultado)
+    # ─────────────────────────────────────────────
+    st.write("----------------------")
+    st.subheader("📋 Informe de Viabilidades")
+
+    conn = obtener_conexion()
+
+    # 1️⃣ Serviciable (Sí / No / Desconocido)
+    query_serviciable = """
+        SELECT 
+            CASE 
+                WHEN LOWER(serviciable) = 'sí' THEN 'Sí'
+                WHEN LOWER(serviciable) = 'no' THEN 'No'
+                ELSE 'Desconocido'
+            END AS Serviciable,
+            COUNT(*) AS Total
+        FROM viabilidades
+        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
+        GROUP BY Serviciable
+    """
+    df_serviciable = pd.read_sql_query(query_serviciable, conn, params=(fecha_inicio, fecha_fin))
+    total_viabilidades = df_serviciable["Total"].sum() if not df_serviciable.empty else 0
+
+    # 2️⃣ Estado (fase administrativa)
+    query_estado = """
+        SELECT 
+            COALESCE(estado, 'Sin estado') AS Estado,
+            COUNT(*) AS Total
+        FROM viabilidades
+        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
+        GROUP BY Estado
+        ORDER BY Total DESC
+    """
+    df_estado = pd.read_sql_query(query_estado, conn, params=(fecha_inicio, fecha_fin))
+
+    # 3️⃣ Resultado (dictamen final)
+    query_resultado = """
+        SELECT 
+            COALESCE(resultado, 'Sin resultado') AS Resultado,
+            COUNT(*) AS Total
+        FROM viabilidades
+        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
+        GROUP BY Resultado
+        ORDER BY Total DESC
+    """
+    df_resultado = pd.read_sql_query(query_resultado, conn, params=(fecha_inicio, fecha_fin))
+
+    # 4️⃣ Viabilidades con comentarios del gestor
+    query_comentarios = """
+        SELECT COUNT(*) FROM viabilidades 
+        WHERE comentarios_gestor IS NOT NULL AND TRIM(comentarios_gestor) <> ''
+          AND STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
+    """
+    total_comentarios = ejecutar_consulta(query_comentarios, (fecha_inicio, fecha_fin))
+    porcentaje_comentarios = (total_comentarios / total_viabilidades * 100) if total_viabilidades > 0 else 0
+
+    conn.close()
+
+    # ──────────────────────────────
+    # VISUALIZACIONES
+    # ──────────────────────────────
+    colv1, colv2 = st.columns(2)
+    with colv1:
+        fig_s = go.Figure(data=[go.Pie(
+            labels=df_serviciable["Serviciable"],
+            values=df_serviciable["Total"],
+            hole=0.4,
+            textinfo="percent+label",
+            marker=dict(colors=["#81c784", "#e57373", "#bdbdbd"])
+        )])
+        fig_s.update_layout(
+            title="Distribución de Viabilidades (Serviciables / No / Desconocidas)",
+            title_x=0.1,
+            showlegend=False
+        )
+        st.plotly_chart(fig_s, use_container_width=True)
+
+    with colv2:
+        fig_e = go.Figure(data=[go.Bar(
+            x=df_estado["Estado"],
+            y=df_estado["Total"],
+            text=df_estado["Total"],
+            textposition="outside"
+        )])
+        fig_e.update_layout(
+            title="Distribución por Estado de Viabilidad",
+            title_x=0.1,
+            xaxis_title="Estado",
+            yaxis_title="Número de Viabilidades",
+            height=400
+        )
+        st.plotly_chart(fig_e, use_container_width=True)
+
+    colv3, colv4 = st.columns(2)
+    with colv3:
+        fig_r = go.Figure(data=[go.Bar(
+            x=df_resultado["Resultado"],
+            y=df_resultado["Total"],
+            text=df_resultado["Total"],
+            textposition="outside"
+        )])
+        fig_r.update_layout(
+            title="Distribución por Resultado de Viabilidad",
+            title_x=0.1,
+            xaxis_title="Resultado",
+            yaxis_title="Número de Casos",
+            height=400
+        )
+        st.plotly_chart(fig_r, use_container_width=True)
+
+    with colv4:
+        st.metric(label="💬 Viabilidades con Comentarios del Gestor",
+                  value=f"{total_comentarios}",
+                  delta=f"{porcentaje_comentarios:.2f}% del total")
+
+    # ──────────────────────────────
+    # RESUMEN DESCRIPTIVO
+    # ──────────────────────────────
+    resumen_viabilidades = f"""
+    <div style="text-align: justify;">
+    En el periodo comprendido entre <strong>{fecha_inicio}</strong> y <strong>{fecha_fin}</strong>, 
+    se registraron un total de <strong>{total_viabilidades}</strong> viabilidades.  
+    De ellas, las categorías de <strong>serviciabilidad</strong> se distribuyen así:
+    <ul>
+    {"".join([f"<li>{row['Serviciable']}: <strong>{row['Total']}</strong></li>" for _, row in df_serviciable.iterrows()])}
+    </ul>
+    Respecto al <strong>estado administrativo</strong>, los casos se reparten entre:
+    <ul>
+    {"".join([f"<li>{row['Estado']}: <strong>{row['Total']}</strong></li>" for _, row in df_estado.iterrows()])}
+    </ul>
+    Y en cuanto al <strong>resultado final</strong> de las viabilidades:
+    <ul>
+    {"".join([f"<li>{row['Resultado']}: <strong>{row['Total']}</strong></li>" for _, row in df_resultado.iterrows()])}
+    </ul>
+    Finalmente, <strong>{total_comentarios}</strong> viabilidades (<strong>{porcentaje_comentarios:.2f}%</strong>) 
+    incluyen comentarios del gestor, lo que refleja el nivel de seguimiento técnico del proceso.
+    </div>
+    """
+    st.markdown(resumen_viabilidades, unsafe_allow_html=True)
+
     return informe
 
 # Función para leer y mostrar el control de versiones

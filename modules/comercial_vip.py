@@ -810,11 +810,12 @@ def guardar_viabilidad(datos):
 
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
-    """Recupera las viabilidades asociadas al usuario logueado."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Se asume que el usuario logueado está guardado en st.session_state["username"]
-    cursor.execute("SELECT latitud, longitud, ticket, serviciable, apartment_id FROM viabilidades WHERE usuario = ?", (st.session_state["username"],))
+    cursor.execute("""
+        SELECT latitud, longitud, ticket, serviciable, apartment_id 
+        FROM viabilidades
+    """)
     viabilidades = cursor.fetchall()
     conn.close()
     return viabilidades

@@ -231,14 +231,6 @@ def mostrar_mapa_de_asignaciones():
             # Limpia valores nulos y normaliza
             datos_uis['provincia'] = datos_uis['provincia'].fillna("").str.strip().str.lower()
             datos_uis = datos_uis[datos_uis["provincia"].isin(["asturias", "lugo"])]
-            # st.info("🔒 Estás viendo solo datos de Asturias y Lugo.")
-
-            # Filtro por tipo_olt_rental según usuario
-        #if st.session_state["username"].strip().lower() == "juan":
-        #    datos_uis = datos_uis[datos_uis["tipo_olt_rental"].str.lower() == "CTO COMPARTIDA"]
-        #elif st.session_state["username"].strip().lower() == "rafa sanz":
-        #    datos_uis = datos_uis[
-        #        datos_uis["tipo_olt_rental"].isnull() | (datos_uis["tipo_olt_rental"].str.strip() == "")]
 
         # Si después del filtro no quedan datos, detenemos
         if datos_uis.empty:
@@ -261,11 +253,11 @@ def mostrar_mapa_de_asignaciones():
     username = st.session_state.get("username", "").strip().lower()
 
     # Lista general de comerciales para otros usuarios
-    comerciales_generales = ["jose ramon", "rafaela", "nestor", "roberto"]
+    comerciales_generales = ["jose ramon"]
 
     # Comerciales disponibles según usuario
     if username == "juan":
-        comerciales_disponibles = ["comercial_juan_1"]
+        comerciales_disponibles = ["Comercial2","Comercial3"]
     else:
         comerciales_disponibles = comerciales_generales
 
@@ -910,7 +902,7 @@ def mostrar_descarga_datos():
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
         elif username.lower() == "rafa sanz":
             # Rafa Sanz no ve a Juan Pablo
-            viabilidades = viabilidades[viabilidades['usuario'] != "juan pablo"]
+            viabilidades = viabilidades[viabilidades['usuario'] != ["juan pablo","roberto","nestor", "Comercial2", "Comercial3"]]
 
         st.info(
             "ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
@@ -1078,11 +1070,21 @@ def mostrar_viabilidades():
 
                     # --------------- CONFIRMAR ----------------
                     with col_ok:
+                        comentarios_gestor = st.text_area(
+                            "💬 Comentarios gestor",
+                            key=f"coment_{row.id}",
+                            placeholder="Añade comentarios sobre esta viabilidad (opcional)..."
+                        )
                         if st.button("✅Confirmar", key=f"ok_{row.id}"):
                             with st.spinner("Confirmando viabilidad…"):
                                 conn.execute(
-                                    "UPDATE viabilidades SET confirmacion_rafa = 'OK' WHERE id = ?",
-                                    (row.id,)
+                                    """
+                                    UPDATE viabilidades
+                                    SET confirmacion_rafa = 'OK',
+                                        comentarios_gestor = ?
+                                    WHERE id = ?
+                                    """,
+                                    (comentarios_gestor, row.id)
                                 )
                                 conn.commit()
 
@@ -1152,7 +1154,7 @@ def mostrar_viabilidades():
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
         elif username == "rafa sanz":
             # Rafa Sanz no ve a Juan Pablo
-            viabilidades = viabilidades[viabilidades['usuario'] != "juan pablo"]
+            viabilidades = viabilidades[viabilidades['usuario'] != ["juan pablo","roberto","nestor", "Comercial2", "Comercial3"]]
 
         # 📋 Mostrar tabla resultante
         st.info("ℹ️ Listado completo de viabilidades y su estado actual.")
