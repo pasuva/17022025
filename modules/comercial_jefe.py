@@ -1206,8 +1206,10 @@ def mostrar_viabilidades():
             viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
         elif username == "rafa sanz":
-            # Rafa Sanz no ve a Juan Pablo
-            viabilidades = viabilidades[viabilidades['usuario'] != ["juan pablo","roberto","nestor", "Comercial2", "Comercial3"]]
+            # Rafa Sanz no ve a Juan Pablo, Roberto, Nestor, etc.
+            comerciales_excluir = ["juan pablo", "roberto", "nestor", "Comercial2", "Comercial3"]
+            viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
+            viabilidades = viabilidades[~viabilidades['usuario'].isin([c.lower() for c in comerciales_excluir])]
 
         # 📋 Mostrar tabla resultante
         st.info("ℹ️ Listado completo de viabilidades y su estado actual.")

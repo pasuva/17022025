@@ -891,6 +891,13 @@ def viabilidades_section():
             with col13:
                 apartment_id = st.text_input("🏘️ Apartment ID")
             comentario = st.text_area("📝 Comentario")
+            # ------------------- SUBIDA DE IMÁGENES -------------------
+            imagenes_viabilidad = st.file_uploader(
+                "Adjunta fotos (PNG, JPG, JPEG). Puedes seleccionar varias.",
+                type=["png", "jpg", "jpeg"],
+                accept_multiple_files=True,
+                key=f"imagenes_viabilidad_{lat}_{lon}"
+            )
             submit = st.form_submit_button("Enviar Formulario")
 
             if submit:
@@ -917,6 +924,32 @@ def viabilidades_section():
                     olt,  # nuevo campo
                     apartment_id  # nuevo campo
                 ))
+                # ------------------- GUARDAR IMÁGENES -------------------
+                if imagenes_viabilidad:
+                    st.info("📤 Subiendo imágenes...")
+                    for imagen in imagenes_viabilidad:
+                        try:
+                            archivo_bytes = imagen.getvalue()
+                            nombre_archivo = imagen.name
+
+                            # Aquí puedes subir a Cloudinary o a tu sistema de almacenamiento
+                            url = upload_image_to_cloudinary(archivo_bytes,
+                                                     nombre_archivo)  # Necesitas implementar esta función
+
+                            # Guardar URL y ticket en base de datos
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                INSERT INTO imagenes_viabilidad (ticket, archivo_nombre, archivo_url)
+                                VALUES (?, ?, ?)
+                            """, (ticket, nombre_archivo, url))
+                            conn.commit()
+                            conn.close()
+
+                        except Exception as e:
+                            st.warning(f"⚠️ No se pudo subir la imagen {nombre_archivo}: {e}")
+
+                    st.success("✅ Imágenes guardadas correctamente.")
 
                 st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
 

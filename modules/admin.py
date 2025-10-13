@@ -2044,7 +2044,7 @@ def admin_dashboard():
             AgGrid(
                 data[columnas],
                 gridOptions=gridOptions,
-                enable_enterprise_modules=False,
+                enable_enterprise_modules=True,
                 update_mode=GridUpdateMode.NO_UPDATE,
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                 fit_columns_on_grid_load=True,
@@ -2294,7 +2294,7 @@ def admin_dashboard():
             AgGrid(
                 combined_data[columnas],
                 gridOptions=gridOptions,
-                enable_enterprise_modules=False,
+                enable_enterprise_modules=True,
                 update_mode=GridUpdateMode.NO_UPDATE,
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                 fit_columns_on_grid_load=False,
