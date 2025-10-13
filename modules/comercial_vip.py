@@ -9,7 +9,8 @@ from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
 from modules.cloudinary import upload_image_to_cloudinary
-from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial
+from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial, \
+    correo_envio_presupuesto_manual
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 
@@ -152,6 +153,29 @@ def guardar_en_base_de_datos_vip(oferta_data, imagen_incidencia, apartment_id):
         st.error(f"❌ Error al guardar/actualizar la oferta: {e}")
 
 
+def mostrar_ultimo_anuncio():
+    """Muestra el anuncio más reciente a los usuarios normales."""
+    try:
+        conn = get_db_connection()
+        query = "SELECT titulo, descripcion, fecha FROM anuncios ORDER BY id DESC LIMIT 1"
+        anuncio = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Si hay algún anuncio publicado
+        if not anuncio.empty:
+            ultimo = anuncio.iloc[0]
+            st.info(
+                f"📰 **{ultimo['titulo']}**  \n"
+                f"{ultimo['descripcion']}  \n"
+                f"📅 *Publicado el {ultimo['fecha']}*"
+            )
+        else:
+            # Si aún no hay anuncios, no mostrar nada
+            pass
+
+    except Exception as e:
+        st.warning(f"⚠️ No se pudo cargar el último anuncio: {e}")
+
 
 def comercial_dashboard_vip():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial VIP (ve toda la huella con filtros persistentes)."""
@@ -280,7 +304,7 @@ def comercial_dashboard_vip():
     if menu_opcion == "Ofertas Comerciales":
         log_trazabilidad(comercial, "Visualización de Dashboard VIP",
                          "El comercial VIP visualizó la sección de Ofertas Comerciales.")
-
+        mostrar_ultimo_anuncio()
         # ----- FILTROS -----
         with st.spinner("⏳ Cargando filtros..."):
             try:
@@ -1178,6 +1202,13 @@ def mostrar_formulario(click_data):
             key=f"motivo_serviciable_{form_key}"
         )
 
+    # ---------------- SUBIR PDF PRECONTRATO ----------------
+    pdf_precontrato = st.file_uploader(
+        "📄 Adjuntar PDF del precontrato (opcional, se enviará a bo@verdetuoperador.com)",
+        type=["pdf"],
+        key=f"pdf_precontrato_{form_key}"
+    )
+
     # Botón de envío
     submit = st.button("🚀 Enviar Oferta", key=f"submit_oferta_{form_key}")
 
@@ -1259,6 +1290,30 @@ def mostrar_formulario(click_data):
                     f"📧 Se ha enviado una notificación a: {', '.join(emails_admin + ([email_comercial] if email_comercial else []))}")
             else:
                 st.warning("⚠️ No se encontró ningún email de administrador/gestor, no se pudo enviar la notificación.")
+
+                # ---------------- ENVÍO DEL PDF PRECONTRATO ----------------
+                if pdf_precontrato:
+                    try:
+                        archivo_bytes = pdf_precontrato.getvalue()
+                        nombre_archivo = pdf_precontrato.name
+                        destinatario_bo = "bo@verdetuoperador.com"
+                        mensaje_bo = (
+                            f"Se ha generado un precontrato para el Apartment ID {apartment_id}.\n\n"
+                            f"Enviado automáticamente desde el gestor de ofertas."
+                        )
+
+                        # Función para enviar correo con archivo (reutilizar la que ya tengas)
+                        correo_envio_presupuesto_manual(
+                            destinatario=destinatario_bo,
+                            proyecto=f"Precontrato - Apartment {apartment_id}",
+                            mensaje_usuario=mensaje_bo,
+                            archivo_bytes=archivo_bytes,
+                            nombre_archivo=nombre_archivo
+                        )
+
+                        st.success(f"✅ PDF precontrato enviado correctamente a {destinatario_bo}.")
+                    except Exception as e:
+                        st.error(f"❌ Error al enviar PDF precontrato: {e}")
 
 if __name__ == "__main__":
     comercial_dashboard_vip()

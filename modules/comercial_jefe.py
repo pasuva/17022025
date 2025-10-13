@@ -94,6 +94,29 @@ def cargar_viabilidades():
         st.error(f"Error cargando total_ofertas: {e}")
         return pd.DataFrame()
 
+def mostrar_ultimo_anuncio():
+    """Muestra el anuncio más reciente a los usuarios normales."""
+    try:
+        conn = get_db_connection()
+        query = "SELECT titulo, descripcion, fecha FROM anuncios ORDER BY id DESC LIMIT 1"
+        anuncio = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Si hay algún anuncio publicado
+        if not anuncio.empty:
+            ultimo = anuncio.iloc[0]
+            st.info(
+                f"📰 **{ultimo['titulo']}**  \n"
+                f"{ultimo['descripcion']}  \n"
+                f"📅 *Publicado el {ultimo['fecha']}*"
+            )
+        else:
+            # Si aún no hay anuncios, no mostrar nada
+            pass
+
+    except Exception as e:
+        st.warning(f"⚠️ No se pudo cargar el último anuncio: {e}")
+
 
 def mapa_dashboard():
     """Panel de mapas optimizado para Rafa Sanz con asignación y desasignación de zonas comerciales"""
@@ -210,6 +233,7 @@ def mapa_dashboard():
 
     # Lógica principal según la opción
     if opcion == "Mapa Asignaciones":
+        mostrar_ultimo_anuncio()
         mostrar_mapa_de_asignaciones()
     elif opcion == "Viabilidades":
         mostrar_viabilidades()
@@ -980,7 +1004,7 @@ def mostrar_viabilidades():
         if username == "juan":
             placeholders = ",".join("?" for _ in excluir_para_juan)
             query = f"""
-                SELECT id,
+                SELECT id, ticket,
                        provincia, municipio, poblacion,
                        vial, numero, letra,
                        latitud, longitud,
@@ -996,7 +1020,7 @@ def mostrar_viabilidades():
         elif username == "rafa sanz":
             # Rafa Sanz no ve a Juan Pablo
             query = """
-                    SELECT id,
+                    SELECT id, ticket,
                            provincia, municipio, poblacion,
                            vial, numero, letra,
                            latitud, longitud,
@@ -1010,7 +1034,7 @@ def mostrar_viabilidades():
             df_viab = pd.read_sql(query, conn)
         else:
             df_viab = pd.read_sql("""
-                SELECT id,
+                SELECT id, ticket,
                        provincia, municipio, poblacion,
                        vial, numero, letra,
                        latitud, longitud,
@@ -1067,6 +1091,35 @@ def mostrar_viabilidades():
                         st.markdown(f"[🌍Ver en GoogleMaps]({maps_url})")
 
                     col_ok, col_rea = st.columns([1, 2], gap="small")
+
+                    # ---- PRESUPUESTO---
+                    # 🔎 Buscar presupuesto asociado
+                    try:
+                        conn2 = get_db_connection()
+                        cursor2 = conn2.cursor()
+                        cursor2.execute("""
+                            SELECT archivo_nombre, archivo_url
+                            FROM envios_presupuesto_viabilidad
+                            WHERE ticket = ?
+                            ORDER BY fecha_envio DESC
+                            LIMIT 1
+                        """, (row['ticket'],))  # Consulta directa por ticket
+                        registro = cursor2.fetchone()
+                        conn2.close()
+
+                        if registro:
+                            nombre_archivo, archivo_url = registro
+                            if archivo_url and archivo_url.strip():
+                                st.markdown(
+                                    f"[📎 Descargar presupuesto ({nombre_archivo})]({archivo_url})",
+                                    unsafe_allow_html=True
+                                )
+                            else:
+                                st.caption("📭 No hay presupuesto enviado aún para esta viabilidad.")
+                        else:
+                            st.caption("📭 No hay presupuesto enviado aún para esta viabilidad.")
+                    except Exception as e:
+                        st.warning(f"⚠️ Error al buscar presupuesto: {e}")
 
                     # --------------- CONFIRMAR ----------------
                     with col_ok:

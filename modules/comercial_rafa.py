@@ -9,7 +9,8 @@ from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
 from modules.cloudinary import upload_image_to_cloudinary
-from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial
+from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial, \
+    correo_envio_presupuesto_manual
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 
@@ -45,7 +46,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar si el apartment_id existe en la base de datos
+        # Verificar si el apartment_id existe
         cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE apartment_id = ?", (apartment_id,))
         if cursor.fetchone()[0] == 0:
             st.error("❌ El Apartment ID no existe en la base de datos. No se puede guardar ni actualizar la oferta.")
@@ -54,64 +55,72 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 
         st.info(f"⚠️ El Apartment ID {apartment_id} está asignado, se actualizarán los datos.")
 
-        # Subir la imagen a Cloudinary si hay incidencia
+        # Subir imagen si hay incidencia
         imagen_url = None
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
-            # Extraer la extensión del archivo para formar un nombre adecuado
             extension = os.path.splitext(imagen_incidencia.name)[1]
             filename = f"{apartment_id}{extension}"
             imagen_url = upload_image_to_cloudinary(imagen_incidencia, filename)
 
         comercial_logueado = st.session_state.get("username", None)
 
-        # Actualizar los datos en la base de datos, usando imagen_url en lugar de imagen_path
-        cursor.execute('''UPDATE comercial_rafa SET 
-                            provincia = ?, municipio = ?, poblacion = ?, vial = ?, numero = ?, letra = ?, 
-                            cp = ?, latitud = ?, longitud = ?, nombre_cliente = ?, telefono = ?, 
-                            direccion_alternativa = ?, observaciones = ?, serviciable = ?, motivo_serviciable = ?, 
-                            incidencia = ?, motivo_incidencia = ?, fichero_imagen = ?, fecha = ?, Tipo_Vivienda = ?, 
-                            Contrato = ?, comercial = ?
-                          WHERE apartment_id = ?''',
-                       (
-                           oferta_data["Provincia"],
-                           oferta_data["Municipio"],
-                           oferta_data["Población"],
-                           oferta_data["Vial"],
-                           oferta_data["Número"],
-                           oferta_data["Letra"],
-                           oferta_data["Código Postal"],
-                           oferta_data["Latitud"],
-                           oferta_data["Longitud"],
-                           oferta_data["Nombre Cliente"],
-                           oferta_data["Teléfono"],
-                           oferta_data["Dirección Alternativa"],
-                           oferta_data["Observaciones"],
-                           oferta_data["serviciable"],
-                           oferta_data["motivo_serviciable"],
-                           oferta_data["incidencia"],
-                           oferta_data["motivo_incidencia"],
-                           imagen_url,
-                           oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
-                           oferta_data["Tipo_Vivienda"],
-                           oferta_data["Contrato"],
-                           comercial_logueado,
-                           apartment_id
-                       ))
+        # ✅ Actualizamos también ocupado_por_tercero
+        cursor.execute('''
+            UPDATE comercial_rafa SET 
+                provincia = ?, municipio = ?, poblacion = ?, vial = ?, numero = ?, letra = ?, 
+                cp = ?, latitud = ?, longitud = ?, nombre_cliente = ?, telefono = ?, 
+                direccion_alternativa = ?, observaciones = ?, serviciable = ?, motivo_serviciable = ?, 
+                incidencia = ?, motivo_incidencia = ?, ocupado_por_tercero = ?, fichero_imagen = ?, 
+                fecha = ?, Tipo_Vivienda = ?, Contrato = ?, comercial = ?
+            WHERE apartment_id = ?
+        ''', (
+            oferta_data["Provincia"],
+            oferta_data["Municipio"],
+            oferta_data["Población"],
+            oferta_data["Vial"],
+            oferta_data["Número"],
+            oferta_data["Letra"],
+            oferta_data["Código Postal"],
+            oferta_data["Latitud"],
+            oferta_data["Longitud"],
+            oferta_data["Nombre Cliente"],
+            oferta_data["Teléfono"],
+            oferta_data["Dirección Alternativa"],
+            oferta_data["Observaciones"],
+            oferta_data["serviciable"],
+            oferta_data["motivo_serviciable"],
+            oferta_data["incidencia"],
+            oferta_data["motivo_incidencia"],
+            "Sí" if oferta_data.get("ocupado_por_tercero") else "No",  # 👈 Campo correcto
+            imagen_url,
+            oferta_data["fecha"].strftime('%Y-%m-%d %H:%M:%S'),
+            oferta_data["Tipo_Vivienda"],
+            oferta_data["Contrato"],
+            comercial_logueado,
+            apartment_id
+        ))
 
         conn.commit()
         conn.close()
         st.success("✅ ¡Oferta actualizada con éxito en la base de datos!")
 
-        # Enviar notificación al administrador
-        # Obtener todos los correos de usuarios con rol 'admin' o 'comercial_jefe'
+        # Notificación a administradores
+        conn = get_db_connection()
+        cursor = conn.cursor()
         cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin', 'comercial_jefe')")
         destinatario_admin = [fila[0] for fila in cursor.fetchall()]
-        descripcion_oferta = f"Se ha actualizado una oferta para el apartamento con ID {apartment_id}.\n\nDetalles: {oferta_data}"
+        conn.close()
+
+        descripcion_oferta = (
+            f"Se ha actualizado una oferta para el apartamento con ID {apartment_id}.\n\n"
+            f"🏠 Ocupado por un tercero: {'Sí' if oferta_data.get('ocupado_por_tercero') else 'No'}\n\n"
+            f"Detalles: {oferta_data}"
+        )
+
         for correo in destinatario_admin:
             correo_oferta_comercial(correo, apartment_id, descripcion_oferta)
 
-        st.success("✅ Oferta actualizada con éxito")
-        st.info(f"📧 Se ha enviado una notificación a {len(destinatario_admin)} destinatario(s) con rol 'admin' o 'comercial_jefe', sobre la oferta actualizada.")
+        st.info(f"📧 Se ha notificado a {len(destinatario_admin)} administrador(es).")
 
         # Registrar trazabilidad
         log_trazabilidad(st.session_state["username"], "Actualizar Oferta",
@@ -120,8 +129,28 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
     except Exception as e:
         st.error(f"❌ Error al guardar o actualizar la oferta en la base de datos: {e}")
 
+def mostrar_ultimo_anuncio():
+    """Muestra el anuncio más reciente a los usuarios normales."""
+    try:
+        conn = get_db_connection()
+        query = "SELECT titulo, descripcion, fecha FROM anuncios ORDER BY id DESC LIMIT 1"
+        anuncio = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Si hay algún anuncio publicado
+        if not anuncio.empty:
+            ultimo = anuncio.iloc[0]
+            st.info(
+                f"📰 **{ultimo['titulo']}**  \n"
+                f"{ultimo['descripcion']}  \n"
+                f"📅 *Publicado el {ultimo['fecha']}*"
+            )
+        else:
+            # Si aún no hay anuncios, no mostrar nada
+            pass
+
     except Exception as e:
-        st.error(f"❌ Error al guardar la oferta en la base de datos: {e}")
+        st.warning(f"⚠️ No se pudo cargar el último anuncio: {e}")
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
@@ -257,7 +286,7 @@ def comercial_dashboard():
     if menu_opcion == "Ofertas Comerciales":
 
         log_trazabilidad(comercial, "Visualización de Dashboard", "El comercial visualizó la sección de Ofertas Comerciales.")
-
+        mostrar_ultimo_anuncio()
         with st.spinner("⏳ Cargando los datos del comercial..."):
             try:
                 conn = get_db_connection()
@@ -1083,21 +1112,39 @@ def mostrar_formulario(click_data):
             horizontal=True,
             key=f"contiene_incidencias_{form_key}"
         )
+
         if contiene_incidencias == "Sí":
             motivo_incidencia = st.text_area(
                 "📄 Motivo de la Incidencia",
                 key=f"motivo_incidencia_{form_key}"
             )
+
+            # ✅ Nuevo campo: ocupado por un tercero
+            ocupado_tercero = st.checkbox(
+                "🏠 Ocupado por un tercero",
+                key=f"ocupado_tercero_{form_key}"
+            )
+
             imagen_incidencia = st.file_uploader(
                 "📷 Adjuntar Imagen (PNG, JPG, JPEG)",
                 type=["png", "jpg", "jpeg"],
                 key=f"imagen_incidencia_{form_key}"
             )
+        else:
+            motivo_incidencia = ""
+            ocupado_tercero = False
     else:
         motivo_serviciable = st.text_area(
             "❌ Motivo de No Servicio",
             key=f"motivo_serviciable_{form_key}"
         )
+
+    # ---------------- SUBIR PDF PRECONTRATO ----------------
+    pdf_precontrato = st.file_uploader(
+        "📄 Adjuntar PDF del precontrato (opcional, se enviará a bo@verdetuoperador.com)",
+        type=["pdf"],
+        key=f"pdf_precontrato_{form_key}"
+    )
 
     # Botón de envío
     submit = st.button("🚀 Enviar Oferta", key=f"submit_oferta_{form_key}")
@@ -1126,6 +1173,7 @@ def mostrar_formulario(click_data):
             "motivo_serviciable": motivo_serviciable,
             "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
             "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
+            "ocupado_tercero": ocupado_tercero if contiene_incidencias == "Sí" else False,  # 👈 nuevo campo
             "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
             "Contrato": contrato,
             "fecha": pd.Timestamp.now(tz="Europe/Madrid")
@@ -1180,6 +1228,30 @@ def mostrar_formulario(click_data):
                     f"📧 Se ha enviado una notificación a: {', '.join(emails_admin + ([email_comercial] if email_comercial else []))}")
             else:
                 st.warning("⚠️ No se encontró ningún email de administrador/gestor, no se pudo enviar la notificación.")
+
+        # ---------------- ENVÍO DEL PDF PRECONTRATO ----------------
+        if pdf_precontrato:
+            try:
+                archivo_bytes = pdf_precontrato.getvalue()
+                nombre_archivo = pdf_precontrato.name
+                destinatario_bo = "bo@verdetuoperador.com"
+                mensaje_bo = (
+                    f"Se ha generado un precontrato para el Apartment ID {apartment_id}.\n\n"
+                    f"Enviado automáticamente desde el gestor de ofertas."
+                )
+
+                # Función para enviar correo con archivo (reutilizar la que ya tengas)
+                correo_envio_presupuesto_manual(
+                    destinatario=destinatario_bo,
+                    proyecto=f"Precontrato - Apartment {apartment_id}",
+                    mensaje_usuario=mensaje_bo,
+                    archivo_bytes=archivo_bytes,
+                    nombre_archivo=nombre_archivo
+                )
+
+                st.success(f"✅ PDF precontrato enviado correctamente a {destinatario_bo}.")
+            except Exception as e:
+                st.error(f"❌ Error al enviar PDF precontrato: {e}")
 
 if __name__ == "__main__":
     comercial_dashboard()

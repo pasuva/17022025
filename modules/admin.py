@@ -6,7 +6,7 @@ from modules.notificaciones import correo_viabilidad_administracion, correo_usua
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
-from streamlit_cookies_controller import CookieController  # Se importa localmente
+from streamlit_cookies_controller import CookieController
 from folium.plugins import MarkerCluster, Geocoder
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
@@ -16,11 +16,10 @@ from io import BytesIO
 from google.oauth2.service_account import Credentials
 import gspread
 import json
-
-
+from modules.cloudinary import upload_image_to_cloudinary
 from branca.element import Template, MacroElement
-
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 cookie_name = "my_app"
@@ -618,6 +617,26 @@ def guardar_comentario(apartment_id, comentario, tabla):
         st.error(f"Error al actualizar la base de datos: {str(e)}")
         return False
 
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
+def upload_file_to_cloudinary(file, public_id=None):
+    """
+    Sube un archivo genérico (como Excel, PDF, ZIP...) a Cloudinary y devuelve la URL pública.
+    """
+    try:
+        upload_result = cloudinary.uploader.upload(
+            file,
+            resource_type="raw",  # ✅ Permite subir Excel, PDF, ZIP, etc.
+            public_id=public_id,
+            overwrite=True
+        )
+        return upload_result.get("secure_url")
+    except Exception as e:
+        st.error(f"❌ Error al subir el archivo a Cloudinary: {e}")
+        return None
+
 
 def viabilidades_seccion():
     # 🟩 Submenú horizontal
@@ -960,13 +979,20 @@ def viabilidades_seccion():
 
                     if seleccionados and st.button("🚀 Enviar presupuesto por correo"):
                         try:
-                            archivo_bytes = archivo.read()
                             nombre_archivo = archivo.name
+                            archivo_bytes = archivo.getvalue()  # 🔹 Leemos los bytes UNA sola vez
 
+                            # 🔹 Subir el archivo Excel a Cloudinary (como tipo raw)
+                            st.info("📤 Subiendo archivo a Cloudinary...")
+                            cloudinary_url = upload_file_to_cloudinary(io.BytesIO(archivo_bytes), nombre_archivo)
+                            if not cloudinary_url:
+                                st.error("❌ Error al subir el archivo a Cloudinary. No se puede continuar.")
+                                st.stop()
+
+                            # 🔹 Enviar correo a los seleccionados
                             for nombre in seleccionados:
                                 correo = destinatarios_posibles[nombre]
 
-                                # Enviar correo
                                 correo_envio_presupuesto_manual(
                                     destinatario=correo,
                                     proyecto=proyecto,
@@ -975,27 +1001,30 @@ def viabilidades_seccion():
                                     nombre_archivo=nombre_archivo
                                 )
 
-                                # Registrar envío en la BBDD
+                                # 🔹 Registrar el envío en la base de datos con URL
                                 try:
                                     conn = obtener_conexion()
                                     cursor = conn.cursor()
                                     cursor.execute("""
-                                        INSERT INTO envios_presupuesto_viabilidad (ticket, destinatario, proyecto, fecha_envio, archivo_nombre)
-                                        VALUES (?, ?, ?, ?, ?)
+                                        INSERT INTO envios_presupuesto_viabilidad 
+                                        (ticket, destinatario, proyecto, fecha_envio, archivo_nombre, archivo_url)
+                                        VALUES (?, ?, ?, ?, ?, ?)
                                     """, (
                                         st.session_state["selected_ticket"],
                                         correo,
                                         proyecto,
                                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                        nombre_archivo
+                                        nombre_archivo,
+                                        cloudinary_url
                                     ))
                                     conn.commit()
                                     conn.close()
                                 except Exception as db_error:
                                     st.warning(
-                                        f"⚠️ Correo enviado a {correo}, pero no se registró en la base de datos: {db_error}")
+                                        f"⚠️ Correo enviado a {correo}, pero no se pudo registrar en la BBDD: {db_error}"
+                                    )
 
-                            # ✅ Marcar en la base de datos que se ha enviado
+                            # 🔹 Marcar en la tabla viabilidades que se ha enviado
                             try:
                                 conn = obtener_conexion()
                                 cursor = conn.cursor()
@@ -1009,11 +1038,12 @@ def viabilidades_seccion():
                                 st.info("🗂️ Se ha registrado en la BBDD que el presupuesto ha sido enviado.")
                             except Exception as db_error:
                                 st.warning(
-                                    f"⚠️ El correo fue enviado, pero hubo un error al actualizar la BBDD: {db_error}")
+                                    f"⚠️ El correo fue enviado, pero hubo un error al actualizar la BBDD: {db_error}"
+                                )
 
-                            st.success("✅ Presupuesto enviado correctamente.")
+                            st.success("✅ Presupuesto enviado y guardado correctamente en Cloudinary.")
                         except Exception as e:
-                            st.error(f"❌ Error al enviar el presupuesto: {e}")
+                            st.error(f"❌ Error al enviar o guardar el presupuesto: {e}")
 
         with st.expander("📜 Historial de Envíos de Presupuesto"):
             try:
@@ -1864,11 +1894,11 @@ def admin_dashboard():
             options=[
                 "Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades",
                 "Mapa UUIIs", "Cargar Nuevos Datos", "Generar Informe",
-                "Trazabilidad y logs", "Gestionar Usuarios", "Control de versiones"
+                "Trazabilidad y logs", "Gestionar Usuarios", "Anuncios", "Control de versiones"
             ],
             icons=[
                 "house", "graph-up", "bar-chart", "check-circle", "globe", "upload",
-                "file-earmark-text", "journal-text", "people", "arrow-clockwise"
+                "file-earmark-text", "journal-text", "people", "megaphone", "arrow-clockwise"
             ],
             menu_icon="list",
             default_index=0,
@@ -2042,7 +2072,7 @@ def admin_dashboard():
             # -----------------------------------------------------------
             # Mapeo de columnas del Excel a la BD
 
-            if st.button("🔄 Actualizar contratos desde Google"):
+            if st.button("🔄 Actualizar contratos"):
                 with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
                     try:
                         # 1. Cargar datos desde Google Sheets (ya renombrados en la función)
@@ -2648,7 +2678,7 @@ def admin_dashboard():
         if sub_seccion == "Listado de usuarios":
             st.info("ℹ️ Desde esta sección puedes consultar usuarios registrados en el sistema.")
             if not df_usuarios.empty:
-                st.dataframe(df_usuarios, use_container_width=True, height=420)
+                st.dataframe(df_usuarios, use_container_width=True, height=540)
             else:
                 st.warning("No hay usuarios registrados.")
 
@@ -3028,6 +3058,61 @@ def admin_dashboard():
             except Exception as e:
                 st.error(f"❌ Error al cargar la trazabilidad: {e}")
 
+    elif opcion == "Anuncios":
+        st.info(f"📢 Panel de Anuncios Internos")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Crear tabla si no existe (sin columna autor)
+        cursor.execute("""
+                CREATE TABLE IF NOT EXISTS anuncios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    titulo TEXT NOT NULL,
+                    descripcion TEXT NOT NULL,
+                    fecha TEXT NOT NULL
+                )
+            """)
+        conn.commit()
+
+        # Obtener rol del usuario actual
+        rol = st.session_state.get("role", "user")
+
+        # ───────────────────────────────────────
+        # 📝 Formulario solo para admin o jefe
+        # ───────────────────────────────────────
+        if rol in ["admin", "comercial_jefe"]:
+            with st.form("form_anuncio"):
+                titulo = st.text_input("📰 Título del anuncio", placeholder="Ej: Nueva carga de datos completada")
+                descripcion = st.text_area(
+                    "📋 Descripción o comentarios",
+                    placeholder="Ej: Se han actualizado los datos de asignaciones del 10 al 15 de octubre..."
+                )
+                enviar = st.form_submit_button("📢 Publicar anuncio")
+
+                if enviar:
+                    if not titulo or not descripcion:
+                        st.error("❌ Debes completar todos los campos.")
+                    else:
+                        fecha_actual = pd.Timestamp.now(tz="Europe/Madrid").strftime("%Y-%m-%d %H:%M:%S")
+                        cursor.execute("""
+                                INSERT INTO anuncios (titulo, descripcion, fecha)
+                                VALUES (?, ?, ?)
+                            """, (titulo, descripcion, fecha_actual))
+                        conn.commit()
+                        st.success("✅ Anuncio publicado correctamente.")
+
+        # ───────────────────────────────────────
+        # 🗂️ Listado de anuncios
+        # ───────────────────────────────────────
+        df_anuncios = pd.read_sql_query("SELECT * FROM anuncios ORDER BY id DESC", conn)
+        conn.close()
+
+        if df_anuncios.empty:
+            st.info("ℹ️ No hay anuncios publicados todavía.")
+        else:
+            for _, row in df_anuncios.iterrows():
+                with st.expander(f"📢 {row['titulo']}  —  🕒 {row['fecha']}"):
+                    st.markdown(f"🗒️ {row['descripcion']}")
 
     elif opcion == "Control de versiones":
         log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
