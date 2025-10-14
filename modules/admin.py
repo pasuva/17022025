@@ -126,14 +126,17 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
         values = result_data.get("values", [])
         df_sheet = pd.DataFrame(values[1:], columns=headers) if len(values) > 1 else pd.DataFrame(columns=headers)
 
-        # --- 6️⃣ Detectar columnas comunes ---
-        db_cols_lower = {c.lower(): c for c in df_db_expanded.columns}
-        sheet_cols_lower = {c.lower(): c for c in headers}
-        common_cols_lower = set(db_cols_lower.keys()).intersection(sheet_cols_lower.keys())
-
-        if not common_cols_lower:
-            st.warning("⚠️ No hay columnas coincidentes entre la base de datos y la hoja.")
-            return
+        # --- 6️⃣ Mapear columnas Excel -> Base de datos ---
+        excel_to_db_map = {
+            "SOLICITANTE": "usuario",
+            "Nueva Promoción": "nuevapromocion",
+            "RESULTADO": "resultado",
+            "JUSTIFICACIÓN": "justificacion",
+            "PRESUPUESTO": "coste",
+            "UUII": "zona_estudio",
+            "CONTRATOS": "contratos",
+            "RESPUESTA COMERCIAL": "respuesta_comercial"
+        }
 
         # --- 7️⃣ Actualizar o agregar filas por apartment_id ---
         updated = 0
@@ -142,25 +145,29 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
 
         for _, row_db in df_db_expanded.iterrows():
             apt_db = str(row_db.get("apartment_id", "")).strip()
-            if not apt_db:
+            ticket_db = str(row_db.get("ticket", "")).strip()
+            if not apt_db and not ticket_db:
                 continue
 
-            # Buscar fila existente por apartment_id únicamente
+            # Buscar fila existente por apartment_id
             mask = df_sheet["apartment_id"].astype(str).str.strip() == apt_db
 
             if mask.any():
                 idx = df_sheet[mask].index[0]
-                for col_l in common_cols_lower:
-                    db_col = db_cols_lower[col_l]
-                    sheet_col = sheet_cols_lower[col_l]
-                    df_sheet.at[idx, sheet_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
+                # Actualizar columnas mapeadas
+                for excel_col, db_col in excel_to_db_map.items():
+                    if excel_col in df_sheet.columns and db_col in df_db_expanded.columns:
+                        df_sheet.at[idx, excel_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
                 updated += 1
             else:
                 new_row = {col: "" for col in headers}
-                for col_l in common_cols_lower:
-                    db_col = db_cols_lower[col_l]
-                    sheet_col = sheet_cols_lower[col_l]
-                    new_row[sheet_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
+                for excel_col, db_col in excel_to_db_map.items():
+                    if excel_col in df_sheet.columns and db_col in df_db_expanded.columns:
+                        new_row[excel_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
+                # También copiamos columnas coincidentes restantes automáticamente
+                for col in headers:
+                    if col not in excel_to_db_map and col in df_db_expanded.columns:
+                        new_row[col] = str(row_db[col]) if pd.notna(row_db[col]) else ""
                 df_sheet = pd.concat([df_sheet, pd.DataFrame([new_row])], ignore_index=True)
                 added += 1
 
@@ -182,7 +189,6 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
 
     except Exception as e:
         st.error(f"❌ Error al actualizar la hoja de Google Sheets: {e}")
-
 
 def cargar_contratos_google():
     try:
@@ -1853,7 +1859,7 @@ def mostrar_formulario(click_data):
             )
         with col25:
             opciones_estado = [
-                " ",
+                "Sin estado",
                 "Presupuesto enviado",
                 "Aceptado",
                 "Rechazado",
