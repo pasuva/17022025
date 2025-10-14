@@ -16,6 +16,7 @@ from io import BytesIO
 from google.oauth2.service_account import Credentials
 import gspread
 import json
+from googleapiclient.discovery import build
 from modules.cloudinary import upload_image_to_cloudinary
 from branca.element import Template, MacroElement
 import warnings
@@ -57,6 +58,130 @@ def safe_convert_to_numeric(col):
         return pd.to_numeric(col)
     except ValueError:
         return col  # Si ocurre un error, regresamos la columna original sin cambios
+
+def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
+    try:
+        # --- 1️⃣ Leer datos de la base de datos ---
+        conn = obtener_conexion()
+        df_db = pd.read_sql("SELECT * FROM viabilidades", conn)
+        conn.close()
+
+        if df_db.empty:
+            st.warning("⚠️ No hay datos en la tabla 'viabilidades'.")
+            return
+
+        # --- 2️⃣ Expandir filas con múltiples apartment_id ---
+        expanded_rows = []
+        for _, row in df_db.iterrows():
+            apartment_ids = str(row["apartment_id"]).split(",") if pd.notna(row["apartment_id"]) else [""]
+            for apt in apartment_ids:
+                new_row = row.copy()
+                new_row["apartment_id"] = apt.strip()
+                expanded_rows.append(new_row)
+        df_db_expanded = pd.DataFrame(expanded_rows)
+
+        # --- 3️⃣ Cargar credenciales ---
+        posibles_rutas = [
+            "modules/carga-contratos-verde-c5068516c7cf.json",
+            "/etc/secrets/carga-contratos-verde-c5068516c7cf.json",
+            os.path.join(os.path.dirname(__file__), "carga-contratos-verde-c5068516c7cf.json"),
+        ]
+        ruta_credenciales = next((r for r in posibles_rutas if os.path.exists(r)), None)
+
+        if not ruta_credenciales and "GOOGLE_APPLICATION_CREDENTIALS_JSON" in os.environ:
+            creds_dict = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(
+                creds_dict,
+                scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            )
+        elif ruta_credenciales:
+            creds = Credentials.from_service_account_file(
+                ruta_credenciales,
+                scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            )
+        else:
+            raise ValueError("❌ No se encontraron credenciales de Google Service Account.")
+
+        # --- 4️⃣ Conexión con Google Sheets ---
+        service = build("sheets", "v4", credentials=creds)
+        sheet_metadata = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        available_sheets = [s["properties"]["title"] for s in sheet_metadata.get("sheets", [])]
+
+        if sheet_name not in available_sheets:
+            st.warning(f"⚠️ La hoja '{sheet_name}' no existe. Se usará '{available_sheets[0]}' en su lugar.")
+            sheet_name = available_sheets[0]
+
+        sheet = service.spreadsheets()
+
+        # --- 5️⃣ Leer encabezados y datos actuales ---
+        result = sheet.values().get(spreadsheetId=sheet_id, range=f"{sheet_name}!1:1").execute()
+        headers = result.get("values", [[]])[0]
+
+        if not headers:
+            st.error("❌ No se encontraron encabezados en la hoja de Google Sheets.")
+            return
+
+        result_data = sheet.values().get(spreadsheetId=sheet_id, range=sheet_name).execute()
+        values = result_data.get("values", [])
+        df_sheet = pd.DataFrame(values[1:], columns=headers) if len(values) > 1 else pd.DataFrame(columns=headers)
+
+        # --- 6️⃣ Detectar columnas comunes ---
+        db_cols_lower = {c.lower(): c for c in df_db_expanded.columns}
+        sheet_cols_lower = {c.lower(): c for c in headers}
+        common_cols_lower = set(db_cols_lower.keys()).intersection(sheet_cols_lower.keys())
+
+        if not common_cols_lower:
+            st.warning("⚠️ No hay columnas coincidentes entre la base de datos y la hoja.")
+            return
+
+        # --- 7️⃣ Actualizar o agregar filas por apartment_id ---
+        updated = 0
+        added = 0
+        df_sheet = df_sheet.copy()
+
+        for _, row_db in df_db_expanded.iterrows():
+            apt_db = str(row_db.get("apartment_id", "")).strip()
+            if not apt_db:
+                continue
+
+            # Buscar fila existente por apartment_id únicamente
+            mask = df_sheet["apartment_id"].astype(str).str.strip() == apt_db
+
+            if mask.any():
+                idx = df_sheet[mask].index[0]
+                for col_l in common_cols_lower:
+                    db_col = db_cols_lower[col_l]
+                    sheet_col = sheet_cols_lower[col_l]
+                    df_sheet.at[idx, sheet_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
+                updated += 1
+            else:
+                new_row = {col: "" for col in headers}
+                for col_l in common_cols_lower:
+                    db_col = db_cols_lower[col_l]
+                    sheet_col = sheet_cols_lower[col_l]
+                    new_row[sheet_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
+                df_sheet = pd.concat([df_sheet, pd.DataFrame([new_row])], ignore_index=True)
+                added += 1
+
+        # --- 8️⃣ Escribir datos actualizados ---
+        values_out = [headers] + df_sheet.fillna("").astype(str).values.tolist()
+        sheet.values().clear(spreadsheetId=sheet_id, range=sheet_name).execute()
+        sheet.values().update(
+            spreadsheetId=sheet_id,
+            range=sheet_name,
+            valueInputOption="RAW",
+            body={"values": values_out}
+        ).execute()
+
+        st.success(
+            f"✅ Google Sheet '{sheet_name}' actualizado correctamente.\n"
+            f"🟢 {updated} filas actualizadas.\n"
+            f"🆕 {added} filas nuevas añadidas."
+        )
+
+    except Exception as e:
+        st.error(f"❌ Error al actualizar la hoja de Google Sheets: {e}")
 
 
 def cargar_contratos_google():
@@ -845,8 +970,13 @@ def viabilidades_seccion():
             col_b1, _, col_b2 = st.columns([1, 2.3, 1])
 
             with col_b1:
-                if st.button("🔄 Refrescar Tabla"):
-                    st.rerun()
+                if st.button("🔄 Actualizar tablas"):
+                    with st.spinner("🔄 Actualizando hoja de Google Sheets..."):
+                        actualizar_google_sheet_desde_db(
+                            sheet_id="14nC88hQoCdh6B6pTq7Ktu2k8HWOyS2BaTqcUOIhXuZY",  # 👈 reemplaza por el ID de tu hoja
+                            sheet_name="viabilidades_verde"
+                        )
+                    #st.rerun()
 
             with col_b2:
                 st.download_button(
@@ -1623,12 +1753,13 @@ def mostrar_formulario(click_data):
             )
         with col_nueva4:
             opciones_justificacion = [
-                " ",
+                "SIN JUSTIFICACIÓN",
                 "ZONA SUBVENCIONADA",
                 "INVIABLE",
                 "MAS PREVENTA",
                 "RESERVADA WHL",
-                "PDTE. RAFA FIN DE OBRA"
+                "PDTE. RAFA FIN DE OBRA",
+                "NO ES UNA VIABILIDAD"
             ]
 
             justificacion_val = click_data.get("justificacion", opciones_justificacion[
@@ -2503,7 +2634,7 @@ def admin_dashboard():
                             "casa en obras", "en obras", "obras", "estación de tren", "ermita",
                             "estabulación", "estabulacion", "prao", "prado", "no vive nadie", "consultorio",
                             "patatas", "almacen", "ya no viven", "hace tiempo", "no estan en casa", "no están en casa", "no tiene interes",
-                            "no tiene interés", "casa a vender", "casa a la venta" "boleria cerrada", "bolera cerrada", "NO ESTA INTERESADA",
+                            "no tiene interés", "casa a vender", "casa a la venta", "boleria cerrada", "bolera cerrada", "NO ESTA INTERESADA",
                             "HABLADO CON SU HERMANA ME COMENTA Q DE MOMENTO NO ESTA INTERESADA"
                         ],
                         "Pendiente / seguimiento": [
@@ -2606,7 +2737,8 @@ def admin_dashboard():
             "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
             "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
             " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos. Si pinchas en"
-            " Crear Viabilidades: Haz click en el mapa para agregar un marcador que represente el punto de viabilidad.")
+            " Crear Viabilidades: Haz click en el mapa para agregar un marcador que represente el punto de viabilidad. Además, puedes actualizar las tablas internas y "
+            "el excel externo pinchando en la opción Actualizar tablas.")
         viabilidades_seccion()
 
         # Opción: Viabilidades (En construcción)
