@@ -1353,13 +1353,6 @@ def viabilidades_seccion():
                     st.error(f"❌ Error al procesar el archivo: {e}")
         # 🧩 Sección 2: Crear Viabilidades (vacía por ahora)
     elif sub_seccion == "Crear Viabilidades":
-        st.markdown("""**Leyenda:**
-                         ⚫ Viabilidad ya existente
-                         🔵 Viabilidad nueva aún sin estudio
-                         🟢 Viabilidad serviciable y con Apartment ID ya asociado
-                         🔴 Viabilidad no serviciable
-                        """)
-
         # Inicializar estados de sesión si no existen
         if "viabilidad_marker" not in st.session_state:
             st.session_state.viabilidad_marker = None
@@ -1407,6 +1400,36 @@ def viabilidades_seccion():
                 [lat, lon],
                 icon=folium.Icon(color="blue")
             ).add_to(m)
+
+        # 🔹 Añadir la leyenda flotante
+        # Crear un figure para que FloatImage funcione bien
+        legend = """
+        {% macro html(this, kwargs) %}
+        <div style="
+            position: fixed; 
+            bottom: 0px; left: 0px; width: 150px; 
+            z-index:9999; 
+            font-size:14px;
+            background-color: white;
+            color: black;
+            border:2px solid grey;
+            border-radius:8px;
+            padding: 10px;
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+        ">
+        <b>Leyenda</b><br>
+        <i style="color:green;">●</i> Serviciado<br>
+        <i style="color:red;">●</i> No serviciable<br>
+        <i style="color:orange;">●</i> Presupuesto Sí<br>
+        <i style="color:black;">●</i> No interesado<br>
+        <i style="color:purple;">●</i> Incidencia<br>
+        <i style="color:blue;">●</i> Sin estudio<br>
+        </div>
+        {% endmacro %}
+        """
+        macro = MacroElement()
+        macro._template = Template(legend)
+        m.get_root().add_child(macro)
 
         # Mostrar el mapa y capturar clics
         Geocoder().add_to(m)
@@ -1485,7 +1508,15 @@ def viabilidades_seccion():
                 lista_usuarios = [fila[0] for fila in cursor.fetchall()]
                 conn.close()
 
-                comercial = st.selectbox("🧑‍💼 Comercial responsable", options=lista_usuarios)
+                # Lista de usuarios a excluir
+                excluir = ["roberto", "nestor", "rafaela"]
+
+                # Filtrar la lista
+                usuarios_filtrados = [u for u in lista_usuarios if u.lower() not in excluir]
+
+                # Usar la lista filtrada en el selectbox
+                comercial = st.selectbox("🧑‍💼 Comercial responsable", options=usuarios_filtrados)
+
                 submit = st.form_submit_button("Enviar Formulario")
 
                 if submit:
