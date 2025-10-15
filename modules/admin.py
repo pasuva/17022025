@@ -1648,313 +1648,182 @@ def mostrar_formulario(click_data):
     opciones_olt = [f"{olt[0]} - {olt[1]}" for olt in olts]
     map_olt = {f"{olt[0]} - {olt[1]}": olt[0] for olt in olts}
 
-    # Extraer los datos de click_data
+    # Extraer los datos del registro seleccionado
     ticket = click_data["ticket"]
-    latitud = click_data["latitud"]
-    longitud = click_data["longitud"]
-    provincia = click_data.get("provincia", "N/D")
-    municipio = click_data.get("municipio", "N/D")
-    poblacion = click_data.get("poblacion", "N/D")
-    vial = click_data.get("vial", "N/D")
-    numero = click_data.get("numero", "N/D")
-    letra = click_data.get("letra", "N/D")
-    cp = click_data.get("cp", "N/D")
-    comentario = click_data.get("comentario", "N/D")
-    fecha_viabilidad = click_data.get("fecha_viabilidad", "N/D")
-    cto_cercana = click_data.get("cto_cercana", "N/D")
+
+    # Rellenar todos los campos con valores actuales o por defecto
+    campos = {
+        "latitud": click_data.get("latitud", ""),
+        "longitud": click_data.get("longitud", ""),
+        "provincia": click_data.get("provincia", ""),
+        "municipio": click_data.get("municipio", ""),
+        "poblacion": click_data.get("poblacion", ""),
+        "vial": click_data.get("vial", ""),
+        "numero": click_data.get("numero", ""),
+        "letra": click_data.get("letra", ""),
+        "cp": click_data.get("cp", ""),
+        "comentario": click_data.get("comentario", ""),
+        "cto_cercana": click_data.get("cto_cercana", ""),
+        "olt": click_data.get("olt", ""),
+        "cto_admin": click_data.get("cto_admin", ""),
+        "id_cto": click_data.get("id_cto", ""),
+        "municipio_admin": click_data.get("municipio_admin", ""),
+        "serviciable": click_data.get("serviciable", "Sí"),
+        "coste": click_data.get("coste", 0.0),
+        "comentarios_comercial": click_data.get("comentarios_comercial", ""),
+        "comentarios_internos": click_data.get("comentarios_internos", ""),
+        "fecha_viabilidad": click_data.get("fecha_viabilidad", ""),
+        "apartment_id": click_data.get("apartment_id", ""),
+        "nombre_cliente": click_data.get("nombre_cliente", ""),
+        "telefono": click_data.get("telefono", ""),
+        "usuario": click_data.get("usuario", ""),
+        "direccion_id": click_data.get("direccion_id", ""),
+        "confirmacion_rafa": click_data.get("confirmacion_rafa", ""),
+        "zona_estudio": click_data.get("zona_estudio", ""),
+        "estado": click_data.get("estado", "Sin estado"),
+        "presupuesto_enviado": click_data.get("presupuesto_enviado", ""),
+        "nuevapromocion": click_data.get("nuevapromocion", "NO"),
+        "resultado": click_data.get("resultado", "NO"),
+        "justificacion": click_data.get("justificacion", "SIN JUSTIFICACIÓN"),
+        "contratos": click_data.get("contratos", ""),
+        "respuesta_comercial": click_data.get("respuesta_comercial", ""),
+        "comentarios_gestor": click_data.get("comentarios_gestor", "")
+    }
 
     with st.form(key="form_viabilidad"):
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col1:
-            st.text_input("🎟️ Ticket", value=ticket, disabled=True, key="ticket_input")
-        with col2:
-            st.text_input("📍 Latitud", value=latitud, disabled=True, key="latitud_input")
-        with col3:
-            st.text_input("📍 Longitud", value=longitud, disabled=True, key="longitud_input")
+        st.subheader(f"✏️ Editar Viabilidad - Ticket {ticket}")
 
-        col4, col5, col6 = st.columns([1, 1, 1])
-        with col4:
-            st.text_input("📍 Provincia", value=provincia, disabled=True, key="provincia_input")
-        with col5:
-            st.text_input("🏙️ Municipio", value=municipio, disabled=True, key="municipio_input")
-        with col6:
-            st.text_input("👥 Población", value=poblacion, disabled=True, key="poblacion_input")
+        # --- UBICACIÓN ---
+        col1, col2, col3 = st.columns(3)
+        with col1: st.text_input("🎟️ Ticket", value=ticket, disabled=True, key="ticket_input")
+        with col2: st.text_input("📍 Latitud", value=campos["latitud"], key="latitud_input")
+        with col3: st.text_input("📍 Longitud", value=campos["longitud"], key="longitud_input")
+
+        col4, col5, col6 = st.columns(3)
+        with col4: st.text_input("🏠 Provincia", value=campos["provincia"], key="provincia_input")
+        with col5: st.text_input("🏙️ Municipio", value=campos["municipio"], key="municipio_input")
+        with col6: st.text_input("👥 Población", value=campos["poblacion"], key="poblacion_input")
 
         col7, col8, col9, col10 = st.columns([2, 1, 1, 1])
-        with col7:
-            st.text_input("🚦 Vial", value=vial, disabled=True, key="vial_input")
-        with col8:
-            st.text_input("🔢 Número", value=numero, disabled=True, key="numero_input")
-        with col9:
-            st.text_input("🔠 Letra", value=letra, disabled=True, key="letra_input")
-        with col10:
-            st.text_input("📮 Código Postal", value=cp, disabled=True, key="cp_input")
+        with col7: st.text_input("🚦 Vial", value=campos["vial"], key="vial_input")
+        with col8: st.text_input("🔢 Número", value=campos["numero"], key="numero_input")
+        with col9: st.text_input("🔠 Letra", value=campos["letra"], key="letra_input")
+        with col10: st.text_input("📮 Código Postal", value=campos["cp"], key="cp_input")
 
-        col11 = st.columns(1)[0]
+        st.text_area("💬 Comentarios", value=campos["comentario"], key="comentario_input")
+
+        # --- CONTACTO ---
+        colc1, colc2, colc3 = st.columns(3)
+        with colc1: st.text_input("👤 Nombre Cliente", value=campos["nombre_cliente"], key="nombre_cliente_input")
+        with colc2: st.text_input("📞 Teléfono", value=campos["telefono"], key="telefono_input")
+        with colc3: st.text_input("👤 Usuario (comercial)", value=campos["usuario"], key="usuario_input")
+
+        # --- FECHAS Y CTO ---
+        colf1, colf2 = st.columns(2)
+        with colf1: st.text_input("📅 Fecha Viabilidad", value=campos["fecha_viabilidad"], key="fecha_viabilidad_input")
+        with colf2: st.text_input("🔌 CTO Cercana", value=campos["cto_cercana"], key="cto_cercana_input")
+
+        # --- APARTAMENTO / DIRECCIÓN / OLT ---
+        col11, col12, col13 = st.columns(3)
         with col11:
-            st.text_area("💬 Comentarios", value=comentario, disabled=True, key="comentario_input")
-        # 👨‍💼 Comentarios del gestor (solo lectura)
-        col11b = st.columns(1)[0]
-        with col11b:
-            comentarios_gestor = click_data.get("comentarios_gestor", "")
-            if comentarios_gestor:
-                st.text_area(
-                    "🗒️ Comentarios del Gestor",
-                    value=comentarios_gestor,
-                    disabled=True,
-                    key="comentarios_gestor_input"
-                )
-            else:
-                st.info("ℹ️ No hay comentarios del gestor registrados para esta viabilidad.")
-
-        col12, col13 = st.columns([1, 1])
+            apartment_id_input = st.text_area("🏠 Apartment IDs", value=campos["apartment_id"], key="apartment_id_input")
         with col12:
-            st.text_input("📅 Fecha Viabilidad", value=fecha_viabilidad, disabled=True, key="fecha_viabilidad_input")
+            st.text_input("📍 Dirección ID", value=campos["direccion_id"], key="direccion_id_input")
         with col13:
-            st.text_input("🔌 Cto Cercana", value=cto_cercana, disabled=True, key="cto_cercana_input")
+            default_olt = next((op for op in opciones_olt if op.startswith(f"{campos['olt']} -")), opciones_olt[0])
+            st.selectbox("⚡ OLT", opciones_olt, index=opciones_olt.index(default_olt), key="olt_input")
 
-        # Comentarios comerciales editables
-        col14 = st.columns(1)[0]
-        with col14:
-            comentarios_comercial = st.text_area(
-                "📝 Comentarios Comerciales",
-                value=click_data.get("comentarios_comercial", ""),
-                key="comentarios_comercial_input"
-            )
+        # --- ADMINISTRACIÓN CTO ---
+        col14, col15, col16 = st.columns(3)
+        with col14: st.text_input("⚙️ CTO Admin", value=campos["cto_admin"], key="cto_admin_input")
+        with col15: st.text_input("🌍 Municipio Admin", value=campos["municipio_admin"], key="municipio_admin_input")
+        with col16: st.text_input("🔧 ID CTO", value=campos["id_cto"], key="id_cto_input")
 
-        col_nueva1, col_nueva2 = st.columns([1, 1])
-        with col_nueva1:
-            opciones_promocion = ["SI", "NO"]
-            nueva_promocion_val = click_data.get("nuevapromocion", "NO")
-
-            if nueva_promocion_val not in opciones_promocion:
-                nueva_promocion_val = "NO"  # valor por defecto si el dato no está o es inválido
-
-            nueva_promocion = st.selectbox(
-                "🏗️ Nueva Promoción",
-                opciones_promocion,
-                index=opciones_promocion.index(nueva_promocion_val),
-                key="nueva_promocion_input"
-            )
-        with col_nueva2:
-            contratos = st.text_input(
-                "📑 Contratos",
-                value=click_data.get("contratos", ""),
-                key="contratos_input"
-            )
-
-        col_nueva3, col_nueva4 = st.columns([1, 1])
-        with col_nueva3:
-            opciones_resultado = ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"]
-            resultado_val = click_data.get("resultado", "")
-
-            if resultado_val not in opciones_resultado:
-                resultado_val = opciones_resultado[0]  # asignar la primera opción como valor por defecto
-
-            resultado = st.selectbox(
-                "✅ Resultado",
-                opciones_resultado,
-                index=opciones_resultado.index(resultado_val),
-                key="resultado_input"
-            )
-        with col_nueva4:
-            opciones_justificacion = [
-                "SIN JUSTIFICACIÓN",
-                "ZONA SUBVENCIONADA",
-                "INVIABLE",
-                "MAS PREVENTA",
-                "RESERVADA WHL",
-                "PDTE. RAFA FIN DE OBRA",
-                "NO ES UNA VIABILIDAD"
-            ]
-
-            justificacion_val = click_data.get("justificacion", opciones_justificacion[
-                0])  # si no hay, poner la primera opción por defecto
-
-            # Para evitar error si el valor en BD no está en las opciones, hacemos un fallback seguro:
-            if justificacion_val not in opciones_justificacion:
-                justificacion_val = opciones_justificacion[0]
-
-            justificacion = st.selectbox(
-                "📌 Justificación",
-                opciones_justificacion,
-                index=opciones_justificacion.index(justificacion_val),
-                key="justificacion_input"
-            )
-
-        # Fila 1: apartment_id, direccion_id, olt
-        col15, col16, col17 = st.columns([1, 1, 1])
-        with col15:
-            apartment_id_raw = click_data.get("apartment_id", "") or ""
-            apartment_id_input = st.text_area(
-                "🏠 Apartment_id (separa con comas)",
-                value=apartment_id_raw,
-                key="apartment_id_input"
-            )
-
-            # Limpiar y parsear IDs
-            apartment_ids = [aid.strip() for aid in apartment_id_input.split(",") if aid.strip()]
-            if apartment_ids:
-                tags_html = " ".join(
-                    f'<span style="display:inline-block; background:#3b82f6; color:white; padding:3px 8px; border-radius:12px; margin:2px;">{aid}</span>'
-                    for aid in apartment_ids
-                )
-                st.markdown(f"**Apartment IDs detectados:** {tags_html}", unsafe_allow_html=True)
-            else:
-                st.markdown("⚠️ No se han detectado Apartment IDs.")
-
-        with col16:
-            direccion_id = st.text_input(
-                "📍 Dirección ID",
-                value=click_data.get("direccion_id", ""),
-                key="direccion_id_input"
-            )
-
+        # --- ESTADO Y VIABILIDAD ---
+        col17, col18, col19 = st.columns([1, 1, 1])
         with col17:
-            default_olt = next(
-                (op for op in opciones_olt if op.startswith(f"{click_data.get('olt', '')} -")),
-                opciones_olt[0]
-            )
-            opcion_olt = st.selectbox("⚡ OLT", opciones_olt, index=opciones_olt.index(default_olt), key="olt_input")
-            olt = opcion_olt  # Guardar como texto completo
-
-        # Fila 2: cto_admin, municipio_admin, id_cto
-        col18, col19, col20 = st.columns([1, 1, 1])
+            st.selectbox("🔍 Serviciable", ["Sí", "No"],
+                         index=0 if campos["serviciable"] == "Sí" else 1,
+                         key="serviciable_input")
         with col18:
-            cto_admin = st.text_input("⚙️ Cto Admin", value=click_data.get("cto_admin", ""), key="cto_admin_input")
+            st.number_input("💰 Coste", value=float(campos["coste"]), step=0.01, key="coste_input")
         with col19:
-            municipio_admin = st.text_input("🌍 Municipio Admin", value=click_data.get("municipio_admin", ""),
-                                            key="municipio_admin_input")
+            st.text_input("📤 Presupuesto Enviado", value=campos["presupuesto_enviado"], key="presupuesto_enviado_input")
+
+        # --- COMENTARIOS ---
+        st.text_area("📝 Comentarios Comerciales", value=campos["comentarios_comercial"], key="comentarios_comercial_input")
+        st.text_area("📄 Comentarios Internos", value=campos["comentarios_internos"], key="comentarios_internos_input")
+        st.text_area("🗒️ Comentarios Gestor", value=campos["comentarios_gestor"], key="comentarios_gestor_input")
+
+        # --- OTROS CAMPOS ---
+        col20, col21, col22 = st.columns(3)
         with col20:
-            id_cto = st.text_input("🔧 ID Cto", value=click_data.get("id_cto", ""), key="id_cto_input")
-
-        # Fila 3: serviciable, coste, comentarios_internos
-        col21, col22, col23 = st.columns([1, 1, 2])
+            st.text_input("📍 Confirmación Rafa", value=campos["confirmacion_rafa"], key="confirmacion_rafa_input")
         with col21:
-            serviciable_val = click_data.get("serviciable", "Sí")
-            index_serviciable = 0 if serviciable_val == "Sí" else 1
-            serviciable = st.selectbox("🔍 ¿Es Serviciable?", ["Sí", "No"], index=index_serviciable,
-                                       key="serviciable_input")
+            st.text_input("🗺️ Zona de Estudio", value=campos["zona_estudio"], key="zona_estudio_input")
         with col22:
-            coste = st.number_input(
-                "💰 Coste",
-                value=float(click_data.get("coste", 0.0)),
-                step=0.01,
-                key="coste_input"
-            )
+            st.text_input("📌 Estado", value=campos["estado"], key="estado_input")
+
+        col23, col24, col25 = st.columns(3)
         with col23:
-            comentarios_internos = st.text_area(
-                "📄 Comentarios Internos",
-                value=click_data.get("comentarios_internos", ""),
-                key="comentarios_internos_input"
-            )
-
-        # Fila 4: zona_estudio, estado
-        col24, col25 = st.columns([1, 1])
+            st.selectbox("🏗️ Nueva Promoción", ["SI", "NO"],
+                         index=0 if campos["nuevapromocion"] == "SI" else 1,
+                         key="nueva_promocion_input")
         with col24:
-            zona_estudio = st.text_input(
-                "🗺️ Zona de estudio",
-                value=click_data.get("zona_estudio", ""),
-                key="zona_estudio_input"
-            )
+            st.selectbox("✅ Resultado",
+                         ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"],
+                         index=["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"].index(campos["resultado"]) if campos["resultado"] in ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"] else 0,
+                         key="resultado_input")
         with col25:
-            opciones_estado = [
-                "Sin estado",
-                "Presupuesto enviado",
-                "Aceptado",
-                "Rechazado",
-                "Cerrar",
-                "Pasado a zona de estudio",
-                "Instalado"
-            ]
-            estado_val = click_data.get("estado", "Presupuesto enviado")
-            index_estado = opciones_estado.index(estado_val) if estado_val in opciones_estado else 0
-            estado = st.selectbox(
-                "📌 Estado",
-                opciones_estado,
-                index=index_estado,
-                key="estado_input"
-            )
+            st.selectbox("📌 Justificación",
+                         ["SIN JUSTIFICACIÓN", "ZONA SUBVENCIONADA", "INVIABLE", "MAS PREVENTA", "RESERVADA WHL", "PDTE. RAFA FIN DE OBRA", "NO ES UNA VIABILIDAD"],
+                         index=0,
+                         key="justificacion_input")
 
-        submit = st.form_submit_button(f"💾 Guardar cambios para el Ticket {ticket}")
+        st.text_input("📑 Contratos", value=campos["contratos"], key="contratos_input")
+        st.text_input("📨 Respuesta Comercial", value=campos["respuesta_comercial"], key="respuesta_comercial_input")
+
+        submit = st.form_submit_button("💾 Guardar cambios")
 
     if submit:
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            apartment_id_clean = ",".join(apartment_ids)
+            apartment_id_clean = ",".join([aid.strip() for aid in st.session_state.apartment_id_input.split(",") if aid.strip()])
 
+            # Actualización completa
             cursor.execute("""
-                UPDATE viabilidades
-                SET apartment_id = ?, direccion_id = ?, olt = ?, cto_admin = ?, id_cto = ?, municipio_admin = ?, serviciable = ?, 
-                    coste = ?, comentarios_comercial = ?, comentarios_internos = ?, zona_estudio = ?, estado = ?,
-                    nuevapromocion = ?, resultado = ?, justificacion = ?, contratos = ?
-                WHERE ticket = ?
+                UPDATE viabilidades SET
+                    latitud=?, longitud=?, provincia=?, municipio=?, poblacion=?, vial=?, numero=?, letra=?, cp=?, comentario=?,
+                    cto_cercana=?, olt=?, cto_admin=?, id_cto=?, municipio_admin=?, serviciable=?, coste=?, comentarios_comercial=?, 
+                    comentarios_internos=?, fecha_viabilidad=?, apartment_id=?, nombre_cliente=?, telefono=?, usuario=?, 
+                    direccion_id=?, confirmacion_rafa=?, zona_estudio=?, estado=?, presupuesto_enviado=?, nuevapromocion=?, 
+                    resultado=?, justificacion=?, contratos=?, respuesta_comercial=?, comentarios_gestor=?
+                WHERE ticket=?
             """, (
-                apartment_id_clean, direccion_id, olt, cto_admin, id_cto, municipio_admin,
-                serviciable, coste, comentarios_comercial, comentarios_internos,
-                zona_estudio, estado,
-                nueva_promocion, resultado, justificacion, contratos,
+                st.session_state.latitud_input, st.session_state.longitud_input, st.session_state.provincia_input,
+                st.session_state.municipio_input, st.session_state.poblacion_input, st.session_state.vial_input,
+                st.session_state.numero_input, st.session_state.letra_input, st.session_state.cp_input,
+                st.session_state.comentario_input, st.session_state.cto_cercana_input, map_olt[st.session_state.olt_input],
+                st.session_state.cto_admin_input, st.session_state.id_cto_input, st.session_state.municipio_admin_input,
+                st.session_state.serviciable_input, st.session_state.coste_input, st.session_state.comentarios_comercial_input,
+                st.session_state.comentarios_internos_input, st.session_state.fecha_viabilidad_input,
+                apartment_id_clean, st.session_state.nombre_cliente_input, st.session_state.telefono_input,
+                st.session_state.usuario_input, st.session_state.direccion_id_input, st.session_state.confirmacion_rafa_input,
+                st.session_state.zona_estudio_input, st.session_state.estado_input, st.session_state.presupuesto_enviado_input,
+                st.session_state.nueva_promocion_input, st.session_state.resultado_input, st.session_state.justificacion_input,
+                st.session_state.contratos_input, st.session_state.respuesta_comercial_input, st.session_state.comentarios_gestor_input,
                 ticket
             ))
 
-            # 📧 Obtener correo del comercial
-            cursor.execute("""
-                SELECT email, provincia
-                FROM usuarios u
-                JOIN viabilidades v ON v.usuario = u.username
-                WHERE v.ticket = ?
-            """, (ticket,))
-            row = cursor.fetchone()
-            email_comercial, provincia = (row if row else (None, None))
-
-            destinatarios = []
-
-            if email_comercial:
-                destinatarios.append(email_comercial)
-            else:
-                st.error("❌ No se encontró el correo del comercial correspondiente.")
-                destinatarios.append("patricia@verdetuoperador.com")
-
-            # 📧 Obtener correos de comerciales_jefe
-            cursor.execute("""
-                SELECT username, email
-                FROM usuarios
-                WHERE role = 'comercial_jefe'
-            """)
-            jefes = cursor.fetchall()
-
-            for jefe_username, jefe_email in jefes:
-                # ⚠️ Filtrar a Juan si la provincia es Cantabria
-                if provincia and provincia.lower() == "cantabria" and jefe_username.lower() == "juan":
-                    continue
-                destinatarios.append(jefe_email)
-
-            descripcion_viabilidad = (
-                f"📢 La viabilidad del ticket {ticket} ha sido completada.<br><br>"
-                f"📌 Comentarios a comerciales: {comentarios_comercial}<br>"
-                f"📍 Municipio: {municipio_admin}<br>"
-                f"💰 Coste: {coste}€<br>"
-                f"🔍 Es Serviciable: {serviciable}<br>"
-                f"🏠 Apartment ID: {apartment_id_clean}<br>"
-                f"📍 Dirección ID: {direccion_id}<br><br>"
-                f"ℹ️ Por favor, revise los detalles de la viabilidad y asegúrese de que toda la información sea correcta. "
-                f"Si tiene alguna pregunta o necesita realizar alguna modificación, no dude en ponerse en contacto con el equipo de administración."
-            )
-
-            # Enviar notificaciones
-            for destinatario in set(destinatarios):
-                correo_viabilidad_administracion(destinatario, ticket, descripcion_viabilidad)
-
             conn.commit()
             conn.close()
-
-            st.success(f"✅ Los cambios para el Ticket {ticket} han sido guardados correctamente.")
-            st.info(f"📧 Se ha enviado una notificación al comercial y a los jefes de equipo.")
+            st.success(f"✅ Cambios guardados correctamente para el ticket {ticket}")
 
         except Exception as e:
-            st.error(f"❌ Error al guardar los cambios o enviar notificaciones: {e}")
+            st.error(f"❌ Error al guardar los cambios: {e}")
+
 
 
 def obtener_apartment_ids_existentes(cursor):

@@ -290,10 +290,26 @@ def mostrar_mapa_de_asignaciones():
         accion = st.radio("Seleccione la acción requerida:", ["Asignar Zona", "Desasignar Zona"], key="accion")
 
         if accion == "Asignar Zona":
+            import unicodedata
+            def limpiar_texto(txt):
+                if not isinstance(txt, str):
+                    return ""
+                # Normalizar tildes y eliminar comillas/apóstrofes dobles
+                txt = unicodedata.normalize('NFKC', txt)
+                txt = txt.replace("'", "").replace('"', "").strip()
+                return txt
             municipios = sorted(datos_uis['municipio'].dropna().unique())
             municipio_sel = st.selectbox("Seleccione un municipio:", municipios, key="municipio_sel")
+
+            tipo_asignacion = st.radio(
+                "¿Qué desea asignar?",
+                ["Población específica", "Municipio completo"],
+                horizontal=True,
+                key="tipo_asignacion"
+            )
+
             poblacion_sel = None
-            if municipio_sel:
+            if tipo_asignacion == "Población específica" and municipio_sel:
                 poblaciones = sorted(datos_uis[datos_uis['municipio'] == municipio_sel]['poblacion'].dropna().unique())
                 poblacion_sel = st.selectbox("Seleccione una población:", poblaciones, key="poblacion_sel")
 
@@ -303,133 +319,151 @@ def mostrar_mapa_de_asignaciones():
                 key="comerciales_seleccionados"
             )
 
-            if municipio_sel and poblacion_sel:
+            # Condición general
+            if municipio_sel and comerciales_seleccionados and (
+                    tipo_asignacion == "Municipio completo" or poblacion_sel
+            ):
                 conn = get_db_connection()
                 cursor = conn.cursor()
 
-                # Total de puntos de esa zona en datos_uis
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM datos_uis
-                    WHERE municipio = ? AND poblacion = ? AND comercial = 'RAFA SANZ'
-                """, (municipio_sel, poblacion_sel))
-                row = cursor.fetchone()
-                total_puntos = row[0] if row else 0
+                if tipo_asignacion == "Municipio completo":
+                    condicion_where = "municipio = ? AND comercial = 'RAFA SANZ'"
+                    params = (municipio_sel,)
+                else:
+                    condicion_where = "municipio = ? AND poblacion = ? AND comercial = 'RAFA SANZ'"
+                    params = (municipio_sel, poblacion_sel)
 
-                # Total de puntos ya asignados
-                cursor.execute("""
-                    SELECT COUNT(*)
-                    FROM comercial_rafa
-                    WHERE municipio = ? AND poblacion = ?
-                """, (municipio_sel, poblacion_sel))
-                row = cursor.fetchone()
-                asignados = row[0] if row else 0
+                # Total de puntos de esa zona
+                cursor.execute(f"SELECT COUNT(*) FROM datos_uis WHERE {condicion_where}", params)
+                total_puntos = cursor.fetchone()[0] or 0
+
+                # Total ya asignados
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM comercial_rafa WHERE {condicion_where.replace('comercial =', '1=1 AND comercial =')}",
+                    params)
+                asignados = cursor.fetchone()[0] or 0
 
                 pendientes = total_puntos - asignados
-
                 conn.close()
 
                 if asignados >= total_puntos and total_puntos > 0:
                     st.warning("🚫 Esta zona ya ha sido asignada completamente.")
                 else:
-                    if municipio_sel and poblacion_sel and comerciales_seleccionados:
-                        if st.button("Asignar Zona"):
-                            conn = get_db_connection()
-                            cursor = conn.cursor()
+                    if st.button("Asignar Zona"):
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
 
-                            # Seleccionar solo los puntos no asignados todavía
-                            cursor.execute("""
+                        if tipo_asignacion == "Municipio completo":
+                            cursor.execute(f"""
                                 SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
                                 FROM datos_uis
-                                WHERE municipio = ? AND poblacion = ? 
+                                WHERE municipio = ?
+                                  AND comercial = 'RAFA SANZ'
+                                  AND apartment_id NOT IN (
+                                      SELECT apartment_id FROM comercial_rafa WHERE municipio = ?
+                                  )
+                            """, (municipio_sel, municipio_sel))
+                        else:
+                            cursor.execute(f"""
+                                SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
+                                FROM datos_uis
+                                WHERE municipio = ? AND poblacion = ?
                                   AND comercial = 'RAFA SANZ'
                                   AND apartment_id NOT IN (
                                       SELECT apartment_id FROM comercial_rafa
                                       WHERE municipio = ? AND poblacion = ?
                                   )
                             """, (municipio_sel, poblacion_sel, municipio_sel, poblacion_sel))
-                            puntos = cursor.fetchall()
 
-                            nuevos_asignados = len(puntos)
+                        puntos = cursor.fetchall()
+                        nuevos_asignados = len(puntos)
 
-                            if not puntos:
-                                st.warning("⚠️ No se encontraron puntos pendientes de asignar en esta zona.")
-                                conn.close()
-                            else:
-                                total_puntos = len(puntos)
-                                num_comerciales = len(comerciales_seleccionados)
-                                puntos_por_comercial = total_puntos // num_comerciales
-                                resto = total_puntos % num_comerciales
+                        if not puntos:
+                            st.warning("⚠️ No se encontraron puntos pendientes de asignar en esta zona.")
+                            conn.close()
+                            st.stop()
 
-                                progress_bar = st.progress(0)
-                                total_asignados = 0
-                                indice = 0
+                        total_puntos = len(puntos)
+                        num_comerciales = len(comerciales_seleccionados)
+                        puntos_por_comercial = total_puntos // num_comerciales
+                        resto = total_puntos % num_comerciales
 
-                                # 🔹 Mensaje dinámico
-                                if asignados + nuevos_asignados >= total_puntos:
-                                    estado = "✅ La zona ha quedado COMPLETAMENTE asignada."
-                                else:
-                                    estado = f"ℹ️ Solo se asignaron {nuevos_asignados} puntos que quedaban pendientes."
+                        progress_bar = st.progress(0)
+                        total_asignados = 0
+                        indice = 0
 
-                                for i, comercial in enumerate(comerciales_seleccionados):
-                                    asignar_count = puntos_por_comercial + (1 if i < resto else 0)
-                                    for _ in range(asignar_count):
-                                        if indice >= total_puntos:
-                                            break
-                                        punto = puntos[indice]
-                                        cursor.execute("""
-                                            INSERT INTO comercial_rafa 
-                                            (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
-                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')
-                                        """, (*punto, comercial))
-                                        indice += 1
-                                        total_asignados += 1
-                                        progress_bar.progress(total_asignados / total_puntos)
+                        for i, comercial in enumerate(comerciales_seleccionados):
+                            asignar_count = puntos_por_comercial + (1 if i < resto else 0)
+                            for _ in range(asignar_count):
+                                if indice >= total_puntos:
+                                    break
+                                punto = puntos[indice]
+                                cursor.execute("""
+                                    INSERT INTO comercial_rafa 
+                                    (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')
+                                """, (*punto, comercial))
+                                indice += 1
+                                total_asignados += 1
+                                progress_bar.progress(total_asignados / total_puntos)
 
-                                conn.commit()
-                                progress_bar.empty()
+                        conn.commit()
+                        progress_bar.empty()
 
-                                # Enviar notificaciones a comerciales
-                                for comercial in comerciales_seleccionados:
-                                    try:
-                                        cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial,))
-                                        email_comercial = cursor.fetchone()
-                                        destinatario_comercial = email_comercial[
-                                            0] if email_comercial else "patricia@verdetuoperador.com"
+                        # Enviar notificaciones a comerciales
+                        for comercial in comerciales_seleccionados:
+                            try:
+                                cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial,))
+                                email_comercial = cursor.fetchone()
+                                destinatario_comercial = email_comercial[
+                                    0] if email_comercial else "patricia@verdetuoperador.com"
 
-                                        descripcion_asignacion = (
-                                            f"📍 Se le ha asignado la zona {municipio_sel} - {poblacion_sel}.<br><br>"
-                                            "💼 Ya puede comenzar a gestionar las tareas correspondientes.<br>"
-                                            "ℹ️ Revise su panel de usuario para más detalles.<br><br>"
-                                            "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
-                                        )
-                                        correo_asignacion_administracion(destinatario_comercial, municipio_sel,
-                                                                         poblacion_sel, descripcion_asignacion)
-                                    except Exception as e:
-                                        st.error(f"❌ Error al notificar a {comercial}: {e}")
-
-                                # Notificar a administradores
-                                cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
-                                emails_admins = [fila[0] for fila in cursor.fetchall()]
-                                descripcion_admin = (
-                                    f"📢 Nueva asignación de zona.\n\n"
-                                    f"📌 Zona Asignada: {municipio_sel} - {poblacion_sel}\n"
-                                    f"👥 Asignado a: {', '.join(comerciales_seleccionados)}\n"
-                                    f"🕵️ Asignado por: {st.session_state['username']}"
+                                descripcion_asignacion = (
+                                        f"📍 Se le ha asignado la zona {municipio_sel}"
+                                        + (
+                                            f" - {poblacion_sel}" if tipo_asignacion == "Población específica" else " (municipio completo)")
+                                        + ".<br><br>💼 Ya puede comenzar a gestionar las tareas correspondientes.<br>"
+                                          "ℹ️ Revise su panel de usuario para más detalles.<br><br>"
+                                          "🚨 Si tiene dudas, contacte con administración.<br>¡Gracias!"
                                 )
-                                for email_admin in emails_admins:
-                                    correo_asignacion_administracion2(email_admin, municipio_sel, poblacion_sel,
-                                                                      descripcion_admin)
+                                correo_asignacion_administracion(destinatario_comercial, municipio_sel,
+                                                                 poblacion_sel if poblacion_sel else "",
+                                                                 descripcion_asignacion)
+                            except Exception as e:
+                                st.error(f"❌ Error al notificar a {comercial}: {e}")
 
-                                st.success("✅ Zona asignada correctamente y notificaciones enviadas.")
-                                st.info(f"📧 Se notificó a: {', '.join(comerciales_seleccionados)}")
-                                st.info(
-                                    f"📊 Total puntos: {total_puntos} | Ya asignados: {asignados} | Nuevos: {nuevos_asignados} | Pendientes tras asignación: {total_puntos - (asignados + nuevos_asignados)}")
-                                log_trazabilidad(
-                                    st.session_state["username"], "Asignación múltiple",
-                                    f"Zona {municipio_sel}-{poblacion_sel} repartida entre {', '.join(comerciales_seleccionados)}"
-                                )
-                                conn.close()
+                        # Notificar administradores
+                        cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                        emails_admins = [fila[0] for fila in cursor.fetchall()]
+                        descripcion_admin = (
+                                f"📢 Nueva asignación de zona.\n\n"
+                                f"📌 Zona Asignada: {municipio_sel}"
+                                + (
+                                    f" - {poblacion_sel}" if tipo_asignacion == "Población específica" else " (municipio completo)")
+                                + f"\n👥 Asignado a: {', '.join(comerciales_seleccionados)}\n"
+                                  f"🕵️ Asignado por: {st.session_state['username']}"
+                        )
+                        for email_admin in emails_admins:
+                            correo_asignacion_administracion2(email_admin, municipio_sel,
+                                                              poblacion_sel if poblacion_sel else "",
+                                                              descripcion_admin)
+
+                        st.success("✅ Zona asignada correctamente y notificaciones enviadas.")
+                        st.info(f"📧 Se notificó a: {', '.join(comerciales_seleccionados)}")
+                        st.info(
+                            f"📊 Total puntos: {total_puntos} | Ya asignados: {asignados} | Nuevos: {nuevos_asignados} | Pendientes tras asignación: {total_puntos - (asignados + nuevos_asignados)}"
+                        )
+
+                        log_trazabilidad(
+                            st.session_state["username"], "Asignación múltiple",
+                            f"Zona {municipio_sel} "
+                            + (
+                                f"- {poblacion_sel}" if tipo_asignacion == "Población específica" else " (municipio completo)")
+                            + f" repartida entre {', '.join(comerciales_seleccionados)}"
+                        )
+
+                        conn.close()
+
 
         elif accion == "Desasignar Zona":
             conn = get_db_connection()
@@ -898,8 +932,64 @@ def mostrar_descarga_datos():
 
     # Subsección: Zonas asignadas
     if sub_seccion == "Zonas asignadas":
-        st.info("ℹ️ Zonas ya asignadas: Visualización del total de asignaciones realizadas por el gestor.")
-        st.dataframe(assigned_zones, use_container_width=True)
+        st.info("ℹ️ Zonas ya asignadas: Visualización del total de asignaciones realizadas por el gestor. Muestra tarjetas visuales con el total de zonas por comercial. "
+                "El color cambia en función de la carga que tenga cada comercial: 🟢 Verde → más de 30 zonas, 🟡 Amarillo → entre 16 y 30, 🔴 Rojo → 15 o menos")
+
+        # 🔹 Filtrar los comerciales según el gestor logueado
+        if username == "juan":
+            comerciales_mios = ["comercial2", "comercial3"]
+            zonas_filtradas = assigned_zones[assigned_zones["comercial"].str.lower().isin(comerciales_mios)]
+        elif username == "rafa sanz":
+            comerciales_mios = ["roberto", "nestor", "jose ramon"]
+            zonas_filtradas = assigned_zones[assigned_zones["comercial"].str.lower().isin(comerciales_mios)]
+        else:
+            comerciales_mios = []
+            zonas_filtradas = assigned_zones.copy()
+
+        # 🔹 Mostrar resumen visual por comercial
+        if not zonas_filtradas.empty:
+            resumen = (
+                zonas_filtradas.groupby("comercial")
+                .agg(total_zonas=("municipio", "count"))
+                .reset_index()
+                .sort_values("total_zonas", ascending=False)
+            )
+
+            # Crear columnas dinámicas según número de comerciales
+            cols = st.columns(len(resumen))
+            for i, row in enumerate(resumen.itertuples()):
+                total = int(row.total_zonas)
+
+                # Color dinámico según volumen de zonas
+                if total > 30:
+                    bg_color = "#C8E6C9"  # verde claro
+                    border_color = "#66BB6A"
+                elif total > 15:
+                    bg_color = "#FFF9C4"  # amarillo claro
+                    border_color = "#FDD835"
+                else:
+                    bg_color = "#FFEBEE"  # rojo claro
+                    border_color = "#E57373"
+
+                with cols[i]:
+                    st.markdown(f"""
+                        <div style="
+                            background-color:{bg_color};
+                            padding:20px;
+                            text-align:center;
+                            transition:transform 0.2s ease-in-out;
+                        ">
+                            <h3 style="color:#1B5E20; margin-bottom:10px;">👤 {row.comercial.title()}</h3>
+                            <p style="font-size:30px; font-weight:bold; color:#2E7D32; margin:0;">{total}</p>
+                            <p style="font-size:14px; color:#388E3C; margin-top:5px;">zonas asignadas</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+        else:
+            st.warning("⚠️ No se encontraron zonas asignadas para los comerciales de este gestor.")
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        # 🔹 Mostrar detalle completo debajo de las tarjetas
+        st.dataframe(zonas_filtradas, use_container_width=True)
 
     # Sub: Ofertas realizadas
     elif sub_seccion == "Ofertas realizadas":
