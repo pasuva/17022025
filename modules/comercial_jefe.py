@@ -263,11 +263,63 @@ def mostrar_mapa_de_asignaciones():
 
     st.info(
         "🔦 Por cuestiones de eficiencia en la carga de de datos, cuando hay una alta concentración de puntos, el mapa solo mostrará los puntos relativos a los filtros elegidos por el usuario. "
-        "Usa el filtro de Provincia, Municipio y Población para poder ver los puntos que necesites.")
+        "Usa el filtro de Provincia, Municipio y Población para poder ver los puntos que necesites. Opcionalmente, puedes usar los rangos de fecha para mayor precisión.")
     # Filtro por provincia
     provincias = datos_uis['provincia'].unique()
     provincia_seleccionada = st.selectbox("Seleccione una provincia:", provincias)
     datos_uis = datos_uis[datos_uis["provincia"] == provincia_seleccionada]
+
+    # --------------------
+    # CONVERTIR FECHA DE TEXTO A DATETIME
+    # --------------------
+    if 'fecha' in datos_uis.columns:
+        datos_uis['fecha'] = pd.to_datetime(datos_uis['fecha'], errors='coerce')
+    else:
+        st.warning("⚠️ No se encontró la columna 'fecha' en los datos.")
+
+    # --------------------
+    # FILTRO DE PUNTOS NUEVOS
+    # --------------------
+    mostrar_nuevos = st.checkbox("Mostrar novedades: huella cargada mas reciente")
+
+    if mostrar_nuevos:
+        if 'fecha' in datos_uis.columns:
+            # Convertir texto a datetime
+            datos_uis['fecha'] = pd.to_datetime(datos_uis['fecha'], errors='coerce')
+            hoy = datetime.now()  # CORRECTO
+            datos_uis = datos_uis[
+                (datos_uis['fecha'].dt.year == hoy.year) &
+                (datos_uis['fecha'].dt.month == hoy.month)
+                ]
+            if datos_uis.empty:
+                st.warning("⚠️ No hay puntos nuevos en el mes actual.")
+                st.stop()
+        else:
+            st.warning("⚠️ No se encontró la columna 'fecha' en los datos.")
+
+    # --------------------
+    # FILTRO DE RANGO DE FECHAS
+    # --------------------
+    if 'fecha' in datos_uis.columns:
+        fecha_min = datos_uis['fecha'].min().date()
+        fecha_max = datos_uis['fecha'].max().date()
+
+        rango_fechas = st.date_input(
+            "(Opcional) Seleccione rango de fechas:",
+            value=(fecha_min, fecha_max),
+            min_value=fecha_min,
+            max_value=fecha_max
+        )
+
+        if len(rango_fechas) == 2:
+            fecha_inicio, fecha_fin = rango_fechas
+            datos_uis = datos_uis[
+                (datos_uis['fecha'].dt.date >= fecha_inicio) &
+                (datos_uis['fecha'].dt.date <= fecha_fin)
+                ]
+            if datos_uis.empty:
+                st.warning("⚠️ No hay puntos en el rango de fechas seleccionado.")
+                st.stop()
 
     # Limpiar latitud y longitud
     datos_uis = datos_uis.dropna(subset=['latitud', 'longitud'])
@@ -1155,6 +1207,63 @@ def mostrar_viabilidades():
         if df_viab.empty:
             st.success("🎉No hay viabilidades pendientes de confirmación.")
         else:
+            if not df_viab.empty:
+
+                # Limpiar lat/lon
+                df_viab_map = df_viab.dropna(subset=['latitud', 'longitud']).copy()
+                if not df_viab_map.empty:
+                    # Centro del mapa
+                    center = [df_viab_map['latitud'].mean(), df_viab_map['longitud'].mean()]
+                    m = folium.Map(location=center, zoom_start=12,
+                                   tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+
+                    marker_cluster = MarkerCluster(disableClusteringAtZoom=18, maxClusterRadius=70,
+                                                   spiderfyOnMaxZoom=True).add_to(m)
+
+                    for _, row in df_viab_map.iterrows():
+                        lat, lon = row['latitud'], row['longitud']
+                        popup_text = f"""
+                        <b>ID Viabilidad:</b> {row.id}<br>
+                        <b>Comercial:</b> {row.comercial_reporta}<br>
+                        <b>Provincia:</b> {row.provincia}<br>
+                        <b>Municipio:</b> {row.municipio}<br>
+                        <b>Población:</b> {row.poblacion}<br>
+                        <b>Vial:</b> {row.vial}<br>
+                        <b>Número:</b> {row.numero}{row.letra or ''}<br>
+                        <b>Serviciable:</b> {row.serviciable or 'Sin dato'}
+                        """
+                        folium.Marker(
+                            [lat, lon],
+                            icon=folium.Icon(icon="info-sign", color="blue"),
+                            popup=folium.Popup(popup_text, max_width=300)
+                        ).add_to(marker_cluster)
+
+                    # Leyenda básica
+                    legend = """
+                    {% macro html(this, kwargs) %}
+                    <div style="
+                        position: fixed; 
+                        bottom: 0px; left: 0px; width: 200px; 
+                        z-index:9999; 
+                        font-size:14px;
+                        background-color: white;
+                        color: black;
+                        border:2px solid grey;
+                        border-radius:8px;
+                        padding: 10px;
+                        box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+                    ">
+                    <b>Leyenda</b><br>
+                    <i style="color:blue;">●</i> Viabilidad pendiente de confirmación<br>
+                    </div>
+                    {% endmacro %}
+                    """
+                    macro = MacroElement()
+                    macro._template = Template(legend)
+                    m.get_root().add_child(macro)
+
+                    st_folium(m, height=500, width=1750)
+
             for _, row in df_viab.iterrows():
 
                 # Si esta viabilidad ya fue gestionada en esta sesión, la ocultamos

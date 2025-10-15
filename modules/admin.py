@@ -997,7 +997,7 @@ def viabilidades_seccion():
             def draw_map(df, center, zoom):
                 m = folium.Map(location=center, zoom_start=zoom,
                                tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-                               attr="Google")
+                               attr="Google", min_zoom=4, max_zoom=20)
                 marker_cluster = MarkerCluster().add_to(m)
 
                 for _, row in df.iterrows():
@@ -2613,7 +2613,8 @@ def admin_dashboard():
             "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
             " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos. Si pinchas en"
             " Crear Viabilidades: Haz click en el mapa para agregar un marcador que represente el punto de viabilidad. Además, puedes actualizar las tablas internas y "
-            "el excel externo pinchando en la opción Actualizar tablas.")
+            "el excel externo pinchando en la opción Actualizar tablas. En el caso de necesitar crear o modificar una viabilidad, cuyos datos requieran añadir mas de una CTO y varios Apartment ID "
+            "por cada CTO, deberás crear una viabilidad nueva por cada CTO, para que queden bien asignados todos ellos a cada caja en específico, generando de esta forma, 2 o mas tickets separados.")
         viabilidades_seccion()
 
         # Opción: Viabilidades (En construcción)
