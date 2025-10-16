@@ -2,7 +2,7 @@ import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from modules.notificaciones import correo_viabilidad_administracion, correo_usuario, correo_nuevas_zonas_comercial, correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, correo_viabilidad_comercial
+from modules.notificaciones import correo_usuario, correo_nuevas_zonas_comercial, correo_excel_control, correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, correo_viabilidad_comercial
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
@@ -17,9 +17,11 @@ from google.oauth2.service_account import Credentials
 import gspread
 import json
 from googleapiclient.discovery import build
-from modules.cloudinary import upload_image_to_cloudinary
 from branca.element import Template, MacroElement
 import warnings
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -268,7 +270,6 @@ def cargar_contratos_google():
     except Exception as e:
         print(f"❌ Error cargando contratos desde Google Sheets: {e}")
         return pd.DataFrame()
-
 
 
 def cargar_usuarios():
@@ -748,10 +749,6 @@ def guardar_comentario(apartment_id, comentario, tabla):
         st.error(f"Error al actualizar la base de datos: {str(e)}")
         return False
 
-import cloudinary
-import cloudinary.uploader
-import cloudinary.api
-
 def upload_file_to_cloudinary(file, public_id=None):
     """
     Sube un archivo genérico (como Excel, PDF, ZIP...) a Cloudinary y devuelve la URL pública.
@@ -855,7 +852,6 @@ def viabilidades_seccion():
             viabilidades_df['tiene_presupuesto'] = viabilidades_df['ticket'].isin(presupuestos_df['ticket'])
 
         except Exception as e:
-            #st.warning(f"No se pudo verificar si hay presupuestos: {e}")
             viabilidades_df['tiene_presupuesto'] = False
 
         def highlight_duplicates(val):
@@ -976,13 +972,12 @@ def viabilidades_seccion():
             col_b1, _, col_b2 = st.columns([1, 2.3, 1])
 
             with col_b1:
-                if st.button("🔄 Actualizar tablas"):
+                if st.button("🔄 Actualizar"):
                     with st.spinner("🔄 Actualizando hoja de Google Sheets..."):
                         actualizar_google_sheet_desde_db(
                             sheet_id="14nC88hQoCdh6B6pTq7Ktu2k8HWOyS2BaTqcUOIhXuZY",  # 👈 reemplaza por el ID de tu hoja
                             sheet_name="viabilidades_verde"
                         )
-                    #st.rerun()
 
             with col_b2:
                 st.download_button(
@@ -1006,12 +1001,6 @@ def viabilidades_seccion():
                     serviciable = str(row.get('serviciable', '')).strip()
                     apartment_id = str(row.get('apartment_id', '')).strip()
                     tiene_presupuesto = row.get('tiene_presupuesto', False)
-
-                    # 🎯 Prioridad del color:
-                    # 1. Si tiene presupuesto → naranja
-                    # 2. Si no es serviciable → rojo
-                    # 3. Si es serviciable y tiene apartment_id → verde
-                    # 4. Otro caso → azul
 
                     if tiene_presupuesto:
                         marker_color = 'orange'
@@ -1086,15 +1075,10 @@ def viabilidades_seccion():
 
         # Mostrar formulario debajo
         if st.session_state["selected_ticket"]:
-            st.markdown("---")
-            st.subheader(f"📝 Formulario para Ticket: {st.session_state['selected_ticket']}")
             mostrar_formulario(selected_viabilidad)
 
             if st.session_state.get("selected_ticket"):
-                st.markdown("---")
-                st.subheader(f"Subir y Enviar Presupuesto para Ticket {st.session_state['selected_ticket']}")
-
-                archivo = st.file_uploader("📁 Sube el archivo Excel del presupuesto", type=["xlsx"])
+                archivo = st.file_uploader(f"📁 Sube el archivo Excel del presupuesto para Ticket {st.session_state['selected_ticket']}", type=["xlsx"])
 
                 if archivo:
                     st.success("✅ Archivo cargado correctamente.")
@@ -1201,156 +1185,6 @@ def viabilidades_seccion():
             except Exception as e:
                 st.error(f"❌ Error al cargar el historial de envíos: {e}")
 
-        DB_URL = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-
-        with st.expander("📤 Subir Excel de Viabilidades para actualizar base de datos"):
-            uploaded_file = st.file_uploader("Selecciona un archivo Excel (.xlsx)", type=["xlsx"])
-
-            if uploaded_file is not None:
-                try:
-                    # Leer Excel en DataFrame
-                    df = pd.read_excel(io.BytesIO(uploaded_file.read()))
-
-                    # Normalizar latitud, longitud y coste
-                    for col in ["latitud", "longitud", "PRESUPUESTO"]:
-                        if col in df.columns:
-                            df[col] = df[col].astype(str).str.replace(",", ".").astype(float)
-
-                    # Mapeo Excel → BD
-                    mapa_columnas = {
-                        "ticket": "ticket",
-                        "SOLICITANTE": "usuario",
-                        "Nueva Promoción": "nuevapromocion",
-                        "RESULTADO": "resultado",
-                        "JUSTIFICACIÓN": "justificacion",
-                        "PRESUPUESTO": "coste",
-                        "UUII": "zona_estudio",
-                        "CONTRATOS": "contratos",
-                        "latitud": "latitud",
-                        "longitud": "longitud",
-                        "provincia": "provincia",
-                        "municipio": "municipio",
-                        "poblacion": "poblacion",
-                        "vial": "vial",
-                        "numero": "numero",
-                        "letra": "letra",
-                        "cp": "cp",
-                        "olt": "olt",
-                        "cto_admin": "cto_admin",
-                        "id_cto": "id_cto",
-                        "fecha_viabilidad": "fecha_viabilidad",
-                        "apartment_id": "apartment_id",
-                        "nombre_cliente": "nombre_cliente",
-                        "telefono": "telefono",
-                        "comentarios_internos": "comentarios_internos",
-                        "ESTADO": "estado",
-                        "comentarios_comercial": "comentarios_comercial"
-                    }
-
-                    # Renombrar columnas válidas
-                    df = df.rename(columns={col: mapa_columnas[col] for col in df.columns if col in mapa_columnas})
-
-                    # Conectar a la base de datos
-                    conn = sqlitecloud.connect(DB_URL)
-                    cursor = conn.cursor()
-
-                    # Obtener columnas existentes en la tabla viabilidades
-                    cursor.execute("PRAGMA table_info(viabilidades);")
-                    columnas_bd = {row[1] for row in cursor.fetchall()}
-
-                    insertados = 0
-                    errores = []
-                    actualizados = []
-
-                    # Columnas que deben completarse si están vacías
-                    columnas_rellenables = [
-                        "nuevapromocion", "resultado", "justificacion",
-                        "coste", "zona_estudio", "contratos", "comentarios_comercial"
-                    ]
-
-                    for _, fila in df.iterrows():
-                        datos_validos = {col: fila[col] for col in fila.index if col in columnas_bd and pd.notna(fila[col])}
-                        if not datos_validos:
-                            continue
-
-                        ticket_id = fila.get("ticket")
-
-                        # Comprobar si el ticket ya existe en la BD
-                        cursor.execute("SELECT * FROM viabilidades WHERE ticket = ?", (ticket_id,))
-                        existente = cursor.fetchone()
-
-                        if existente:
-                            # Crear dict con valores actuales de la BD
-                            cursor.execute("PRAGMA table_info(viabilidades);")
-                            cols_info = cursor.fetchall()
-                            nombres_cols = [c[1] for c in cols_info]
-                            existente_dict = dict(zip(nombres_cols, existente))
-
-                            # Preparar actualizaciones solo si la BD tiene vacío
-                            updates = {}
-                            for col in columnas_rellenables:
-                                if col in datos_validos and (
-                                        existente_dict.get(col) is None or str(existente_dict.get(col)).strip() == ""):
-                                    updates[col] = datos_validos[col]
-
-                            if updates:
-                                set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
-                                valores = list(updates.values()) + [ticket_id]
-                                sql = f"UPDATE viabilidades SET {set_clause} WHERE ticket = ?"
-                                try:
-                                    cursor.execute(sql, valores)
-                                    actualizados.append(
-                                        f"✅ Ticket {ticket_id} → columnas actualizadas: {', '.join(updates.keys())}")
-                                    insertados += 1
-                                except Exception as e:
-                                    errores.append(f"❌ Error al actualizar ticket {ticket_id}: {e}")
-                        else:
-                            # Insertar nuevo registro
-                            columnas_sql = ", ".join(datos_validos.keys())
-                            placeholders = ", ".join(["?"] * len(datos_validos))
-                            valores = list(datos_validos.values())
-                            sql = f"INSERT INTO viabilidades ({columnas_sql}) VALUES ({placeholders})"
-
-                            try:
-                                cursor.execute(sql, valores)
-                                insertados += 1
-                            except Exception as e:
-                                errores.append(f"❌ Error al insertar ticket {ticket_id}: {e}")
-
-                    conn.commit()
-                    conn.close()
-
-                    # Mostrar resultados al usuario
-                    st.success(f"✅ Registros insertados/actualizados correctamente: {insertados}")
-
-                    if actualizados:
-                        st.info("ℹ️ Detalle de actualizaciones realizadas:")
-                        for msg in actualizados:
-                            st.write(msg)
-
-                    if errores:
-                        st.error(f"❌ Se encontraron {len(errores)} errores durante la inserción/actualización.")
-                        for e in errores:
-                            st.write(e)
-
-                    # Comparar columnas esperadas y recibidas
-                    columnas_excel_original = set(mapa_columnas.keys())
-                    columnas_recibidas = set(df.columns)
-                    columnas_omitidas = columnas_excel_original - columnas_recibidas
-                    columnas_no_existentes = [col for col in df.columns if col not in columnas_bd]
-
-                    if columnas_omitidas:
-                        st.warning("⚠️ Columnas esperadas en Excel pero que no llegaron:")
-                        for c in columnas_omitidas:
-                            st.write(f" - {c}")
-
-                    if columnas_no_existentes:
-                        st.warning("⚠️ Columnas en Excel ignoradas porque no existen en la base de datos:")
-                        for c in columnas_no_existentes:
-                            st.write(f" - {c}")
-
-                except Exception as e:
-                    st.error(f"❌ Error al procesar el archivo: {e}")
         # 🧩 Sección 2: Crear Viabilidades (vacía por ahora)
     elif sub_seccion == "Crear Viabilidades":
         # Inicializar estados de sesión si no existen
@@ -1486,17 +1320,20 @@ def viabilidades_seccion():
                     nombre_cliente = st.text_input("👤 Nombre Cliente")
                 with col11:
                     telefono = st.text_input("📞 Teléfono")
-                # ✅ NUEVOS CAMPOS
                 col12, col13 = st.columns(2)
                 # Conexión para cargar los OLT desde la tabla
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY nombre_olt")
-                lista_olt = [f"{fila[0]}. {fila[1]}" for fila in cursor.fetchall()]
+                olts = cursor.fetchall()
                 conn.close()
 
+                # Diccionario con clave 'id. nombre' y valor (id, nombre)
+                opciones_olt = {f"{fila[0]}. {fila[1]}": fila for fila in olts}
+
                 with col12:
-                    olt = st.selectbox("🏢 OLT", options=lista_olt)
+                    opcion_olt = st.selectbox("🏢 OLT", options=list(opciones_olt.keys()))
+                    id_olt, nombre_olt = opciones_olt[opcion_olt]
                 with col13:
                     apartment_id = st.text_input("🏘️ Apartment ID")
                 comentario = st.text_area("📝 Comentario")
@@ -1537,9 +1374,8 @@ def viabilidades_seccion():
                         ticket,
                         nombre_cliente,
                         telefono,
-                        #st.session_state["username"],
                         comercial,
-                        olt,  # nuevo campo
+                        f"{id_olt}. {nombre_olt}", # nuevo campo
                         apartment_id  # nuevo campo
                     ))
 
@@ -1617,7 +1453,6 @@ def guardar_viabilidad(datos):
 
     # Información de la viabilidad
     ticket_id = datos[10]  # 'ticket'
-    #nombre_comercial = st.session_state.get("username")
     nombre_comercial = datos[13]  # 👈 el comercial elegido en el formulario
     descripcion_viabilidad = (
         f"📝 Viabilidad para el ticket {ticket_id}:<br><br>"
@@ -1658,7 +1493,7 @@ def obtener_viabilidades():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT latitud, longitud, ticket, serviciable, apartment_id 
+        SELECT latitud, longitud, ticket, serviciable, apartment_id, direccion_id 
         FROM viabilidades
     """)
     viabilidades = cursor.fetchall()
@@ -1747,11 +1582,11 @@ def mostrar_formulario(click_data):
         colc1, colc2, colc3 = st.columns(3)
         with colc1: st.text_input("👤 Nombre Cliente", value=campos["nombre_cliente"], key="nombre_cliente_input")
         with colc2: st.text_input("📞 Teléfono", value=campos["telefono"], key="telefono_input")
-        with colc3: st.text_input("👤 Usuario (comercial)", value=campos["usuario"], key="usuario_input")
+        with colc3: st.text_input("👤 Comercial", value=campos["usuario"], disabled=True, key="usuario_input")
 
         # --- FECHAS Y CTO ---
         colf1, colf2 = st.columns(2)
-        with colf1: st.text_input("📅 Fecha Viabilidad", value=campos["fecha_viabilidad"], key="fecha_viabilidad_input")
+        with colf1: st.text_input("📅 Fecha Viabilidad", value=campos["fecha_viabilidad"], disabled=True, key="fecha_viabilidad_input")
         with colf2: st.text_input("🔌 CTO Cercana", value=campos["cto_cercana"], key="cto_cercana_input")
 
         # --- APARTAMENTO / DIRECCIÓN / OLT ---
@@ -1854,8 +1689,6 @@ def mostrar_formulario(click_data):
 
         except Exception as e:
             st.error(f"❌ Error al guardar los cambios: {e}")
-
-
 
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")
@@ -2089,24 +1922,41 @@ def admin_dashboard():
                 theme='alpine-dark'
             )
 
-            # 🔽 Botón de descarga en Excel
+            # 🔽 Generar Excel temporal en memoria
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
                 data[columnas].to_excel(writer, index=False, sheet_name='Datos')
             towrite.seek(0)
 
-            with st.spinner("Preparando archivo Excel..."):
-                st.download_button(
-                    label="📥 Descargar Excel",
-                    data=towrite,
-                    file_name="datos.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+            # 🎨 Mostrar botones en una sola fila
+            col1, col2 = st.columns([1, 1])  # Dos columnas iguales
+
+            with col1:
+                with st.spinner("Preparando archivo Excel..."):
+                    st.download_button(
+                        label="📥 Descargar excel de control",
+                        data=towrite,
+                        file_name="datos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+            with col2:
+                if st.button("📧 Enviar excel de control", use_container_width=True):
+                    with st.spinner("Enviando Excel de control a Patricia..."):
+                        try:
+                            correo_excel_control(
+                                destinatario="aarozamena@symtel.es",
+                                bytes_excel=towrite.getvalue()
+                            )
+                            st.success("✅ Correo enviado correctamente.")
+                        except Exception as e:
+                            st.error(f"❌ Error al enviar el correo: {e}")
+
+
         elif sub_seccion == "Seguimiento de Contratos":
             st.info("ℹ️ Aquí puedes cargar contratos, mapear columnas, guardar en BD y sincronizar con datos UIS.")
-            # -----------------------------------------------------------
-            # NUEVO: Seguimiento de contratos
-            # -----------------------------------------------------------
+
             # Mapeo de columnas del Excel a la BD
 
             if st.button("🔄 Actualizar contratos"):
@@ -2136,10 +1986,13 @@ def admin_dashboard():
 
                         insert_sql = '''INSERT INTO seguimiento_contratos (
                             num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
-                            comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, comentarios
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+                            comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
                         for i, row in df.iterrows():
+                            # 🔹 Limpieza de nombres de columnas (por seguridad)
+                            df.columns = df.columns.str.strip().str.lower()
+
                             ap_id = row.get('apartment_id')
                             try:
                                 ap_id_int = int(ap_id)
@@ -2147,20 +2000,34 @@ def admin_dashboard():
                             except (ValueError, TypeError):
                                 padded_id = None
 
-                            cur.execute(insert_sql, (
-                                row.get('num_contrato'),
-                                row.get('cliente'),
-                                row.get('coordenadas'),
-                                row.get('estado'),
-                                row.get('fecha_inicio_contrato'),
-                                row.get('fecha_ingreso'),
-                                row.get('comercial'),
-                                row.get('fecha_instalacion'),
-                                padded_id,  # <-- apartment_id corregido
-                                None,  # <-- fecha_estado (no viene en el Excel)
-                                row.get('fecha_fin_contrato'),
-                                row.get('comentarios')
-                            ))
+                            # 🗓️ Nombres ya normalizados (según tu Excel)
+                            fecha_instalacion = row.get('fecha_instalacion')
+                            fecha_fin_contrato = row.get('fecha_fin_contrato')
+                            divisor = row.get('divisor') or row.get('DIVISOR')
+                            puerto = row.get('puerto') or row.get('PUERTO')
+
+                            # 🧩 Inserción final
+                            try:
+                                cur.execute(insert_sql, (
+                                    row.get('num_contrato'),
+                                    row.get('cliente'),
+                                    row.get('coordenadas'),
+                                    row.get('estado'),
+                                    row.get('fecha_inicio_contrato'),
+                                    row.get('fecha_ingreso'),
+                                    row.get('comercial'),
+                                    fecha_instalacion,
+                                    padded_id,
+                                    fecha_fin_contrato,
+                                    divisor,
+                                    puerto,
+                                    row.get('comentarios')
+                                ))
+                            except Exception as e:
+                                import traceback
+                                st.error(f"⚠️ Error al insertar fila {i}: {e}")
+                                st.code(traceback.format_exc())
+
                             progress.progress((i + 1) / total)
 
                         conn.commit()
@@ -2203,7 +2070,75 @@ def admin_dashboard():
                             updated_contratos = cur.rowcount
                             conn.commit()
 
-                            # Marcar como serviciable
+                            # 🔹 Nuevo: Actualizar fecha_instalacion
+                            cur.execute("""
+                                UPDATE datos_uis
+                                SET fecha_instalacion = (
+                                    SELECT sc.fecha_instalacion
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.fecha_instalacion IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE fecha_instalacion IS NOT NULL
+                                )
+                            """)
+                            updated_fecha_inst = cur.rowcount
+                            conn.commit()
+
+                            # 🔹 Nuevo: Actualizar fecha_fin_contrato
+                            cur.execute("""
+                                UPDATE datos_uis
+                                SET fecha_fin_contrato = (
+                                    SELECT sc.fecha_fin_contrato
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.fecha_fin_contrato IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE fecha_fin_contrato IS NOT NULL
+                                )
+                            """)
+                            updated_fecha_fin = cur.rowcount
+                            conn.commit()
+
+                            # 🔹 Nuevo: Actualizar divisor
+                            cur.execute("""
+                                UPDATE datos_uis
+                                SET divisor = (
+                                    SELECT sc.divisor
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.divisor IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE divisor IS NOT NULL
+                                )
+                            """)
+                            updated_divisor = cur.rowcount
+                            conn.commit()
+
+                            # 🔹 Nuevo: Actualizar puerto
+                            cur.execute("""
+                                UPDATE datos_uis
+                                SET puerto = (
+                                    SELECT sc.puerto
+                                    FROM seguimiento_contratos sc
+                                    WHERE sc.apartment_id = datos_uis.apartment_id
+                                    AND sc.puerto IS NOT NULL
+                                    LIMIT 1
+                                )
+                                WHERE apartment_id IN (
+                                    SELECT apartment_id FROM seguimiento_contratos WHERE puerto IS NOT NULL
+                                )
+                            """)
+                            updated_puerto = cur.rowcount
+                            conn.commit()
+
+                            # Marcar como serviciable (ya existente)
                             cur.execute("""
                                 UPDATE datos_uis
                                 SET serviciable = 'SI'
@@ -2457,8 +2392,6 @@ def admin_dashboard():
                     mime="application/zip"
                 )
         elif sub_seccion == "Certificación":
-            # Nueva sección: Generar Certificación Completa
-
             with st.spinner("⏳ Cargando y procesando datos..."):
                 try:
                     conn = obtener_conexion()
@@ -2635,7 +2568,6 @@ def admin_dashboard():
                 except Exception as e:
                     st.error(f"❌ Error al generar la certificación completa: {e}")
 
-    # Opción: Viabilidades (En construcción)
     elif opcion == "Viabilidades":
         st.header("Viabilidades")
         st.info(
@@ -2648,7 +2580,6 @@ def admin_dashboard():
             "por cada CTO, deberás crear una viabilidad nueva por cada CTO, para que queden bien asignados todos ellos a cada caja en específico, generando de esta forma, 2 o mas tickets separados.")
         viabilidades_seccion()
 
-        # Opción: Viabilidades (En construcción)
     elif opcion == "Mapa UUIIs":
         st.info(
             "ℹ️ En esta sección puedes ver todos los datos cruzados entre ams y las ofertas de los comerciales, así como su estado actual. Ten en cuenta que tienes dos tipos de filtros "

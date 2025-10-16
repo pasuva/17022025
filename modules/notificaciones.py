@@ -17,26 +17,49 @@ def limpiar_texto(texto):
     return ""
 
 # Función general para enviar un correo electrónico en formato HTML
-def enviar_notificacion(destinatario, asunto, contenido):
+# Función general para enviar un correo electrónico en formato HTML
+from email.mime.application import MIMEApplication  # 👈 asegúrate de tener este import
+
+from email.mime.application import MIMEApplication
+
+def enviar_notificacion(destinatario, asunto, contenido, archivo_adjunto=None):
     try:
-        html_content = plantilla_email.generar_html(asunto, contenido)  # Genera el contenido en HTML
+        html_content = plantilla_email.generar_html(asunto, contenido)
 
         msg = MIMEMultipart()
-        msg['From'] = 'noreply.verdetuoperador@gmail.com'  # Correo remitente
+        msg['From'] = 'noreply.verdetuoperador@gmail.com'
         msg['To'] = destinatario
-        msg['Subject'] = str(Header(asunto, 'utf-8'))  # Codificación del asunto en UTF-8
-        msg.attach(MIMEText(html_content, 'html', 'utf-8'))  # Se adjunta el contenido en HTML
+        msg['Subject'] = str(Header(asunto, 'utf-8'))
+        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
-        # Establecer conexión y enviar correo
+        # ✅ Adjuntar archivo si se pasa como parámetro
+        if archivo_adjunto:
+            part = MIMEApplication(
+                archivo_adjunto["bytes"],
+                _subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            part.add_header(
+                "Content-Disposition",
+                "attachment",
+                filename=archivo_adjunto["nombre"]
+            )
+            msg.attach(part)
+
+        # Envío
         server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()  # Activar encriptación
-        server.login('noreply.verdetuoperador@gmail.com', 'mwht uuwd slzc renq')  # Datos SMTP
-        server.sendmail('noreply.verdetuoperador@gmail.com', destinatario, msg.as_string())  # Enviar correo
+        server.starttls()
+        server.login('noreply.verdetuoperador@gmail.com', 'mwht uuwd slzc renq')
+        server.sendmail('noreply.verdetuoperador@gmail.com', destinatario, msg.as_string())
         server.quit()
 
         print(f"✅ Correo enviado exitosamente a {destinatario}")
     except Exception as e:
         print(f"❌ Error al enviar correo: {e}")
+
+
+    except Exception as e:
+        print(f"❌ Error al enviar correo: {e}")
+
 
 # 1. Correo de oferta añadida por el comercial para un apartment_id específico
 def correo_oferta_comercial(destinatario, apartment_id, descripcion_oferta):
@@ -259,4 +282,25 @@ def correo_respuesta_comercial(destinatario, ticket_id, nombre_comercial, coment
         )
     }
     enviar_notificacion(destinatario, asunto, contenido)
+
+# En notificaciones.py
+def correo_excel_control(destinatario, bytes_excel, nombre_archivo="datos_uis_control.xlsx"):
+    """
+    Envía un Excel de control de datos UIS al destinatario especificado.
+    """
+    asunto = "📊 Excel de control - Datos UIS"
+    contenido = {
+        "mensaje": "Se adjunta el archivo de control con los datos actuales de UIS generados automáticamente.",
+        "Nota": "Este correo fue enviado por el sistema automatizado de Verdetuoperador 🌿",
+        "Adjunto": nombre_archivo
+    }
+
+    # ✅ Pasamos el adjunto como parámetro aparte, no dentro del contenido
+    archivo_adjunto = {
+        "nombre": nombre_archivo,
+        "bytes": bytes_excel
+    }
+
+    enviar_notificacion(destinatario, asunto, contenido, archivo_adjunto)
+
 
