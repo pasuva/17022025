@@ -1862,7 +1862,8 @@ def admin_dashboard():
             }
         )
         if sub_seccion == "Visualizar Datos UIS":
-            st.info("ℹ️ Aquí puedes visualizar, filtrar y descargar los datos UIS en formato Excel.")
+            st.info(
+                "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos UIS, Viabilidades y Contratos en formato Excel.")
 
             if "df" in st.session_state:
                 del st.session_state["df"]
@@ -1870,62 +1871,170 @@ def admin_dashboard():
             with st.spinner("Cargando datos..."):
                 try:
                     conn = obtener_conexion()
-                    query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
-                    tables = pd.read_sql(query_tables, conn)
-                    if 'datos_uis' not in tables['name'].values:
+
+                    # --- Verificar tablas disponibles ---
+                    tablas = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
+                    tablas_disponibles = tablas['name'].values
+
+                    # --- Cargar datos_uis ---
+                    if 'datos_uis' not in tablas_disponibles:
                         st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
                         conn.close()
-                        return
-                    query = "SELECT * FROM datos_uis"
-                    data = pd.read_sql(query, conn)
+                        st.stop()
+                    data_uis = pd.read_sql("SELECT * FROM datos_uis", conn)
+                    data_uis["origen"] = "UIS"
+
+                    # --- Cargar viabilidades (EXCLUYENDO 'estado' ya que no nos interesa) ---
+                    if 'viabilidades' in tablas_disponibles:
+                        data_via = pd.read_sql(
+                            "SELECT id, latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, "
+                            "cto_cercana, olt, cto_admin, id_cto, municipio_admin, serviciable, coste, comentarios_comercial, "
+                            "comentarios_internos, fecha_viabilidad, ticket, apartment_id, nombre_cliente, telefono, usuario, "
+                            "direccion_id, confirmacion_rafa, zona_estudio, Presupuesto_enviado, nuevapromocion, resultado, "
+                            "justificacion, contratos, respuesta_comercial, comentarios_gestor "  # <- EXCLUIMOS estado
+                            "FROM viabilidades", conn)
+                        data_via["origen"] = "Viabilidad"
+                    else:
+                        data_via = pd.DataFrame()
+
+                    # --- Cargar contratos ---
+                    if 'seguimiento_contratos' in tablas_disponibles:
+                        data_contratos = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
+                    else:
+                        data_contratos = pd.DataFrame()
+
                     conn.close()
-                    if data.empty:
-                        st.error("❌ No se encontraron datos en la base de datos.")
-                        return
+
                 except Exception as e:
-                    st.error(f"❌ Error al cargar datos de la base de datos: {e}")
-                    return
+                    st.error(f"❌ Error al cargar los datos: {e}")
+                    st.stop()
 
-            for col in data.select_dtypes(include=["object"]).columns:
-                data[col] = data[col].replace({'true': True, 'false': False})
-                data[col] = safe_convert_to_numeric(data[col])
+            # --- Renombrar columnas de viabilidades para alinear con datos_uis ---
+            if not data_via.empty:
+                rename_map = {
+                    "cto_admin": "cto",
+                    "id_cto": "cto_id",
+                    "direccion_id": "address_id",
+                    "ticket": "id_ams",  # Renombramos ticket a id_ams para unificar
+                    "usuario": "comercial"
+                }
+                data_via = data_via.rename(columns=rename_map)
 
-            if data.columns.duplicated().any():
-                st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
-                data = data.loc[:, ~data.columns.duplicated()]
+                # Asegurar que todas las columnas de datos_uis estén presentes
+                for col in data_uis.columns:
+                    if col not in data_via.columns:
+                        data_via[col] = None
 
-            st.session_state["df"] = data
-            columnas = data.columns.tolist()
+            # --- UNIR CONTRATOS CON TODOS LOS DATOS (UIS + VIABILIDADES) ---
+            # Primero combinamos UIS y viabilidades
+            if not data_via.empty:
+                data_combinada = pd.concat([data_uis, data_via], ignore_index=True)
+            else:
+                data_combinada = data_uis.copy()
 
-            #st.dataframe(data[columnas], use_container_width=True)
-            # Construimos las opciones de AgGrid
-            gb = GridOptionsBuilder.from_dataframe(data[columnas])
+            # Luego unimos con contratos usando apartment_id
+            if not data_contratos.empty and "apartment_id" in data_combinada.columns:
+                # Verificar qué columnas existen realmente en data_contratos
+                columnas_deseadas = ['apartment_id', 'estado', 'fecha_instalacion',
+                                     'fecha_fin_contrato', 'divisor', 'puerto']
+
+                # Añadir num_contrato si existe
+                if 'num_contrato' in data_contratos.columns:
+                    columnas_deseadas.append('num_contrato')
+
+                columnas_disponibles = []
+                for col in columnas_deseadas:
+                    if col in data_contratos.columns:
+                        columnas_disponibles.append(col)
+
+                # Si hay columnas disponibles, hacemos el merge
+                if columnas_disponibles:
+                    contratos_para_merge = data_contratos[columnas_disponibles].copy()
+
+                    # Renombrar num_contrato a contrato_uis si existe
+                    if 'num_contrato' in contratos_para_merge.columns:
+                        contratos_para_merge = contratos_para_merge.rename(columns={'num_contrato': 'contrato_uis'})
+
+                    # Hacer el merge con todos los datos
+                    data_combinada = pd.merge(
+                        data_combinada,
+                        contratos_para_merge,
+                        on='apartment_id',
+                        how='left',
+                        suffixes=('', '_contrato')
+                    )
+
+                    # Si hay columnas duplicadas del merge, nos quedamos con las de contratos
+                    for col in contratos_para_merge.columns:
+                        if col == 'apartment_id':
+                            continue
+                        if f"{col}_contrato" in data_combinada.columns:
+                            # Si existe la versión con sufijo _contrato, es la de contratos, así que la renombramos
+                            data_combinada[col] = data_combinada[f"{col}_contrato"]
+                            data_combinada = data_combinada.drop(columns=[f"{col}_contrato"])
+
+            # --- Renombrar comercial -> solicitante ---
+            if "comercial" in data_combinada.columns:
+                data_combinada = data_combinada.rename(columns={"comercial": "solicitante"})
+
+            # --- Renombrar id_ams a id_ams/ticket para mayor claridad ---
+            if "id_ams" in data_combinada.columns:
+                data_combinada = data_combinada.rename(columns={"id_ams": "id_ams/ticket"})
+
+            # --- Limpieza y tipos ---
+            for col in data_combinada.columns:
+                if data_combinada[col].dtype == "object":
+                    data_combinada[col] = data_combinada[col].replace({'true': True, 'false': False})
+                    try:
+                        data_combinada[col] = pd.to_numeric(data_combinada[col], errors="ignore")
+                    except Exception:
+                        pass
+
+            # --- Eliminar duplicadas ---
+            if data_combinada.columns.duplicated().any():
+                data_combinada = data_combinada.loc[:, ~data_combinada.columns.duplicated()]
+
+            # --- Mostrar en AgGrid ---
+            st.session_state["df"] = data_combinada
+            columnas = data_combinada.columns.tolist()
+
+            # Crear lista de columnas a mostrar (excluyendo 'id' y 'motivo')
+            columnas_a_mostrar = [col for col in columnas if col not in ['id', 'motivo']]
+
+            gb = GridOptionsBuilder.from_dataframe(data_combinada[columnas_a_mostrar])
             gb.configure_default_column(
                 filter=True,
-                floatingFilter=True,  # muestro el input de filtro directamente bajo el header
+                floatingFilter=True,
                 sortable=True,
                 resizable=True,
-                minWidth=120,  # ancho mínimo en px
-                flex=1  # reparte espacio sobrante equitativamente
+                minWidth=120,
+                flex=1
             )
+
+            # Ocultar columnas específicas en caso de que aún estén en la lista
+            columnas_a_ocultar = ['id', 'motivo', 'respuesta_comercial', 'comentarios_gestor', 'Presupuesto_enviado', 'justificacion', 'comentarios_comercial', 'comentarios_internos','comentario'
+                                  , 'contratos', 'zona_estudio', 'nombre_cliente', 'telefono', 'municipio_admin', 'nuevapromocion', 'resultado', 'confirmacion_rafa ', 'CERTIFICABLE', 'zona']
+            for col in columnas_a_ocultar:
+                if col in columnas_a_mostrar:
+                    gb.configure_column(col, hide=True)
+
             gridOptions = gb.build()
 
-            # Muestro la tabla con AgGrid en lugar de st.dataframe
             AgGrid(
-                data[columnas],
+                data_combinada[columnas_a_mostrar],
                 gridOptions=gridOptions,
                 enable_enterprise_modules=True,
                 update_mode=GridUpdateMode.NO_UPDATE,
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                 fit_columns_on_grid_load=True,
-                height=500,
+                height=550,
                 theme='alpine-dark'
             )
 
             # 🔽 Generar Excel temporal en memoria
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data[columnas].to_excel(writer, index=False, sheet_name='Datos')
+                data_combinada[columnas].to_excel(writer, index=False, sheet_name='Datos')
             towrite.seek(0)
 
             # 🎨 Mostrar botones en una sola fila
@@ -1943,7 +2052,7 @@ def admin_dashboard():
 
             with col2:
                 if st.button("📧 Enviar excel de control", use_container_width=True):
-                    with st.spinner("Enviando Excel de control a Patricia..."):
+                    with st.spinner("Enviando Excel de control..."):
                         try:
                             correo_excel_control(
                                 destinatario="aarozamena@symtel.es",
@@ -1962,14 +2071,26 @@ def admin_dashboard():
             if st.button("🔄 Actualizar contratos"):
                 with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
                     try:
-                        # 1. Cargar datos desde Google Sheets (ya renombrados en la función)
+                        # 1. Cargar datos desde Google Sheets
                         df = cargar_contratos_google()
 
                         # Debug prints
-                        print("Columnas cargadas:", df.columns.tolist())
-                        print("Primeras filas:", df.head())
+                        #st.write("🔍 Columnas cargadas:", df.columns.tolist())
+                        #st.write("🔍 Primeras filas:", df.head())
 
-                        st.success(f"✅ Datos cargados desde Google. Total filas: {len(df)}")
+                        # Normalizar nombres de columnas INMEDIATAMENTE
+                        df.columns = df.columns.str.strip().str.lower()
+                        #st.write("🔍 Columnas después de normalizar:", df.columns.tolist())
+
+                        # Verificar si existen las columnas divisor, puerto y fecha_fin_contrato
+                        #columnas_verificar = ['divisor', 'puerto', 'fecha_fin_contrato']
+                        #for col in columnas_verificar:
+                        #    if col not in df.columns:
+                        #        st.warning(f"⚠️ Columna '{col}' no encontrada en los datos")
+                        #    else:
+                        #        st.info(f"✅ Columna '{col}' encontrada, valores no nulos: {df[col].notna().sum()}")
+
+                        #st.success(f"✅ Datos cargados desde Google. Total filas: {len(df)}")
 
                         # 2. Guardar en la base de datos
                         conn = obtener_conexion()
@@ -1977,8 +2098,6 @@ def admin_dashboard():
 
                         # Borrar registros anteriores
                         cur.execute("DELETE FROM seguimiento_contratos")
-                        conn.commit()
-                        cur.execute("DELETE FROM sqlite_sequence WHERE name='seguimiento_contratos'")
                         conn.commit()
 
                         total = len(df)
@@ -1989,10 +2108,12 @@ def admin_dashboard():
                             comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
-                        for i, row in df.iterrows():
-                            # 🔹 Limpieza de nombres de columnas (por seguridad)
-                            df.columns = df.columns.str.strip().str.lower()
+                        inserted_divisor = 0
+                        inserted_puerto = 0
+                        inserted_fecha_fin = 0
 
+                        for i, row in df.iterrows():
+                            # Obtener apartment_id y formatearlo
                             ap_id = row.get('apartment_id')
                             try:
                                 ap_id_int = int(ap_id)
@@ -2000,13 +2121,23 @@ def admin_dashboard():
                             except (ValueError, TypeError):
                                 padded_id = None
 
-                            # 🗓️ Nombres ya normalizados (según tu Excel)
+                            # Obtener valores CORRECTAMENTE (después de la normalización)
                             fecha_instalacion = row.get('fecha_instalacion')
                             fecha_fin_contrato = row.get('fecha_fin_contrato')
-                            divisor = row.get('divisor') or row.get('DIVISOR')
-                            puerto = row.get('puerto') or row.get('PUERTO')
 
-                            # 🧩 Inserción final
+                            # Obtener divisor y puerto usando los nombres NORMALIZADOS
+                            divisor = row.get('divisor')
+                            puerto = row.get('puerto')
+
+                            # Contar cuántos valores no nulos tenemos
+                            if divisor is not None and divisor != '':
+                                inserted_divisor += 1
+                            if puerto is not None and puerto != '':
+                                inserted_puerto += 1
+                            if fecha_fin_contrato is not None and fecha_fin_contrato != '':
+                                inserted_fecha_fin += 1
+
+                            # Inserción
                             try:
                                 cur.execute(insert_sql, (
                                     row.get('num_contrato'),
@@ -2024,141 +2155,117 @@ def admin_dashboard():
                                     row.get('comentarios')
                                 ))
                             except Exception as e:
-                                import traceback
                                 st.error(f"⚠️ Error al insertar fila {i}: {e}")
-                                st.code(traceback.format_exc())
+                                st.write(
+                                    f"Valores: divisor={divisor}, puerto={puerto}, fecha_fin_contrato={fecha_fin_contrato}")
 
                             progress.progress((i + 1) / total)
 
                         conn.commit()
 
-                        # 3. Actualizar datos_uis
-                        with obtener_conexion() as conn:
-                            cur = conn.cursor()
+                        # Mostrar estadísticas de inserción
+                        st.info(f"📊 Divisores insertados: {inserted_divisor}/{total}")
+                        st.info(f"📊 Puertos insertados: {inserted_puerto}/{total}")
+                        st.info(f"📊 Fechas fin contrato insertadas: {inserted_fecha_fin}/{total}")
 
-                            # Actualizar estado
-                            cur.execute("""
-                                UPDATE datos_uis
-                                SET estado = (
-                                    SELECT sc.estado
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.estado IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE estado IS NOT NULL
-                                )
-                            """)
-                            updated_estado = cur.rowcount
-                            conn.commit()
+                        # 3. Verificar qué se guardó realmente en la base de datos
+                        cur.execute("""
+                            SELECT COUNT(*) as total, 
+                                   COUNT(divisor) as con_divisor, 
+                                   COUNT(puerto) as con_puerto,
+                                   COUNT(fecha_fin_contrato) as con_fecha_fin 
+                            FROM seguimiento_contratos
+                        """)
+                        stats = cur.fetchone()
+                        st.success(
+                            f"📊 En base de datos - Total: {stats[0]}, Con divisor: {stats[1]}, Con puerto: {stats[2]}, Con fecha_fin_contrato: {stats[3]}")
 
-                            # Actualizar contrato_uis
-                            cur.execute("""
-                                UPDATE datos_uis
-                                SET contrato_uis = (
-                                    SELECT sc.num_contrato
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.num_contrato IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE num_contrato IS NOT NULL
-                                )
-                            """)
-                            updated_contratos = cur.rowcount
-                            conn.commit()
+                        # 4. Mostrar algunos ejemplos de lo que se guardó
+                        cur.execute("""
+                            SELECT apartment_id, fecha_fin_contrato, divisor, puerto 
+                            FROM seguimiento_contratos 
+                            WHERE fecha_fin_contrato IS NOT NULL OR divisor IS NOT NULL OR puerto IS NOT NULL
+                            LIMIT 5
+                        """)
+                        ejemplos = cur.fetchall()
+                        #if ejemplos:
+                        #    st.write("🔍 Ejemplos de registros con fecha_fin_contrato, divisor o puerto:")
+                        #    for ej in ejemplos:
+                        #        st.write(f"   - {ej}")
 
-                            # 🔹 Nuevo: Actualizar fecha_instalacion
-                            cur.execute("""
-                                UPDATE datos_uis
-                                SET fecha_instalacion = (
-                                    SELECT sc.fecha_instalacion
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.fecha_instalacion IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE fecha_instalacion IS NOT NULL
-                                )
-                            """)
-                            updated_fecha_inst = cur.rowcount
-                            conn.commit()
+                        # 5. Actualizar datos_uis (solo si hay datos)
+                        if stats[0] > 0:
+                            with obtener_conexion() as conn:
+                                cur = conn.cursor()
 
-                            # 🔹 Nuevo: Actualizar fecha_fin_contrato
-                            cur.execute("""
-                                UPDATE datos_uis
-                                SET fecha_fin_contrato = (
-                                    SELECT sc.fecha_fin_contrato
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.fecha_fin_contrato IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE fecha_fin_contrato IS NOT NULL
-                                )
-                            """)
-                            updated_fecha_fin = cur.rowcount
-                            conn.commit()
+                                # Actualizar divisor en datos_uis
+                                cur.execute("""
+                                    UPDATE datos_uis
+                                    SET divisor = (
+                                        SELECT sc.divisor
+                                        FROM seguimiento_contratos sc
+                                        WHERE sc.apartment_id = datos_uis.apartment_id
+                                        AND sc.divisor IS NOT NULL
+                                        AND sc.divisor != ''
+                                        LIMIT 1
+                                    )
+                                    WHERE apartment_id IN (
+                                        SELECT apartment_id FROM seguimiento_contratos 
+                                        WHERE divisor IS NOT NULL AND divisor != ''
+                                    )
+                                """)
+                                updated_divisor = cur.rowcount
+                                conn.commit()
 
-                            # 🔹 Nuevo: Actualizar divisor
-                            cur.execute("""
-                                UPDATE datos_uis
-                                SET divisor = (
-                                    SELECT sc.divisor
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.divisor IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE divisor IS NOT NULL
-                                )
-                            """)
-                            updated_divisor = cur.rowcount
-                            conn.commit()
+                                # Actualizar puerto en datos_uis
+                                cur.execute("""
+                                    UPDATE datos_uis
+                                    SET puerto = (
+                                        SELECT sc.puerto
+                                        FROM seguimiento_contratos sc
+                                        WHERE sc.apartment_id = datos_uis.apartment_id
+                                        AND sc.puerto IS NOT NULL
+                                        AND sc.puerto != ''
+                                        LIMIT 1
+                                    )
+                                    WHERE apartment_id IN (
+                                        SELECT apartment_id FROM seguimiento_contratos 
+                                        WHERE puerto IS NOT NULL AND puerto != ''
+                                    )
+                                """)
+                                updated_puerto = cur.rowcount
+                                conn.commit()
 
-                            # 🔹 Nuevo: Actualizar puerto
-                            cur.execute("""
-                                UPDATE datos_uis
-                                SET puerto = (
-                                    SELECT sc.puerto
-                                    FROM seguimiento_contratos sc
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-                                    AND sc.puerto IS NOT NULL
-                                    LIMIT 1
-                                )
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id FROM seguimiento_contratos WHERE puerto IS NOT NULL
-                                )
-                            """)
-                            updated_puerto = cur.rowcount
-                            conn.commit()
+                                # Actualizar fecha_fin_contrato en datos_uis
+                                cur.execute("""
+                                    UPDATE datos_uis
+                                    SET fecha_fin_contrato = (
+                                        SELECT sc.fecha_fin_contrato
+                                        FROM seguimiento_contratos sc
+                                        WHERE sc.apartment_id = datos_uis.apartment_id
+                                        AND sc.fecha_fin_contrato IS NOT NULL
+                                        AND sc.fecha_fin_contrato != ''
+                                        LIMIT 1
+                                    )
+                                    WHERE apartment_id IN (
+                                        SELECT apartment_id FROM seguimiento_contratos 
+                                        WHERE fecha_fin_contrato IS NOT NULL AND fecha_fin_contrato != ''
+                                    )
+                                """)
+                                updated_fecha_fin = cur.rowcount
+                                conn.commit()
 
-                            # Marcar como serviciable (ya existente)
-                            cur.execute("""
-                                UPDATE datos_uis
-                                SET serviciable = 'SI'
-                                WHERE apartment_id IN (
-                                    SELECT apartment_id
-                                    FROM seguimiento_contratos
-                                    WHERE TRIM(UPPER(estado)) = 'FINALIZADO'
-                                    AND apartment_id IS NOT NULL
-                                )
-                            """)
-                            updated_serviciables = cur.rowcount
-                            conn.commit()
+                                st.success(
+                                    f"✅ Actualizados {updated_divisor} divisores, {updated_puerto} puertos y {updated_fecha_fin} fechas fin contrato en datos_uis")
 
-                        # 4. Feedback
-                        st.success("✅ Registros insertados y sincronizados correctamente.")
-                        st.info(f"🔄 Estados sincronizados con seguimiento_contratos.")  # sin número
+                        # 6. Feedback final
+                        st.success("✅ Proceso completado correctamente.")
 
                     except Exception as e:
                         st.error(f"❌ Error en el proceso: {e}")
-
+                        import traceback
+                        st.code(traceback.format_exc())
+            # ✅ CHECKBOX RESTAURADO - Mostrar registros existentes
             if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
                 with st.spinner("Cargando registros de contratos..."):
                     try:
@@ -2168,7 +2275,8 @@ def admin_dashboard():
                         if existing.empty:
                             st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
                         else:
-                            cols = st.multiselect("Filtra columnas a mostrar", existing.columns, default=existing.columns,
+                            cols = st.multiselect("Filtra columnas a mostrar", existing.columns,
+                                                  default=existing.columns,
                                                   key="cols_existing")
                             st.dataframe(existing[cols], use_container_width=True)
                     except Exception as e:
