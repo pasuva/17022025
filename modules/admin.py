@@ -2079,7 +2079,7 @@ def admin_dashboard():
                         #st.write("🔍 Primeras filas:", df.head())
 
                         # Normalizar nombres de columnas INMEDIATAMENTE
-                        df.columns = df.columns.str.strip().str.lower()
+                        df.columns = df.columns.map(lambda x: str(x).strip().lower() if x is not None else "")
                         #st.write("🔍 Columnas después de normalizar:", df.columns.tolist())
 
                         # Verificar si existen las columnas divisor, puerto y fecha_fin_contrato
@@ -2815,7 +2815,7 @@ def admin_dashboard():
             "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión más moderna. "
             "¡ATENCIÓN! ¡Se eliminarán todos los datos actuales! Ten en cuenta que si realizas esta acción cualquier actualización realizada en la aplicación sobre "
             "la tabla de datos también quedará eliminada. Se recomienda recargar el excel de seguimiento de contratos en el caso de que esta carga de datos no tenga "
-            "todas las columnas actualizadas."
+            "todas las columnas actualizadas. ES POSIBLE CARGAR TANTO NUEVOS PUNTOS COMO NUEVAS TIRC."
         )
 
         log_trazabilidad(
@@ -2823,256 +2823,345 @@ def admin_dashboard():
             "Cargar Nuevos Datos",
             "El admin accedió a la sección de carga de nuevos datos y se procederá a reemplazar el contenido de la tabla."
         )
-        uploaded_file = st.file_uploader("Selecciona un archivo Excel o CSV", type=["xlsx", "csv"])
-        if uploaded_file is not None:
-            try:
-                with st.spinner("⏳ Cargando archivo..."):
-                    if uploaded_file.name.endswith(".xlsx"):
-                        data = pd.read_excel(uploaded_file)
-                    elif uploaded_file.name.endswith(".csv"):
-                        data = pd.read_csv(uploaded_file)
-                # Diccionario para mapear columnas del Excel a las de la base de datos
-                mapeo_columnas = {
-                    "id_ams": "id_ams",
-                    "apartment_id": "apartment_id",
-                    "address_id": "address_id",
-                    "provincia": "provincia",
-                    "municipio": "municipio",
-                    "poblacion": "poblacion",
-                    "vial": "vial",
-                    "numero": "numero",
-                    "parcela_catastral": "parcela_catastral",
-                    "letra": "letra",
-                    "cp": "cp",
-                    "site_operational_state": "site_operational_state",
-                    "apartment_operational_state": "apartment_operational_state",
-                    "cto_id": "cto_id",
-                    "olt": "olt",
-                    "cto": "cto",
-                    "lat": "latitud",
-                    "lng": "longitud",
-                    "TIPO OLT RENTAL": "tipo_olt_rental",
-                    "CERTIFICABLE": "CERTIFICABLE",
-                    "COMERCIAL": "comercial",
-                    "ZONA": "zona",
-                    "FECHA": "fecha",
-                    "SERVICIABLE": "serviciable",
-                    "MOTIVO": "motivo",
-                    "contrato_uis": "contrato_uis"
-                }
-                columnas_faltantes = [col for col in mapeo_columnas if col not in data.columns]
+        col1, col2 = st.columns(2)
+        # ===================== 📁 TARJETA PARA CARGAR TIRC =====================
+        with col1:
+            st.markdown("""
+                <div style='
+                    background-color:#F0F7F2;
+                    padding:25px;
+                    margin-top:10px;
+                    text-align:center;
+                    border-radius:0px;
+                '>
+                    <h4 style='color:#1e3d59;'>🧩 Cargar Archivos TIRC</h4>
+                    <p style='color:#333;'>
+                        Arrastra o selecciona uno o varios archivos <b>CSV</b> con los datos TIRC actualizados.
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
 
-                if columnas_faltantes:
-                    st.error(
-                        f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
-                else:
-                    data_filtrada = data[list(mapeo_columnas.keys())].copy()
-                    data_filtrada.rename(columns=mapeo_columnas, inplace=True)
+            uploaded_tirc_files = st.file_uploader(
+                "Selecciona uno o varios CSV para la tabla TIRC",
+                type=["csv"],
+                key="upload_tirc",
+                accept_multiple_files=True,
+                label_visibility="collapsed"
+            )
 
-                    # Convertir lat y lng a float
-                    data_filtrada["latitud"] = pd.to_numeric(
-                        data_filtrada["latitud"].astype(str).str.replace(",", "."), errors="coerce"
-                    ).round(7)
+            if uploaded_tirc_files:
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                columnas_tirc = [
+                    "id", "apartment_id", "address_id", "provincia", "municipio", "poblacion", "street_id",
+                    "tipo_vial", "vial", "parcela_catastral", "tipo", "numero", "bis", "bloque", "portal_puerta",
+                    "letra", "cp", "site_dummy", "site_operational_state", "subvention_code", "nodo", "sales_area",
+                    "electronica", "red", "competencia", "descripcion", "nota_interna", "lng", "lat", "gis_status",
+                    "created_at", "homes", "site_activation_date", "escalera", "piso", "mano1", "mano2",
+                    "apartment_sales_area", "apartment_dummy", "apartment_operational_state",
+                    "apartment_created_at", "apartment_activation_date", "cto_id", "OLT", "CTO",
+                    "FECHA PRIMERA ACTIVACION", "ESTADO", "SINCRONISMO", "TIPO CTO", "CT", "ID TIRC",
+                    "FECHA REVISION", "PROYECTO", "POBLACIÓN CORREGIDA"
+                ]
 
-                    data_filtrada["longitud"] = pd.to_numeric(
-                        data_filtrada["longitud"].astype(str).str.replace(",", "."), errors="coerce"
-                    ).round(7)
+                for uploaded_tirc in uploaded_tirc_files:
+                    try:
+                        with st.spinner(f"⏳ Procesando {uploaded_tirc.name}..."):
+                            df_tirc = pd.read_csv(uploaded_tirc, dtype=str)
+                            faltantes = [c for c in columnas_tirc if c not in df_tirc.columns]
+                            if faltantes:
+                                st.error(f"❌ {uploaded_tirc.name}: faltan columnas: {', '.join(faltantes)}")
+                                continue
 
-                    columnas_finales = [
-                        "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
-                        "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
-                        "apartment_operational_state", "cto_id", "olt", "cto", "latitud", "longitud",
-                        "tipo_olt_rental", "CERTIFICABLE", "comercial", "zona", "fecha",
-                        "serviciable", "motivo", "contrato_uis"
-                    ]
-                    data_filtrada = data_filtrada[columnas_finales]
+                            df_tirc = df_tirc[columnas_tirc].fillna("")
+                            data_values = df_tirc.values.tolist()
 
-                    if "fecha" in data_filtrada.columns:
-                        data_filtrada["fecha"] = pd.to_datetime(data_filtrada["fecha"], errors="coerce")
-                        data_filtrada["fecha"] = data_filtrada["fecha"].dt.strftime(
-                            "%Y-%m-%d")  # convierte fechas a texto
-                        data_filtrada["fecha"] = data_filtrada["fecha"].where(pd.notnull(data_filtrada["fecha"]), None)
+                            insert_query = f"""
+                                INSERT INTO TIRC ({', '.join([f'"{c}"' for c in columnas_tirc])})
+                                VALUES ({', '.join(['?'] * len(columnas_tirc))})
+                                ON CONFLICT(id) DO UPDATE SET
+                                {', '.join([f'"{c}"=excluded."{c}"' for c in columnas_tirc if c != "id"])}
+                            """
 
-                    # Leer datos anteriores
-                    conn = obtener_conexion()
-                    df_antiguos = pd.read_sql("SELECT * FROM datos_uis", conn)
-                    st.write(
-                        "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM datos_uis")
-                    cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
-                    conn.commit()
-                    total_registros = len(data_filtrada)
-                    insert_values = data_filtrada.values.tolist()
-                    chunk_size = 500
-                    num_chunks = (total_registros + chunk_size - 1) // chunk_size
-                    query = """
-                        INSERT INTO datos_uis (
-                            id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero,
-                            parcela_catastral, letra, cp, site_operational_state, apartment_operational_state,
-                            cto_id, olt, cto, latitud, longitud, tipo_olt_rental, CERTIFICABLE, comercial,
-                            zona, fecha, serviciable, motivo, contrato_uis
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """
-                    progress_bar = st.progress(0)
+                            cursor.executemany(insert_query, data_values)
+                            conn.commit()
 
-                    for i in range(num_chunks):
-                        chunk = insert_values[i * chunk_size: (i + 1) * chunk_size]
-                        cursor.executemany(query, chunk)
-                        conn.commit()
-                        progress_bar.progress(min((i + 1) / num_chunks, 1.0))
-
-                    # -------------------------------------------------------
-                    # 🔄 Asignación automática de nuevos puntos en zonas ya asignadas
-                    # -------------------------------------------------------
-
-                    # Buscar zonas ya asignadas en comercial_rafa
-                    cursor.execute("""
-                        SELECT DISTINCT provincia, municipio, poblacion, comercial
-                        FROM comercial_rafa
-                    """)
-                    zonas_asignadas = cursor.fetchall()
-
-                    for zona in zonas_asignadas:
-                        provincia, municipio, poblacion, comercial = zona
-
-                        # Puntos ya asignados en esa zona
-                        cursor.execute("""
-                            SELECT apartment_id
-                            FROM comercial_rafa
-                            WHERE provincia = ? AND municipio = ? AND poblacion = ? AND comercial = ?
-                        """, (provincia, municipio, poblacion, comercial))
-                        asignados_ids = {fila[0] for fila in cursor.fetchall()}
-
-                        # Puntos disponibles en datos_uis para esa zona (sin usar la columna 'zona')
-                        cursor.execute("""
-                            SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
-                            FROM datos_uis
-                            WHERE provincia = ? AND municipio = ? AND poblacion = ?
-                        """, (provincia, municipio, poblacion))
-                        puntos_zona = cursor.fetchall()
-
-                        # 🔹 Obtener todos los apartment_id ya existentes en comercial_rafa
-                        cursor.execute("SELECT apartment_id FROM comercial_rafa")
-                        todos_asignados = {fila[0] for fila in cursor.fetchall()}
-
-                        # 🔹 Filtrar los nuevos para no insertar duplicados
-                        nuevos_para_asignar = [p for p in puntos_zona if p[0] not in todos_asignados]
-
-                        # Insertarlos asignados al mismo comercial
-                        for p in nuevos_para_asignar:
-                            cursor.execute("""
-                                INSERT INTO comercial_rafa
-                                (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial, 'Pendiente'))
-
-                        if nuevos_para_asignar:
-                            st.info(
-                                f"📌 Se asignaron {len(nuevos_para_asignar)} nuevos puntos a {comercial} en la zona {poblacion} ({municipio}, {provincia})"
+                            st.success(f"✅ {uploaded_tirc.name}: {len(df_tirc)} registros insertados/actualizados.")
+                            log_trazabilidad(
+                                st.session_state["username"],
+                                "Carga TIRC incremental",
+                                f"Archivo {uploaded_tirc.name} con {len(df_tirc)} registros procesados."
                             )
 
-                            # 🔹 Notificación al comercial
-                            cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial.lower(),))
-                            resultado = cursor.fetchone()
-                            if resultado:
-                                email = resultado[0]
-                                try:
-                                    correo_asignacion_puntos_existentes(
-                                        destinatario=email,
-                                        nombre_comercial=comercial,
-                                        provincia=provincia,
-                                        municipio=municipio,
-                                        poblacion=poblacion,
-                                        nuevos_puntos=len(nuevos_para_asignar)
-                                    )
-                                    st.write(
-                                        f"📧 Notificación enviada a {comercial} ({email}) por nuevos puntos en zona existente")
-                                except Exception as e:
-                                    st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
-                            else:
-                                st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
+                    except Exception as e:
+                        st.error(f"❌ Error en {uploaded_tirc.name}: {e}")
 
-                            # 🔹 Notificación a administradores
+                conn.close()
+
+            # ===================== 🧱 TARJETA PARA CARGAR UUII =====================
+            with col2:
+                st.markdown("""
+                <div style='background-color:#F0F7F2; padding:25px; margin-top:10px; text-align:center;'>
+                    <h4 style='color:#1e3d59;'>🏢 Cargar Archivo UUII</h4>
+                    <p>Arrastra o selecciona el archivo <b>Excel (.xlsx)</b> o <b>CSV</b> con los datos actualizados de puntos comerciales.</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                uploaded_file = st.file_uploader(
+                    "Selecciona un archivo Excel o CSV para subir nuevos puntos comerciales visitables",
+                    type=["xlsx", "csv"],
+                    key="upload_uu",
+                    label_visibility="collapsed"
+                )
+                if uploaded_file is not None:
+                    try:
+                        with st.spinner("⏳ Cargando archivo..."):
+                            if uploaded_file.name.endswith(".xlsx"):
+                                data = pd.read_excel(uploaded_file)
+                            elif uploaded_file.name.endswith(".csv"):
+                                data = pd.read_csv(uploaded_file)
+                        # Diccionario para mapear columnas del Excel a las de la base de datos
+                        mapeo_columnas = {
+                            "id_ams": "id_ams",
+                            "apartment_id": "apartment_id",
+                            "address_id": "address_id",
+                            "provincia": "provincia",
+                            "municipio": "municipio",
+                            "poblacion": "poblacion",
+                            "vial": "vial",
+                            "numero": "numero",
+                            "parcela_catastral": "parcela_catastral",
+                            "letra": "letra",
+                            "cp": "cp",
+                            "site_operational_state": "site_operational_state",
+                            "apartment_operational_state": "apartment_operational_state",
+                            "cto_id": "cto_id",
+                            "olt": "olt",
+                            "cto": "cto",
+                            "lat": "latitud",
+                            "lng": "longitud",
+                            "TIPO OLT RENTAL": "tipo_olt_rental",
+                            "CERTIFICABLE": "CERTIFICABLE",
+                            "COMERCIAL": "comercial",
+                            "ZONA": "zona",
+                            "FECHA": "fecha",
+                            "SERVICIABLE": "serviciable",
+                            "MOTIVO": "motivo",
+                            "contrato_uis": "contrato_uis"
+                        }
+                        columnas_faltantes = [col for col in mapeo_columnas if col not in data.columns]
+
+                        if columnas_faltantes:
+                            st.error(
+                                f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
+                        else:
+                            data_filtrada = data[list(mapeo_columnas.keys())].copy()
+                            data_filtrada.rename(columns=mapeo_columnas, inplace=True)
+
+                            # Convertir lat y lng a float
+                            data_filtrada["latitud"] = pd.to_numeric(
+                                data_filtrada["latitud"].astype(str).str.replace(",", "."), errors="coerce"
+                            ).round(7)
+
+                            data_filtrada["longitud"] = pd.to_numeric(
+                                data_filtrada["longitud"].astype(str).str.replace(",", "."), errors="coerce"
+                            ).round(7)
+
+                            columnas_finales = [
+                                "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
+                                "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
+                                "apartment_operational_state", "cto_id", "olt", "cto", "latitud", "longitud",
+                                "tipo_olt_rental", "CERTIFICABLE", "comercial", "zona", "fecha",
+                                "serviciable", "motivo", "contrato_uis"
+                            ]
+                            data_filtrada = data_filtrada[columnas_finales]
+
+                            if "fecha" in data_filtrada.columns:
+                                data_filtrada["fecha"] = pd.to_datetime(data_filtrada["fecha"], errors="coerce")
+                                data_filtrada["fecha"] = data_filtrada["fecha"].dt.strftime(
+                                    "%Y-%m-%d")  # convierte fechas a texto
+                                data_filtrada["fecha"] = data_filtrada["fecha"].where(pd.notnull(data_filtrada["fecha"]), None)
+
+                            # Leer datos anteriores
+                            conn = obtener_conexion()
+                            df_antiguos = pd.read_sql("SELECT * FROM datos_uis", conn)
+                            st.write(
+                                "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM datos_uis")
+                            cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
+                            conn.commit()
+                            total_registros = len(data_filtrada)
+                            insert_values = data_filtrada.values.tolist()
+                            chunk_size = 500
+                            num_chunks = (total_registros + chunk_size - 1) // chunk_size
+                            query = """
+                                INSERT INTO datos_uis (
+                                    id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero,
+                                    parcela_catastral, letra, cp, site_operational_state, apartment_operational_state,
+                                    cto_id, olt, cto, latitud, longitud, tipo_olt_rental, CERTIFICABLE, comercial,
+                                    zona, fecha, serviciable, motivo, contrato_uis
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """
+                            progress_bar = st.progress(0)
+
+                            for i in range(num_chunks):
+                                chunk = insert_values[i * chunk_size: (i + 1) * chunk_size]
+                                cursor.executemany(query, chunk)
+                                conn.commit()
+                                progress_bar.progress(min((i + 1) / num_chunks, 1.0))
+
+                            # -------------------------------------------------------
+                            # 🔄 Asignación automática de nuevos puntos en zonas ya asignadas
+                            # -------------------------------------------------------
+
+                            # Buscar zonas ya asignadas en comercial_rafa
+                            cursor.execute("""
+                                SELECT DISTINCT provincia, municipio, poblacion, comercial
+                                FROM comercial_rafa
+                            """)
+                            zonas_asignadas = cursor.fetchall()
+
+                            for zona in zonas_asignadas:
+                                provincia, municipio, poblacion, comercial = zona
+
+                                # Puntos ya asignados en esa zona
+                                cursor.execute("""
+                                    SELECT apartment_id
+                                    FROM comercial_rafa
+                                    WHERE provincia = ? AND municipio = ? AND poblacion = ? AND comercial = ?
+                                """, (provincia, municipio, poblacion, comercial))
+                                asignados_ids = {fila[0] for fila in cursor.fetchall()}
+
+                                # Puntos disponibles en datos_uis para esa zona (sin usar la columna 'zona')
+                                cursor.execute("""
+                                    SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
+                                    FROM datos_uis
+                                    WHERE provincia = ? AND municipio = ? AND poblacion = ?
+                                """, (provincia, municipio, poblacion))
+                                puntos_zona = cursor.fetchall()
+
+                                # 🔹 Obtener todos los apartment_id ya existentes en comercial_rafa
+                                cursor.execute("SELECT apartment_id FROM comercial_rafa")
+                                todos_asignados = {fila[0] for fila in cursor.fetchall()}
+
+                                # 🔹 Filtrar los nuevos para no insertar duplicados
+                                nuevos_para_asignar = [p for p in puntos_zona if p[0] not in todos_asignados]
+
+                                # Insertarlos asignados al mismo comercial
+                                for p in nuevos_para_asignar:
+                                    cursor.execute("""
+                                        INSERT INTO comercial_rafa
+                                        (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial, 'Pendiente'))
+
+                                if nuevos_para_asignar:
+                                    st.info(
+                                        f"📌 Se asignaron {len(nuevos_para_asignar)} nuevos puntos a {comercial} en la zona {poblacion} ({municipio}, {provincia})"
+                                    )
+
+                                    # 🔹 Notificación al comercial
+                                    cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial.lower(),))
+                                    resultado = cursor.fetchone()
+                                    if resultado:
+                                        email = resultado[0]
+                                        try:
+                                            correo_asignacion_puntos_existentes(
+                                                destinatario=email,
+                                                nombre_comercial=comercial,
+                                                provincia=provincia,
+                                                municipio=municipio,
+                                                poblacion=poblacion,
+                                                nuevos_puntos=len(nuevos_para_asignar)
+                                            )
+                                            st.write(
+                                                f"📧 Notificación enviada a {comercial} ({email}) por nuevos puntos en zona existente")
+                                        except Exception as e:
+                                            st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
+                                    else:
+                                        st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
+
+                                    # 🔹 Notificación a administradores
+                                    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
+                                    admins = [fila[0] for fila in cursor.fetchall()]
+                                    for email_admin in admins:
+                                        try:
+                                            correo_asignacion_puntos_existentes(
+                                                destinatario=email_admin,
+                                                nombre_comercial=comercial,
+                                                provincia=provincia,
+                                                municipio=municipio,
+                                                poblacion=poblacion,
+                                                nuevos_puntos=len(nuevos_para_asignar)
+                                            )
+                                            st.write(
+                                                f"📧 Notificación enviada a administrador ({email_admin}) por nuevos puntos en zona existente")
+                                        except Exception as e:
+                                            st.error(f"❌ Error enviando correo a admin ({email_admin}): {e}")
+
+                            conn.commit()
+
+                            # Comparar apartment_id nuevos
+                            apt_antiguos = set(df_antiguos['apartment_id'].unique())
+                            apt_nuevos = set(data_filtrada['apartment_id'].unique())
+                            nuevos_apartment_id = apt_nuevos - apt_antiguos
+                            df_nuevos_filtrados = data_filtrada[data_filtrada['apartment_id'].isin(nuevos_apartment_id)]
+                            try:
+                                df_nuevos_filtrados["comercial"] = df_nuevos_filtrados["comercial"].astype(str)
+                                df_nuevos_filtrados["poblacion"] = df_nuevos_filtrados["poblacion"].astype(str)
+
+                                resumen = df_nuevos_filtrados.groupby('comercial').agg(
+                                    total_nuevos=('apartment_id', 'count'),
+                                    poblaciones_nuevas=('poblacion', lambda x: ', '.join(sorted(x.dropna().unique())))
+                                ).reset_index()
+                            except Exception as e:
+                                st.warning(f"⚠️ Error generando resumen de nuevos datos: {e}")
+                                resumen = pd.DataFrame()
+
+                            for _, row in resumen.iterrows():
+                                comercial = str(row["comercial"]).strip()
+                                total_nuevos = row["total_nuevos"]
+                                poblaciones_nuevas = row["poblaciones_nuevas"]
+
+                                # Normalizamos a minúsculas para comparar con usuarios.username
+                                comercial_normalizado = comercial.lower()
+
+                                cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial_normalizado,))
+                                resultado = cursor.fetchone()
+
+                                if resultado:
+                                    email = resultado[0]
+                                    try:
+                                        correo_nuevas_zonas_comercial(
+                                            destinatario=email,
+                                            nombre_comercial=comercial,
+                                            total_nuevos=total_nuevos,
+                                            poblaciones_nuevas=poblaciones_nuevas
+                                        )
+                                        st.write(f"📧 Notificación enviada a {comercial} ({email})")
+                                    except Exception as e:
+                                        st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
+                                else:
+                                    st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
+
+                            # 🔹 Notificar también a los administradores
                             cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
                             admins = [fila[0] for fila in cursor.fetchall()]
+
                             for email_admin in admins:
                                 try:
-                                    correo_asignacion_puntos_existentes(
+                                    correo_nuevas_zonas_comercial(
                                         destinatario=email_admin,
-                                        nombre_comercial=comercial,
-                                        provincia=provincia,
-                                        municipio=municipio,
-                                        poblacion=poblacion,
-                                        nuevos_puntos=len(nuevos_para_asignar)
+                                        nombre_comercial="ADMINISTRACIÓN",
+                                        total_nuevos=total_registros,
+                                        poblaciones_nuevas="Se han cargado nuevos datos en el sistema."
                                     )
-                                    st.write(
-                                        f"📧 Notificación enviada a administrador ({email_admin}) por nuevos puntos en zona existente")
+                                    st.write(f"📧 Notificación enviada a administrador ({email_admin})")
                                 except Exception as e:
                                     st.error(f"❌ Error enviando correo a admin ({email_admin}): {e}")
-
-                    conn.commit()
-
-                    # Comparar apartment_id nuevos
-                    apt_antiguos = set(df_antiguos['apartment_id'].unique())
-                    apt_nuevos = set(data_filtrada['apartment_id'].unique())
-                    nuevos_apartment_id = apt_nuevos - apt_antiguos
-                    df_nuevos_filtrados = data_filtrada[data_filtrada['apartment_id'].isin(nuevos_apartment_id)]
-                    try:
-                        df_nuevos_filtrados["comercial"] = df_nuevos_filtrados["comercial"].astype(str)
-                        df_nuevos_filtrados["poblacion"] = df_nuevos_filtrados["poblacion"].astype(str)
-
-                        resumen = df_nuevos_filtrados.groupby('comercial').agg(
-                            total_nuevos=('apartment_id', 'count'),
-                            poblaciones_nuevas=('poblacion', lambda x: ', '.join(sorted(x.dropna().unique())))
-                        ).reset_index()
                     except Exception as e:
-                        st.warning(f"⚠️ Error generando resumen de nuevos datos: {e}")
-                        resumen = pd.DataFrame()
-
-                    for _, row in resumen.iterrows():
-                        comercial = str(row["comercial"]).strip()
-                        total_nuevos = row["total_nuevos"]
-                        poblaciones_nuevas = row["poblaciones_nuevas"]
-
-                        # Normalizamos a minúsculas para comparar con usuarios.username
-                        comercial_normalizado = comercial.lower()
-
-                        cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial_normalizado,))
-                        resultado = cursor.fetchone()
-
-                        if resultado:
-                            email = resultado[0]
-                            try:
-                                correo_nuevas_zonas_comercial(
-                                    destinatario=email,
-                                    nombre_comercial=comercial,
-                                    total_nuevos=total_nuevos,
-                                    poblaciones_nuevas=poblaciones_nuevas
-                                )
-                                st.write(f"📧 Notificación enviada a {comercial} ({email})")
-                            except Exception as e:
-                                st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
-                        else:
-                            st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
-
-                    # 🔹 Notificar también a los administradores
-                    cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
-                    admins = [fila[0] for fila in cursor.fetchall()]
-
-                    for email_admin in admins:
-                        try:
-                            correo_nuevas_zonas_comercial(
-                                destinatario=email_admin,
-                                nombre_comercial="ADMINISTRACIÓN",
-                                total_nuevos=total_registros,
-                                poblaciones_nuevas="Se han cargado nuevos datos en el sistema."
-                            )
-                            st.write(f"📧 Notificación enviada a administrador ({email_admin})")
-                        except Exception as e:
-                            st.error(f"❌ Error enviando correo a admin ({email_admin}): {e}")
-            except Exception as e:
-                st.error(f"❌ Error al cargar el archivo: {e}")
+                        st.error(f"❌ Error al cargar el archivo: {e}")
 
 
     # Opción: Trazabilidad y logs
