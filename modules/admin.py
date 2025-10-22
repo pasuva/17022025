@@ -1205,7 +1205,7 @@ def viabilidades_seccion():
 
         viabilidades = obtener_viabilidades()
         for v in viabilidades:
-            lat, lon, ticket, serviciable, apartment_id = v
+            lat, lon, ticket, serviciable, apartment_id, direccion_id = v
 
             # Determinar el color del marcador según las condiciones
             if serviciable is not None and str(serviciable).strip() != "":
@@ -2074,23 +2074,8 @@ def admin_dashboard():
                         # 1. Cargar datos desde Google Sheets
                         df = cargar_contratos_google()
 
-                        # Debug prints
-                        #st.write("🔍 Columnas cargadas:", df.columns.tolist())
-                        #st.write("🔍 Primeras filas:", df.head())
-
                         # Normalizar nombres de columnas INMEDIATAMENTE
                         df.columns = df.columns.map(lambda x: str(x).strip().lower() if x is not None else "")
-                        #st.write("🔍 Columnas después de normalizar:", df.columns.tolist())
-
-                        # Verificar si existen las columnas divisor, puerto y fecha_fin_contrato
-                        #columnas_verificar = ['divisor', 'puerto', 'fecha_fin_contrato']
-                        #for col in columnas_verificar:
-                        #    if col not in df.columns:
-                        #        st.warning(f"⚠️ Columna '{col}' no encontrada en los datos")
-                        #    else:
-                        #        st.info(f"✅ Columna '{col}' encontrada, valores no nulos: {df[col].notna().sum()}")
-
-                        #st.success(f"✅ Datos cargados desde Google. Total filas: {len(df)}")
 
                         # 2. Guardar en la base de datos
                         conn = obtener_conexion()
@@ -2187,11 +2172,6 @@ def admin_dashboard():
                             WHERE fecha_fin_contrato IS NOT NULL OR divisor IS NOT NULL OR puerto IS NOT NULL
                             LIMIT 5
                         """)
-                        ejemplos = cur.fetchall()
-                        #if ejemplos:
-                        #    st.write("🔍 Ejemplos de registros con fecha_fin_contrato, divisor o puerto:")
-                        #    for ej in ejemplos:
-                        #        st.write(f"   - {ej}")
 
                         # 5. Actualizar datos_uis (solo si hay datos)
                         if stats[0] > 0:
