@@ -538,10 +538,15 @@ def mostrar_mapa_de_asignaciones():
                 if zona_seleccionada:
                     municipio_sel, poblacion_sel = zona_seleccionada.split(" - ")
 
+                    municipio_sel = municipio_sel.strip()
+                    poblacion_sel = poblacion_sel.strip()
+
                     conn = get_db_connection()
                     query = """
-                        SELECT DISTINCT comercial FROM comercial_rafa 
-                        WHERE municipio = ? AND poblacion = ?
+                        SELECT DISTINCT comercial 
+                        FROM comercial_rafa 
+                        WHERE LOWER(TRIM(municipio)) = LOWER(TRIM(?))
+                          AND LOWER(TRIM(poblacion)) = LOWER(TRIM(?))
                     """
                     comerciales_asignados = pd.read_sql(query, conn, params=(municipio_sel, poblacion_sel))
                     conn.close()
@@ -1763,14 +1768,17 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
                 ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz"]
             )
         ].copy()
-
-        viabilidades_filtradas['fecha_viabilidad'] = pd.to_datetime(viabilidades_filtradas['fecha_viabilidad'],
-                                                                    errors='coerce')
+        viabilidades_filtradas['fecha_viabilidad'] = pd.to_datetime(
+            viabilidades_filtradas['fecha_viabilidad'], errors='coerce'
+        )
     else:
         datos_filtrados = datos_uis.copy()
         ofertas_filtradas = total_ofertas.copy()
         viabilidades_filtradas = viabilidades.copy()
 
+    # ---------------------------------------------------------------
+    # Función de descarga (sin tocar)
+    # ---------------------------------------------------------------
     def descargar_excel(dfs_dict, nombre_archivo):
         for sheet_name, df in dfs_dict.items():
             if not isinstance(df, pd.DataFrame):
@@ -1794,10 +1802,28 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+    # ---------------------------------------------------------------
     # Lógica de descarga según la selección
+    # ---------------------------------------------------------------
     if dataset_opcion == "Datos":
         log_trazabilidad(username, "Descarga de datos", "Usuario descargó los datos.")
-        descargar_excel({"Datos Gestor": datos_filtrados}, nombre_archivo_final)
+
+        # ✅ Consulta directa a la base de datos para traer 'cto'
+        try:
+            conn = get_db_connection()
+            query = "SELECT * FROM datos_uis;"
+            df_db = pd.read_sql_query(query, conn)
+            conn.close()
+
+            # Aplica los mismos filtros de arriba si es necesario
+            if username == "juan":
+                df_db = df_db[df_db['provincia'].str.strip().str.lower().isin(["lugo", "asturias"])]
+
+            # Exportar el DataFrame directamente (ya incluye CTO)
+            descargar_excel({"Datos Gestor": df_db}, nombre_archivo_final)
+
+        except Exception as e:
+            st.error(f"❌ Error al obtener los datos de la base de datos: {e}")
 
     elif dataset_opcion == "Ofertas asignadas":
         log_trazabilidad(username, "Descarga de datos", "Usuario descargó ofertas asignadas.")
@@ -1814,6 +1840,7 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
             "Ofertas Asignadas": ofertas_filtradas,
             "Viabilidades": viabilidades_filtradas
         }, nombre_archivo_final)
+
 
 
 if __name__ == "__main__":
