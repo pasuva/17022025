@@ -1582,7 +1582,7 @@ def mostrar_formulario(click_data):
         colc1, colc2, colc3 = st.columns(3)
         with colc1: st.text_input("👤 Nombre Cliente", value=campos["nombre_cliente"], key="nombre_cliente_input")
         with colc2: st.text_input("📞 Teléfono", value=campos["telefono"], key="telefono_input")
-        with colc3: st.text_input("👤 Comercial", value=campos["usuario"], disabled=True, key="usuario_input")
+        with colc3: st.text_input("👤 Comercial", value=campos["usuario"], key="usuario_input")
 
         # --- FECHAS Y CTO ---
         colf1, colf2 = st.columns(2)
@@ -1671,7 +1671,7 @@ def mostrar_formulario(click_data):
                 st.session_state.latitud_input, st.session_state.longitud_input, st.session_state.provincia_input,
                 st.session_state.municipio_input, st.session_state.poblacion_input, st.session_state.vial_input,
                 st.session_state.numero_input, st.session_state.letra_input, st.session_state.cp_input,
-                st.session_state.comentario_input, st.session_state.cto_cercana_input, map_olt[st.session_state.olt_input],
+                st.session_state.comentario_input, st.session_state.cto_cercana_input, st.session_state.olt_input,
                 st.session_state.cto_admin_input, st.session_state.id_cto_input, st.session_state.municipio_admin_input,
                 st.session_state.serviciable_input, st.session_state.coste_input, st.session_state.comentarios_comercial_input,
                 st.session_state.comentarios_internos_input, st.session_state.fecha_viabilidad_input,
