@@ -25,6 +25,35 @@ def get_db_connection():
         "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
     )
 
+# Añade esto al principio de tu script (si no lo tienes ya)
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def load_comercial_data(comercial):
+    conn = get_db_connection()
+
+    if comercial in ["nestor", "roberto"]:
+        query = """
+            SELECT apartment_id, latitud, longitud, comercial, serviciable 
+            FROM comercial_rafa 
+            WHERE LOWER(comercial) IN ('nestor', 'roberto')
+        """
+        df = pd.read_sql(query, conn)
+    else:
+        query = """
+            SELECT apartment_id, latitud, longitud, comercial, serviciable 
+            FROM comercial_rafa 
+            WHERE LOWER(comercial) = LOWER(?)
+        """
+        df = pd.read_sql(query, conn, params=(comercial,))
+
+        query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
+    ofertas_df = pd.read_sql(query_ofertas, conn)
+
+    query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(serviciable) = 'sí'"
+    ams_df = pd.read_sql(query_ams, conn)
+    conn.close()
+
+    return df, ofertas_df, ams_df
+
 def log_trazabilidad(usuario, accion, detalles):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -151,6 +180,8 @@ def mostrar_ultimo_anuncio():
 
     except Exception as e:
         st.warning(f"⚠️ No se pudo cargar el último anuncio: {e}")
+
+
 
 def comercial_dashboard():
     """Muestra el mapa y formulario de Ofertas Comerciales para el comercial logueado."""
@@ -287,177 +318,162 @@ def comercial_dashboard():
 
         log_trazabilidad(comercial, "Visualización de Dashboard", "El comercial visualizó la sección de Ofertas Comerciales.")
         mostrar_ultimo_anuncio()
-        with st.spinner("⏳ Cargando los datos del comercial..."):
+
+        def create_optimized_map(df, lat, lon, ofertas_df, ams_df):
+            """Función optimizada para crear el mapa"""
+
+            # Pre-calcular datos fuera del bucle
+            serviciable_set = set(ams_df["apartment_id"])
+            contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
+
+            # Función para determinar color del marcador
+            def get_marker_color(row, contrato_dict, serviciable_set):
+                apartment_id = row['apartment_id']
+                serviciable_val = str(row.get("serviciable", "")).strip().lower()
+
+                if serviciable_val == "no":
+                    return 'red'
+                elif serviciable_val == "si":
+                    return 'green'
+                elif apartment_id in contrato_dict:
+                    contrato_val = contrato_dict[apartment_id].strip().lower()
+                    if contrato_val == "sí":
+                        return 'orange'
+                    elif contrato_val == "no interesado":
+                        return 'black'
+                return 'blue'
+
+            # Pre-calcular colores en lote
+            df['marker_color'] = df.apply(
+                lambda row: get_marker_color(row, contrato_dict, serviciable_set),
+                axis=1
+            )
+
+            # Agrupar coordenadas duplicadas para desplazamiento
+            df['offset_index'] = df.groupby(['latitud', 'longitud']).cumcount()
+
+            # Crear mapa
+            m = folium.Map(
+                location=[lat, lon],
+                zoom_start=12,
+                max_zoom=21,
+                tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+                attr="Google"
+            )
+
+            Geocoder().add_to(m)
+
+            # MarkerCluster optimizado
+            cluster_layer = MarkerCluster(
+                maxClusterRadius=40,
+                disableClusteringAtZoom=17,
+                chunkedLoading=True,
+                chunkInterval=100
+            ).add_to(m)
+
+            # Crear marcadores de forma eficiente
+            for _, row in df.iterrows():
+                lat_offset = row['offset_index'] * 0.00003
+                lon_offset = row['offset_index'] * -0.00003
+
+                folium.Marker(
+                    location=[row['latitud'] + lat_offset, row['longitud'] + lon_offset],
+                    popup=f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}",
+                    icon=folium.Icon(color=row['marker_color'])
+                ).add_to(cluster_layer)
+
+            # Leyenda optimizada
+            legend_html = '''
+            <div style="
+                position: fixed; 
+                bottom: 10px; 
+                left: 10px; 
+                width: 190px; 
+                z-index: 1000; 
+                font-size: 14px;
+                background-color: white;
+                color: black;
+                border: 2px solid grey;
+                border-radius: 8px;
+                padding: 10px;
+                box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+            ">
+            <b>Leyenda</b><br>
+            <i style="color:green;">●</i> Serviciable y Finalizado<br>
+            <i style="color:red;">●</i> No serviciable<br>
+            <i style="color:orange;">●</i> Contrato Sí<br>
+            <i style="color:black;">●</i> No interesado<br>
+            <i style="color:purple;">●</i> Incidencia<br>
+            <i style="color:blue;">●</i> No Visitado<br>
+            </div>
+            '''
+
+            m.get_root().html.add_child(folium.Element(legend_html))
+
+            return m
+
+        # --- CÓDIGO PRINCIPAL OPTIMIZADO ---
+        with st.spinner("⏳ Cargando datos optimizados..."):
             try:
+                comercial = st.session_state.get("username", "").lower()
+
+                # Verificar si la tabla existe primero
                 conn = get_db_connection()
                 query_tables = "SELECT name FROM sqlite_master WHERE type='table';"
                 tables = pd.read_sql(query_tables, conn)
+                conn.close()
 
                 if 'comercial_rafa' not in tables['name'].values:
                     st.error("❌ La tabla 'comercial_rafa' no se encuentra en la base de datos.")
-                    conn.close()
-                    return
+                    st.stop()
 
-                # --- AQUÍ reemplaza tu query y df por esto ---
-                # Normalizamos a minúsculas para comparar
-                comercial = st.session_state.get("username", "").lower()
-
-                if comercial in ["nestor", "roberto"]:
-                    # Ambos ven lo de los dos
-                    query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) IN ('nestor', 'roberto')"
-                    df = pd.read_sql(query, conn)
-                else:
-                    # Solo ve sus propios registros
-                    query = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
-                    df = pd.read_sql(query, conn, params=(comercial,))
-                # --- FIN del cambio ---
-
-                query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
-                ofertas_df = pd.read_sql(query_ofertas, conn)
-
-                query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(serviciable) = 'sí'"
-                ams_df = pd.read_sql(query_ams, conn)
-                conn.close()
+                # Cargar datos con caché
+                df, ofertas_df, ams_df = load_comercial_data(comercial)
 
                 if df.empty:
                     st.warning("⚠️ No hay datos asignados a este comercial.")
-                    return
+                    st.stop()
+
+                # Validar columnas esenciales
+                essential_cols = ['latitud', 'longitud', 'apartment_id']
+                missing_cols = [col for col in essential_cols if col not in df.columns]
+                if missing_cols:
+                    st.error(f"❌ Faltan columnas: {missing_cols}")
+                    st.stop()
+
             except Exception as e:
-                st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
-                return
+                st.error(f"❌ Error al cargar los datos: {e}")
+                st.stop()
 
-        if not isinstance(df, pd.DataFrame):
-            st.error("❌ Los datos no se cargaron correctamente.")
-            return
-
-        for col in ['latitud', 'longitud', 'apartment_id']:
-            if col not in df.columns:
-                st.error(f"❌ No se encuentra la columna '{col}'.")
-                return
-
+        # Inicializar clicks si no existe
         if "clicks" not in st.session_state:
             st.session_state.clicks = []
 
-        location = get_user_location()
-        if "ultima_lat" in st.session_state and "ultima_lon" in st.session_state:
-            # Usar la última ubicación guardada
-            lat, lon = st.session_state["ultima_lat"], st.session_state["ultima_lon"]
-        elif location is None:
-            st.warning("❌ No se pudo obtener la ubicación. Cargando el mapa en la ubicación predeterminada.")
-            lat, lon = 43.463444, -3.790476
-        else:
+        # Obtener ubicación
+        with st.spinner("📡 Obteniendo tu ubicación..."):
+            location = get_user_location()
+
+        if location:
             lat, lon = location
+            st.success(f"✅ Ubicación obtenida: {lat:.6f}, {lon:.6f}")
+        else:
+            st.warning("⚠️ No se pudo obtener la ubicación automática.")
+            # Usar última ubicación o ubicación por defecto
+            if "ultima_lat" in st.session_state and "ultima_lon" in st.session_state:
+                lat, lon = st.session_state["ultima_lat"], st.session_state["ultima_lon"]
+            else:
+                lat, lon = 43.463444, -3.790476
 
-        # Construir conjuntos y diccionarios para el estado de cada apartamento
-        serviciable_set = set(ams_df["apartment_id"])
-        contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
+        # Crear y mostrar mapa optimizado
+        with st.spinner("🗺️ Generando mapa optimizado..."):
+            m = create_optimized_map(df, lat, lon, ofertas_df, ams_df)
+            map_data = st_folium(m, height=680, width="100%", key="optimized_map")
 
-        with st.spinner("⏳ Cargando datos..."):
-            try:
-                conn = get_db_connection()
-                # Consulta para obtener apartamentos no servicibles
-                query_serviciable = "SELECT apartment_id FROM comercial_rafa WHERE LOWER(serviciable) = 'no'"
-                serviciable_no_df = pd.read_sql(query_serviciable, conn)
-
-                with st.spinner("⏳ Cargando mapa..."):
-                    m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
-                                   tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-                                   attr="Google")
-
-                    Geocoder().add_to(m)
-
-                    if m.options['zoom'] >= 15:  # Si el zoom es alto, desactivar clustering
-                        cluster_layer = m
-                    else:
-                        cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
-
-                    # Calcular cuántos apartamentos comparten las mismas coordenadas
-                    coord_counts = {}
-                    for _, row in df.iterrows():
-                        coord = (row['latitud'], row['longitud'])
-                        coord_counts[coord] = coord_counts.get(coord, 0) + 1
-
-                    for index, row in df.iterrows():
-                        popup_text = f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}"
-                        apartment_id = row['apartment_id']
-
-                        # Obtener estado de serviciable desde datos_uis (no desde comercial_rafa)
-                        serviciable_val = str(row.get("serviciable", "")).strip().lower()
-
-                        # Lógica para determinar el color del marcador
-                        if serviciable_val == "no":
-                            marker_color = 'red'  # 🔴 No Serviciable
-                        elif serviciable_val == "si":
-                            marker_color = 'green'  # 🟢 Serviciable
-                        elif apartment_id in contrato_dict:
-                            contrato_val = contrato_dict[apartment_id].strip().lower()
-                            if contrato_val == "sí":
-                                marker_color = 'orange'  # 🟠 Oferta (Contrato: Sí)
-                            elif contrato_val == "no interesado":
-                                marker_color = 'black'  # ⚫ Oferta (No Interesado)
-                            else:
-                                marker_color = 'blue'  # 🔵 Sin oferta ni contrato
-                        else:
-                            marker_color = 'blue'  # 🔵 Sin información
-
-                        # Aplicar desplazamiento si hay coordenadas duplicadas
-                        coord = (row['latitud'], row['longitud'])
-                        offset_factor = coord_counts[coord]
-                        if offset_factor > 1:
-                            lat_offset = offset_factor * 0.00003
-                            lon_offset = offset_factor * -0.00003
-                        else:
-                            lat_offset, lon_offset = 0, 0
-
-                        new_lat = row['latitud'] + lat_offset
-                        new_lon = row['longitud'] + lon_offset
-
-                        # Reducir el contador para el siguiente marcador con las mismas coordenadas
-                        coord_counts[coord] -= 1
-
-                        folium.Marker(
-                            location=[new_lat, new_lon],
-                            popup=popup_text,
-                            icon=folium.Icon(color=marker_color, icon=marker_icon_type)
-                        ).add_to(cluster_layer)
-
-                    legend = """
-                                {% macro html(this, kwargs) %}
-                                <div style="
-                                    position: fixed; 
-                                    bottom: 00px; left: 0px; width: 190px; 
-                                    z-index:9999; 
-                                    font-size:14px;
-                                    background-color: white;
-                                    color: black;
-                                    border:2px solid grey;
-                                    border-radius:8px;
-                                    padding: 10px;
-                                    box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-                                ">
-                                <b>Leyenda</b><br>
-                                <i style="color:green;">●</i> Serviciable y Finalizado<br>
-                                <i style="color:red;">●</i> No serviciable<br>
-                                <i style="color:orange;">●</i> Contrato Sí<br>
-                                <i style="color:black;">●</i> No interesado<br>
-                                <i style="color:purple;">●</i> Incidencia<br>
-                                <i style="color:blue;">●</i> No Visitado<br>
-                                </div>
-                                {% endmacro %}
-                                """
-
-                    macro = MacroElement()
-                    macro._template = Template(legend)
-                    m.get_root().add_child(macro)
-
-                    map_data = st_folium(m, height=680, width="100%")
-                conn.close()
-            except Exception as e:
-                st.error(f"❌ Error al cargar los datos: {e}")
-
+        # Manejar clicks en el mapa
         if map_data and "last_object_clicked" in map_data and map_data["last_object_clicked"]:
             st.session_state.clicks.append(map_data["last_object_clicked"])
 
+        # Mostrar enlace de Google Maps para el último click
         if st.session_state.clicks:
             last_click = st.session_state.clicks[-1]
             lat_click = last_click.get("lat", "")
@@ -484,8 +500,13 @@ def comercial_dashboard():
                     </div>
                 """, unsafe_allow_html=True)
 
+            # Mostrar formulario
             with st.spinner("⏳ Cargando formulario..."):
                 mostrar_formulario(last_click)
+
+        # Limpiar clicks antiguos para evitar acumulación excesiva
+        if len(st.session_state.clicks) > 50:
+            st.session_state.clicks = st.session_state.clicks[-20:]
 
     # Sección de Viabilidades
     elif menu_opcion == "Viabilidades":
@@ -959,28 +980,16 @@ def viabilidades_section():
                 st.rerun()
 
 
+from streamlit_javascript import st_javascript
+
 def get_user_location():
-    """Obtiene la ubicación del usuario a través de un componente de JavaScript y pasa la ubicación a Python."""
-    html_code = """
-        <script>
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(function(position) {
-                    var lat = position.coords.latitude;
-                    var lon = position.coords.longitude;
-                    window.parent.postMessage({lat: lat, lon: lon}, "*");
-                }, function() {
-                    alert("No se pudo obtener la ubicación del dispositivo.");
-                });
-            } else {
-                alert("Geolocalización no soportada por este navegador.");
-            }
-        </script>
-    """
-    components.html(html_code, height=0, width=0)
-    if "lat" in st.session_state and "lon" in st.session_state:
-        lat = st.session_state["lat"]
-        lon = st.session_state["lon"]
-        return lat, lon
+    result = st_javascript(
+        "await new Promise((resolve, reject) => "
+        "navigator.geolocation.getCurrentPosition(p => resolve({lat: p.coords.latitude, lon: p.coords.longitude}), "
+        "err => resolve(null)));"
+    )
+    if result and "lat" in result and "lon" in result:
+        return result["lat"], result["lon"]
     return None
 
 def validar_email(email):

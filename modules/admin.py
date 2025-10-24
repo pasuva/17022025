@@ -2816,14 +2816,14 @@ def admin_dashboard():
                 '>
                     <h4 style='color:#1e3d59;'>🧩 Cargar Archivos TIRC</h4>
                     <p style='color:#333;'>
-                        Arrastra o selecciona uno o varios archivos <b>CSV</b> con los datos TIRC actualizados.
+                        Arrastra o selecciona uno o varios archivos <b>Excel (.xlsx o .xls)</b> con los datos TIRC actualizados.
                     </p>
                 </div>
             """, unsafe_allow_html=True)
 
             uploaded_tirc_files = st.file_uploader(
-                "Selecciona uno o varios CSV para la tabla TIRC",
-                type=["csv"],
+                "Selecciona uno o varios Excel para la tabla TIRC",
+                type=["xlsx", "xls"],
                 key="upload_tirc",
                 accept_multiple_files=True,
                 label_visibility="collapsed"
@@ -2832,6 +2832,7 @@ def admin_dashboard():
             if uploaded_tirc_files:
                 conn = obtener_conexion()
                 cursor = conn.cursor()
+
                 columnas_tirc = [
                     "id", "apartment_id", "address_id", "provincia", "municipio", "poblacion", "street_id",
                     "tipo_vial", "vial", "parcela_catastral", "tipo", "numero", "bis", "bloque", "portal_puerta",
@@ -2847,13 +2848,21 @@ def admin_dashboard():
                 for uploaded_tirc in uploaded_tirc_files:
                     try:
                         with st.spinner(f"⏳ Procesando {uploaded_tirc.name}..."):
-                            df_tirc = pd.read_csv(uploaded_tirc, dtype=str)
+                            # Leer Excel con pandas
+                            df_tirc = pd.read_excel(uploaded_tirc, dtype=str)
+
+                            # Normalizar encabezados (quitar espacios, mayúsculas, etc.)
+                            df_tirc.columns = [c.strip() for c in df_tirc.columns]
+
+                            # Verificar columnas faltantes
                             faltantes = [c for c in columnas_tirc if c not in df_tirc.columns]
                             if faltantes:
                                 st.error(f"❌ {uploaded_tirc.name}: faltan columnas: {', '.join(faltantes)}")
                                 continue
 
+                            # Ordenar columnas según estructura esperada
                             df_tirc = df_tirc[columnas_tirc].fillna("")
+
                             data_values = df_tirc.values.tolist()
 
                             insert_query = f"""
@@ -2867,6 +2876,7 @@ def admin_dashboard():
                             conn.commit()
 
                             st.success(f"✅ {uploaded_tirc.name}: {len(df_tirc)} registros insertados/actualizados.")
+
                             log_trazabilidad(
                                 st.session_state["username"],
                                 "Carga TIRC incremental",
