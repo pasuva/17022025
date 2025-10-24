@@ -1449,6 +1449,13 @@ def guardar_viabilidad(datos):
     resultados = cursor.fetchall()
     emails_admin = [fila[0] for fila in resultados]
 
+    # Obtener email del comercial seleccionado
+    comercial_email = None
+    cursor.execute("SELECT email FROM usuarios WHERE username = ?", (datos[13],))
+    fila = cursor.fetchone()
+    if fila:
+        comercial_email = fila[0]
+
     conn.close()
 
     # Información de la viabilidad
@@ -1484,6 +1491,14 @@ def guardar_viabilidad(datos):
         )
     else:
         st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
+
+    # Enviar notificación al comercial seleccionado
+    if comercial_email:
+        correo_viabilidad_comercial(comercial_email, ticket_id, descripcion_viabilidad)
+        st.info(
+            f"📧 Se ha enviado una notificación al comercial responsable: {nombre_comercial} ({comercial_email})")
+    else:
+        st.warning(f"⚠️ No se pudo encontrar el email del comercial {nombre_comercial}.")
 
     # Mostrar mensaje de éxito en Streamlit
     st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
@@ -1606,14 +1621,23 @@ def mostrar_formulario(click_data):
         with col16: st.text_input("🔧 ID CTO", value=campos["id_cto"], key="id_cto_input")
 
         # --- ESTADO Y VIABILIDAD ---
-        col17, col18, col19 = st.columns([1, 1, 1])
+        col17, col18, col19, col20 = st.columns([1, 1, 1,1])
         with col17:
             st.selectbox("🔍 Serviciable", ["Sí", "No"],
                          index=0 if campos["serviciable"] == "Sí" else 1,
                          key="serviciable_input")
         with col18:
-            st.number_input("💰 Coste", value=float(campos["coste"]), step=0.01, key="coste_input")
+            coste_sin_iva = st.number_input(
+                "💰 Coste (sin IVA)",
+                value=float(campos["coste"]),
+                step=0.01,
+                key="coste_input"
+            )
+            # Calcular automáticamente el coste con IVA
+            coste_con_iva = round(coste_sin_iva * 1.21, 2)
         with col19:
+            st.text_input("💰 Coste con IVA 21%", value=f"{coste_con_iva:.2f}", disabled=True, key="coste_iva_input")
+        with col20:
             st.text_input("📤 Presupuesto Enviado", value=campos["presupuesto_enviado"], key="presupuesto_enviado_input")
 
         # --- COMENTARIOS ---
@@ -1884,16 +1908,42 @@ def admin_dashboard():
                     data_uis = pd.read_sql("SELECT * FROM datos_uis", conn)
                     data_uis["origen"] = "UIS"
 
-                    # --- Cargar viabilidades (EXCLUYENDO 'estado' ya que no nos interesa) ---
+                    # --- Cargar viabilidades ---
                     if 'viabilidades' in tablas_disponibles:
                         data_via = pd.read_sql(
                             "SELECT id, latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, "
                             "cto_cercana, olt, cto_admin, id_cto, municipio_admin, serviciable, coste, comentarios_comercial, "
                             "comentarios_internos, fecha_viabilidad, ticket, apartment_id, nombre_cliente, telefono, usuario, "
                             "direccion_id, confirmacion_rafa, zona_estudio, Presupuesto_enviado, nuevapromocion, resultado, "
-                            "justificacion, contratos, respuesta_comercial, comentarios_gestor "  # <- EXCLUIMOS estado
+                            "justificacion, contratos, respuesta_comercial, comentarios_gestor "
                             "FROM viabilidades", conn)
                         data_via["origen"] = "Viabilidad"
+
+                        # --- Expandir filas por cada apartment_id ---
+                        data_via = data_via.assign(
+                            apartment_id=data_via['apartment_id'].str.split(',')
+                        ).explode('apartment_id')
+                        data_via['apartment_id'] = data_via['apartment_id'].str.strip()
+
+                        # --- Cargar datos TIRC y hacer merge ---
+                        if 'TIRC' in tablas_disponibles:
+                            data_tirc = pd.read_sql(
+                                "SELECT apartment_id, parcela_catastral, site_operational_state, apartment_operational_state "
+                                "FROM TIRC",
+                                conn
+                            )
+                            data_via = pd.merge(
+                                data_via,
+                                data_tirc,
+                                on='apartment_id',
+                                how='left'
+                            )
+
+                        # Asegurar que todas las columnas de TIRC existan
+                        for col in ['parcela_catastral', 'site_operational_state', 'apartment_operational_state']:
+                            if col not in data_via.columns:
+                                data_via[col] = None
+
                     else:
                         data_via = pd.DataFrame()
 
@@ -1915,7 +1965,7 @@ def admin_dashboard():
                     "cto_admin": "cto",
                     "id_cto": "cto_id",
                     "direccion_id": "address_id",
-                    "ticket": "id_ams",  # Renombramos ticket a id_ams para unificar
+                    "ticket": "id_ams",
                     "usuario": "comercial"
                 }
                 data_via = data_via.rename(columns=rename_map)
@@ -1926,7 +1976,6 @@ def admin_dashboard():
                         data_via[col] = None
 
             # --- UNIR CONTRATOS CON TODOS LOS DATOS (UIS + VIABILIDADES) ---
-            # Primero combinamos UIS y viabilidades
             if not data_via.empty:
                 data_combinada = pd.concat([data_uis, data_via], ignore_index=True)
             else:
@@ -1934,11 +1983,9 @@ def admin_dashboard():
 
             # Luego unimos con contratos usando apartment_id
             if not data_contratos.empty and "apartment_id" in data_combinada.columns:
-                # Verificar qué columnas existen realmente en data_contratos
                 columnas_deseadas = ['apartment_id', 'estado', 'fecha_instalacion',
                                      'fecha_fin_contrato', 'divisor', 'puerto']
 
-                # Añadir num_contrato si existe
                 if 'num_contrato' in data_contratos.columns:
                     columnas_deseadas.append('num_contrato')
 
@@ -1947,15 +1994,12 @@ def admin_dashboard():
                     if col in data_contratos.columns:
                         columnas_disponibles.append(col)
 
-                # Si hay columnas disponibles, hacemos el merge
                 if columnas_disponibles:
                     contratos_para_merge = data_contratos[columnas_disponibles].copy()
 
-                    # Renombrar num_contrato a contrato_uis si existe
                     if 'num_contrato' in contratos_para_merge.columns:
                         contratos_para_merge = contratos_para_merge.rename(columns={'num_contrato': 'contrato_uis'})
 
-                    # Hacer el merge con todos los datos
                     data_combinada = pd.merge(
                         data_combinada,
                         contratos_para_merge,
@@ -1964,12 +2008,10 @@ def admin_dashboard():
                         suffixes=('', '_contrato')
                     )
 
-                    # Si hay columnas duplicadas del merge, nos quedamos con las de contratos
                     for col in contratos_para_merge.columns:
                         if col == 'apartment_id':
                             continue
                         if f"{col}_contrato" in data_combinada.columns:
-                            # Si existe la versión con sufijo _contrato, es la de contratos, así que la renombramos
                             data_combinada[col] = data_combinada[f"{col}_contrato"]
                             data_combinada = data_combinada.drop(columns=[f"{col}_contrato"])
 
@@ -1994,6 +2036,20 @@ def admin_dashboard():
             if data_combinada.columns.duplicated().any():
                 data_combinada = data_combinada.loc[:, ~data_combinada.columns.duplicated()]
 
+            # --- DEPURACIÓN FINAL ---
+            columnas_tirc = ['parcela_catastral', 'site_operational_state', 'apartment_operational_state']
+            viabilidades_con_tirc = data_combinada[data_combinada['origen'] == 'Viabilidad']
+
+            for col in columnas_tirc:
+                if col in viabilidades_con_tirc.columns:
+                    no_vacios = viabilidades_con_tirc[col].notna() & (viabilidades_con_tirc[col] != '')
+
+            # Mostrar viabilidades que SÍ tienen datos TIRC
+            viabilidades_con_datos_tirc = viabilidades_con_tirc[
+                viabilidades_con_tirc[columnas_tirc].notna().any(axis=1) &
+                (viabilidades_con_tirc[columnas_tirc] != '').any(axis=1)
+                ]
+
             # --- Mostrar en AgGrid ---
             st.session_state["df"] = data_combinada
             columnas = data_combinada.columns.tolist()
@@ -2001,6 +2057,7 @@ def admin_dashboard():
             # Crear lista de columnas a mostrar (excluyendo 'id' y 'motivo')
             columnas_a_mostrar = [col for col in columnas if col not in ['id', 'motivo']]
 
+            # Inicializar GridOptions
             gb = GridOptionsBuilder.from_dataframe(data_combinada[columnas_a_mostrar])
             gb.configure_default_column(
                 filter=True,
@@ -2011,14 +2068,33 @@ def admin_dashboard():
                 flex=1
             )
 
-            # Ocultar columnas específicas en caso de que aún estén en la lista
-            columnas_a_ocultar = ['id', 'motivo', 'respuesta_comercial', 'comentarios_gestor', 'Presupuesto_enviado', 'justificacion', 'comentarios_comercial', 'comentarios_internos','comentario'
-                                  , 'contratos', 'zona_estudio', 'nombre_cliente', 'telefono', 'municipio_admin', 'nuevapromocion', 'resultado', 'confirmacion_rafa ', 'CERTIFICABLE', 'zona']
+            # Columnas a ocultar
+            columnas_a_ocultar = [
+                'id', 'motivo', 'respuesta_comercial', 'comentarios_gestor',
+                'Presupuesto_enviado', 'justificacion', 'comentarios_comercial',
+                'comentarios_internos', 'comentario', 'contratos', 'zona_estudio',
+                'nombre_cliente', 'telefono', 'municipio_admin', 'nuevapromocion',
+                'resultado', 'confirmacion_rafa ', 'CERTIFICABLE', 'zona'
+            ]
+
             for col in columnas_a_ocultar:
                 if col in columnas_a_mostrar:
                     gb.configure_column(col, hide=True)
 
+            # Configurar columnas de TIRC
+            columnas_tirc = ['parcela_catastral', 'site_operational_state', 'apartment_operational_state']
+            for col in columnas_tirc:
+                if col in columnas_a_mostrar:
+                    gb.configure_column(
+                        col,
+                        minWidth=180,
+                        flex=1,
+                        hide=False,
+                        pinned=False
+                    )
+
             gridOptions = gb.build()
+            gridOptions['suppressColumnVirtualisation'] = True
 
             AgGrid(
                 data_combinada[columnas_a_mostrar],
@@ -2026,7 +2102,7 @@ def admin_dashboard():
                 enable_enterprise_modules=True,
                 update_mode=GridUpdateMode.NO_UPDATE,
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                fit_columns_on_grid_load=True,
+                fit_columns_on_grid_load=False,
                 height=550,
                 theme='alpine-dark'
             )
@@ -2372,7 +2448,11 @@ def admin_dashboard():
                 imagen_url = oferta_seleccionada.iloc[0]["fichero_imagen"]
 
                 if pd.notna(imagen_url) and imagen_url.strip() != "":
-                    st.image(imagen_url, caption=f"Imagen de la oferta {seleccion_id}", use_column_width=True)
+                    st.image(
+                        imagen_url,
+                        caption=f"Imagen de la oferta {seleccion_id}",
+                        use_container_width=True  # <-- aquí se actualizó
+                    )
                 else:
                     st.warning("❌ Esta oferta no tiene una imagen asociada.")
 
