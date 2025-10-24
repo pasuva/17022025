@@ -2842,7 +2842,7 @@ def admin_dashboard():
                     "apartment_sales_area", "apartment_dummy", "apartment_operational_state",
                     "apartment_created_at", "apartment_activation_date", "cto_id", "OLT", "CTO",
                     "FECHA PRIMERA ACTIVACION", "ESTADO", "SINCRONISMO", "TIPO CTO", "CT", "ID TIRC",
-                    "FECHA REVISION", "PROYECTO", "POBLACIÓN CORREGIDA"
+                    "FECHA REVISION", "PROYECTO", "POBLACION CORREGIDA"
                 ]
 
                 for uploaded_tirc in uploaded_tirc_files:
