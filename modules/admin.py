@@ -1515,8 +1515,15 @@ def obtener_viabilidades():
     conn.close()
     return viabilidades
 
+
 def mostrar_formulario(click_data):
     """Muestra el formulario para editar los datos de la viabilidad y guarda los cambios en la base de datos."""
+
+    # DEBUG: Verificar qué datos estamos recibiendo
+    st.sidebar.write("🔍 DATOS RECIBIDOS:")
+    st.sidebar.write(f"Ticket: {click_data.get('ticket', 'NO ENCONTRADO')}")
+    st.sidebar.write(f"Municipio: {click_data.get('municipio', 'NO ENCONTRADO')}")
+    st.sidebar.write(f"OLT: {click_data.get('olt', 'NO ENCONTRADO')}")
 
     # Obtener valores de la tabla OLT
     conn = obtener_conexion()
@@ -1527,7 +1534,6 @@ def mostrar_formulario(click_data):
 
     # Preparar opciones del selectbox: se mostrará "id_olt - nombre_olt"
     opciones_olt = [f"{olt[0]} - {olt[1]}" for olt in olts]
-    map_olt = {f"{olt[0]} - {olt[1]}": olt[0] for olt in olts}
 
     # Extraer los datos del registro seleccionado
     ticket = click_data["ticket"]
@@ -1571,107 +1577,181 @@ def mostrar_formulario(click_data):
         "comentarios_gestor": click_data.get("comentarios_gestor", "")
     }
 
-    with st.form(key="form_viabilidad"):
+    # 🔥 SOLUCIÓN: Usar un contador único para forzar la reconstrucción
+    if f"form_counter_{ticket}" not in st.session_state:
+        st.session_state[f"form_counter_{ticket}"] = 0
+    else:
+        st.session_state[f"form_counter_{ticket}"] += 1
+
+    form_key = f"form_viabilidad_{ticket}_{st.session_state[f'form_counter_{ticket}']}"
+
+    with st.form(key=form_key):
         st.subheader(f"✏️ Editar Viabilidad - Ticket {ticket}")
 
         # --- UBICACIÓN ---
         col1, col2, col3 = st.columns(3)
-        with col1: st.text_input("🎟️ Ticket", value=ticket, disabled=True, key="ticket_input")
-        with col2: st.text_input("📍 Latitud", value=campos["latitud"], key="latitud_input")
-        with col3: st.text_input("📍 Longitud", value=campos["longitud"], key="longitud_input")
+        with col1:
+            st.text_input("🎟️ Ticket", value=ticket, disabled=True,
+                          key=f"ticket_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col2:
+            st.text_input("📍 Latitud", value=campos["latitud"],
+                          key=f"latitud_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col3:
+            st.text_input("📍 Longitud", value=campos["longitud"],
+                          key=f"longitud_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         col4, col5, col6 = st.columns(3)
-        with col4: st.text_input("🏠 Provincia", value=campos["provincia"], key="provincia_input")
-        with col5: st.text_input("🏙️ Municipio", value=campos["municipio"], key="municipio_input")
-        with col6: st.text_input("👥 Población", value=campos["poblacion"], key="poblacion_input")
+        with col4:
+            st.text_input("🏠 Provincia", value=campos["provincia"],
+                          key=f"provincia_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col5:
+            st.text_input("🏙️ Municipio", value=campos["municipio"],
+                          key=f"municipio_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col6:
+            st.text_input("👥 Población", value=campos["poblacion"],
+                          key=f"poblacion_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         col7, col8, col9, col10 = st.columns([2, 1, 1, 1])
-        with col7: st.text_input("🚦 Vial", value=campos["vial"], key="vial_input")
-        with col8: st.text_input("🔢 Número", value=campos["numero"], key="numero_input")
-        with col9: st.text_input("🔠 Letra", value=campos["letra"], key="letra_input")
-        with col10: st.text_input("📮 Código Postal", value=campos["cp"], key="cp_input")
+        with col7:
+            st.text_input("🚦 Vial", value=campos["vial"],
+                          key=f"vial_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col8:
+            st.text_input("🔢 Número", value=campos["numero"],
+                          key=f"numero_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col9:
+            st.text_input("🔠 Letra", value=campos["letra"],
+                          key=f"letra_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col10:
+            st.text_input("📮 Código Postal", value=campos["cp"],
+                          key=f"cp_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
-        st.text_area("💬 Comentarios", value=campos["comentario"], key="comentario_input")
+        st.text_area("💬 Comentarios", value=campos["comentario"],
+                     key=f"comentario_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         # --- CONTACTO ---
         colc1, colc2, colc3 = st.columns(3)
-        with colc1: st.text_input("👤 Nombre Cliente", value=campos["nombre_cliente"], key="nombre_cliente_input")
-        with colc2: st.text_input("📞 Teléfono", value=campos["telefono"], key="telefono_input")
-        with colc3: st.text_input("👤 Comercial", value=campos["usuario"], key="usuario_input")
+        with colc1:
+            st.text_input("👤 Nombre Cliente", value=campos["nombre_cliente"],
+                          key=f"nombre_cliente_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with colc2:
+            st.text_input("📞 Teléfono", value=campos["telefono"],
+                          key=f"telefono_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with colc3:
+            st.text_input("👤 Comercial", value=campos["usuario"],
+                          key=f"usuario_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         # --- FECHAS Y CTO ---
         colf1, colf2 = st.columns(2)
-        with colf1: st.text_input("📅 Fecha Viabilidad", value=campos["fecha_viabilidad"], disabled=True, key="fecha_viabilidad_input")
-        with colf2: st.text_input("🔌 CTO Cercana", value=campos["cto_cercana"], key="cto_cercana_input")
+        with colf1:
+            st.text_input("📅 Fecha Viabilidad", value=campos["fecha_viabilidad"], disabled=True,
+                          key=f"fecha_viabilidad_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with colf2:
+            st.text_input("🔌 CTO Cercana", value=campos["cto_cercana"],
+                          key=f"cto_cercana_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         # --- APARTAMENTO / DIRECCIÓN / OLT ---
         col11, col12, col13 = st.columns(3)
         with col11:
-            apartment_id_input = st.text_area("🏠 Apartment IDs", value=campos["apartment_id"], key="apartment_id_input")
+            st.text_area("🏠 Apartment IDs", value=campos["apartment_id"],
+                         key=f"apartment_id_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col12:
-            st.text_input("📍 Dirección ID", value=campos["direccion_id"], key="direccion_id_input")
+            st.text_input("📍 Dirección ID", value=campos["direccion_id"],
+                          key=f"direccion_id_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col13:
-            default_olt = next((op for op in opciones_olt if op.startswith(f"{campos['olt']} -")), opciones_olt[0])
-            st.selectbox("⚡ OLT", opciones_olt, index=opciones_olt.index(default_olt), key="olt_input")
+            # Lógica para OLT - mantener formato "número - nombre"
+            olt_guardado = str(campos["olt"]) if campos["olt"] else ""
+            indice_default = 0
+
+            if olt_guardado:
+                for i, opcion in enumerate(opciones_olt):
+                    if opcion.startswith(f"{olt_guardado} -"):
+                        indice_default = i
+                        break
+
+            st.selectbox("⚡ OLT", opciones_olt, index=indice_default,
+                         key=f"olt_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         # --- ADMINISTRACIÓN CTO ---
         col14, col15, col16 = st.columns(3)
-        with col14: st.text_input("⚙️ CTO Admin", value=campos["cto_admin"], key="cto_admin_input")
-        with col15: st.text_input("🌍 Municipio Admin", value=campos["municipio_admin"], key="municipio_admin_input")
-        with col16: st.text_input("🔧 ID CTO", value=campos["id_cto"], key="id_cto_input")
+        with col14:
+            st.text_input("⚙️ CTO Admin", value=campos["cto_admin"],
+                          key=f"cto_admin_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col15:
+            st.text_input("🌍 Municipio Admin", value=campos["municipio_admin"],
+                          key=f"municipio_admin_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        with col16:
+            st.text_input("🔧 ID CTO", value=campos["id_cto"],
+                          key=f"id_cto_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         # --- ESTADO Y VIABILIDAD ---
-        col17, col18, col19, col20 = st.columns([1, 1, 1,1])
+        col17, col18, col19, col20 = st.columns([1, 1, 1, 1])
         with col17:
+            serviciable_index = 0 if str(campos["serviciable"]).upper() in ["SÍ", "SI", "S", "YES", "TRUE", "1"] else 1
             st.selectbox("🔍 Serviciable", ["Sí", "No"],
-                         index=0 if campos["serviciable"] == "Sí" else 1,
-                         key="serviciable_input")
+                         index=serviciable_index,
+                         key=f"serviciable_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col18:
-            coste_sin_iva = st.number_input(
+            coste_valor = float(campos["coste"]) if campos["coste"] else 0.0
+            st.number_input(
                 "💰 Coste (sin IVA)",
-                value=float(campos["coste"]),
+                value=coste_valor,
                 step=0.01,
-                key="coste_input"
+                key=f"coste_{ticket}_{st.session_state[f'form_counter_{ticket}']}"
             )
-            # Calcular automáticamente el coste con IVA
-            coste_con_iva = round(coste_sin_iva * 1.21, 2)
         with col19:
-            st.text_input("💰 Coste con IVA 21%", value=f"{coste_con_iva:.2f}", disabled=True, key="coste_iva_input")
+            coste_con_iva = round(coste_valor * 1.21, 2)
+            st.text_input("💰 Coste con IVA 21%", value=f"{coste_con_iva:.2f}", disabled=True,
+                          key=f"coste_iva_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col20:
-            st.text_input("📤 Presupuesto Enviado", value=campos["presupuesto_enviado"], key="presupuesto_enviado_input")
+            st.text_input("📤 Presupuesto Enviado", value=campos["presupuesto_enviado"],
+                          key=f"presupuesto_enviado_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         # --- COMENTARIOS ---
-        st.text_area("📝 Comentarios Comerciales", value=campos["comentarios_comercial"], key="comentarios_comercial_input")
-        st.text_area("📄 Comentarios Internos", value=campos["comentarios_internos"], key="comentarios_internos_input")
-        st.text_area("🗒️ Comentarios Gestor", value=campos["comentarios_gestor"], key="comentarios_gestor_input")
+        st.text_area("📝 Comentarios Comerciales", value=campos["comentarios_comercial"],
+                     key=f"comentarios_comercial_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        st.text_area("📄 Comentarios Internos", value=campos["comentarios_internos"],
+                     key=f"comentarios_internos_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        st.text_area("🗒️ Comentarios Gestor", value=campos["comentarios_gestor"],
+                     key=f"comentarios_gestor_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         # --- OTROS CAMPOS ---
         col20, col21, col22 = st.columns(3)
         with col20:
-            st.text_input("📍 Confirmación Rafa", value=campos["confirmacion_rafa"], key="confirmacion_rafa_input")
+            st.text_input("📍 Confirmación Rafa", value=campos["confirmacion_rafa"],
+                          key=f"confirmacion_rafa_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col21:
-            st.text_input("🗺️ Zona de Estudio", value=campos["zona_estudio"], key="zona_estudio_input")
+            st.text_input("🗺️ Zona de Estudio", value=campos["zona_estudio"],
+                          key=f"zona_estudio_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col22:
-            st.text_input("📌 Estado", value=campos["estado"], key="estado_input")
+            st.text_input("📌 Estado", value=campos["estado"],
+                          key=f"estado_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         col23, col24, col25 = st.columns(3)
         with col23:
+            nueva_promocion_index = 0 if str(campos["nuevapromocion"]).upper() == "SI" else 1
             st.selectbox("🏗️ Nueva Promoción", ["SI", "NO"],
-                         index=0 if campos["nuevapromocion"] == "SI" else 1,
-                         key="nueva_promocion_input")
+                         index=nueva_promocion_index,
+                         key=f"nueva_promocion_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col24:
-            st.selectbox("✅ Resultado",
-                         ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"],
-                         index=["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"].index(campos["resultado"]) if campos["resultado"] in ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"] else 0,
-                         key="resultado_input")
+            opciones_resultado = ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"]
+            resultado_index = opciones_resultado.index(campos["resultado"]) if campos[
+                                                                                   "resultado"] in opciones_resultado else 0
+            st.selectbox("✅ Resultado", opciones_resultado,
+                         index=resultado_index,
+                         key=f"resultado_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
         with col25:
-            st.selectbox("📌 Justificación",
-                         ["SIN JUSTIFICACIÓN", "ZONA SUBVENCIONADA", "INVIABLE", "MAS PREVENTA", "RESERVADA WHL", "PDTE. RAFA FIN DE OBRA", "NO ES UNA VIABILIDAD"],
-                         index=0,
-                         key="justificacion_input")
+            opciones_justificacion = ["SIN JUSTIFICACIÓN", "ZONA SUBVENCIONADA", "INVIABLE", "MAS PREVENTA",
+                                      "RESERVADA WHL", "PDTE. RAFA FIN DE OBRA", "NO ES UNA VIABILIDAD"]
+            justificacion_index = opciones_justificacion.index(campos["justificacion"]) if campos[
+                                                                                               "justificacion"] in opciones_justificacion else 0
+            st.selectbox("📌 Justificación", opciones_justificacion,
+                         index=justificacion_index,
+                         key=f"justificacion_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
-        st.text_input("📑 Contratos", value=campos["contratos"], key="contratos_input")
-        st.text_input("📨 Respuesta Comercial", value=campos["respuesta_comercial"], key="respuesta_comercial_input")
+        st.text_input("📑 Contratos", value=campos["contratos"],
+                      key=f"contratos_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        st.text_input("📨 Respuesta Comercial", value=campos["respuesta_comercial"],
+                      key=f"respuesta_comercial_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
 
         submit = st.form_submit_button("💾 Guardar cambios")
 
@@ -1680,7 +1760,11 @@ def mostrar_formulario(click_data):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            apartment_id_clean = ",".join([aid.strip() for aid in st.session_state.apartment_id_input.split(",") if aid.strip()])
+            current_counter = st.session_state[f'form_counter_{ticket}']
+
+            apartment_id_clean = ",".join(
+                [aid.strip() for aid in st.session_state.get(f"apartment_id_{ticket}_{current_counter}", "").split(",")
+                 if aid.strip()])
 
             # Actualización completa
             cursor.execute("""
@@ -1692,24 +1776,48 @@ def mostrar_formulario(click_data):
                     resultado=?, justificacion=?, contratos=?, respuesta_comercial=?, comentarios_gestor=?
                 WHERE ticket=?
             """, (
-                st.session_state.latitud_input, st.session_state.longitud_input, st.session_state.provincia_input,
-                st.session_state.municipio_input, st.session_state.poblacion_input, st.session_state.vial_input,
-                st.session_state.numero_input, st.session_state.letra_input, st.session_state.cp_input,
-                st.session_state.comentario_input, st.session_state.cto_cercana_input, st.session_state.olt_input,
-                st.session_state.cto_admin_input, st.session_state.id_cto_input, st.session_state.municipio_admin_input,
-                st.session_state.serviciable_input, st.session_state.coste_input, st.session_state.comentarios_comercial_input,
-                st.session_state.comentarios_internos_input, st.session_state.fecha_viabilidad_input,
-                apartment_id_clean, st.session_state.nombre_cliente_input, st.session_state.telefono_input,
-                st.session_state.usuario_input, st.session_state.direccion_id_input, st.session_state.confirmacion_rafa_input,
-                st.session_state.zona_estudio_input, st.session_state.estado_input, st.session_state.presupuesto_enviado_input,
-                st.session_state.nueva_promocion_input, st.session_state.resultado_input, st.session_state.justificacion_input,
-                st.session_state.contratos_input, st.session_state.respuesta_comercial_input, st.session_state.comentarios_gestor_input,
+                st.session_state.get(f"latitud_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"longitud_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"provincia_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"municipio_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"poblacion_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"vial_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"numero_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"letra_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"cp_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"comentario_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"cto_cercana_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"olt_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"cto_admin_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"id_cto_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"municipio_admin_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"serviciable_{ticket}_{current_counter}", "Sí"),
+                st.session_state.get(f"coste_{ticket}_{current_counter}", 0.0),
+                st.session_state.get(f"comentarios_comercial_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"comentarios_internos_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"fecha_viabilidad_{ticket}_{current_counter}", ""),
+                apartment_id_clean,
+                st.session_state.get(f"nombre_cliente_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"telefono_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"usuario_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"direccion_id_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"confirmacion_rafa_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"zona_estudio_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"estado_{ticket}_{current_counter}", "Sin estado"),
+                st.session_state.get(f"presupuesto_enviado_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"nueva_promocion_{ticket}_{current_counter}", "NO"),
+                st.session_state.get(f"resultado_{ticket}_{current_counter}", "NO"),
+                st.session_state.get(f"justificacion_{ticket}_{current_counter}", "SIN JUSTIFICACIÓN"),
+                st.session_state.get(f"contratos_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"respuesta_comercial_{ticket}_{current_counter}", ""),
+                st.session_state.get(f"comentarios_gestor_{ticket}_{current_counter}", ""),
                 ticket
             ))
 
             conn.commit()
             conn.close()
             st.success(f"✅ Cambios guardados correctamente para el ticket {ticket}")
+            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Error al guardar los cambios: {e}")
