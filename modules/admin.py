@@ -1538,128 +1538,159 @@ def mostrar_formulario(click_data):
     # Extraer los datos del registro seleccionado
     ticket = click_data["ticket"]
 
-    # Rellenar todos los campos con valores actuales o por defecto
-    campos = {
-        "latitud": click_data.get("latitud", ""),
-        "longitud": click_data.get("longitud", ""),
-        "provincia": click_data.get("provincia", ""),
-        "municipio": click_data.get("municipio", ""),
-        "poblacion": click_data.get("poblacion", ""),
-        "vial": click_data.get("vial", ""),
-        "numero": click_data.get("numero", ""),
-        "letra": click_data.get("letra", ""),
-        "cp": click_data.get("cp", ""),
-        "comentario": click_data.get("comentario", ""),
-        "cto_cercana": click_data.get("cto_cercana", ""),
-        "olt": click_data.get("olt", ""),
-        "cto_admin": click_data.get("cto_admin", ""),
-        "id_cto": click_data.get("id_cto", ""),
-        "municipio_admin": click_data.get("municipio_admin", ""),
-        "serviciable": click_data.get("serviciable", "Sí"),
-        "coste": click_data.get("coste", 0.0),
-        "comentarios_comercial": click_data.get("comentarios_comercial", ""),
-        "comentarios_internos": click_data.get("comentarios_internos", ""),
-        "fecha_viabilidad": click_data.get("fecha_viabilidad", ""),
-        "apartment_id": click_data.get("apartment_id", ""),
-        "nombre_cliente": click_data.get("nombre_cliente", ""),
-        "telefono": click_data.get("telefono", ""),
-        "usuario": click_data.get("usuario", ""),
-        "direccion_id": click_data.get("direccion_id", ""),
-        "confirmacion_rafa": click_data.get("confirmacion_rafa", ""),
-        "zona_estudio": click_data.get("zona_estudio", ""),
-        "estado": click_data.get("estado", "Sin estado"),
-        "presupuesto_enviado": click_data.get("presupuesto_enviado", ""),
-        "nuevapromocion": click_data.get("nuevapromocion", "NO"),
-        "resultado": click_data.get("resultado", "NO"),
-        "justificacion": click_data.get("justificacion", "SIN JUSTIFICACIÓN"),
-        "contratos": click_data.get("contratos", ""),
-        "respuesta_comercial": click_data.get("respuesta_comercial", ""),
-        "comentarios_gestor": click_data.get("comentarios_gestor", "")
-    }
+    # Inicializar session_state para este ticket si no existe
+    if f"form_data_{ticket}" not in st.session_state:
+        st.session_state[f"form_data_{ticket}"] = {
+            "latitud": click_data.get("latitud", ""),
+            "longitud": click_data.get("longitud", ""),
+            "provincia": click_data.get("provincia", ""),
+            "municipio": click_data.get("municipio", ""),
+            "poblacion": click_data.get("poblacion", ""),
+            "vial": click_data.get("vial", ""),
+            "numero": click_data.get("numero", ""),
+            "letra": click_data.get("letra", ""),
+            "cp": click_data.get("cp", ""),
+            "comentario": click_data.get("comentario", ""),
+            "cto_cercana": click_data.get("cto_cercana", ""),
+            "olt": click_data.get("olt", ""),
+            "cto_admin": click_data.get("cto_admin", ""),
+            "id_cto": click_data.get("id_cto", ""),
+            "municipio_admin": click_data.get("municipio_admin", ""),
+            "serviciable": click_data.get("serviciable", "Sí"),
+            "coste": float(click_data.get("coste", 0.0)),
+            "comentarios_comercial": click_data.get("comentarios_comercial", ""),
+            "comentarios_internos": click_data.get("comentarios_internos", ""),
+            "fecha_viabilidad": click_data.get("fecha_viabilidad", ""),
+            "apartment_id": click_data.get("apartment_id", ""),
+            "nombre_cliente": click_data.get("nombre_cliente", ""),
+            "telefono": click_data.get("telefono", ""),
+            "usuario": click_data.get("usuario", ""),
+            "direccion_id": click_data.get("direccion_id", ""),
+            "confirmacion_rafa": click_data.get("confirmacion_rafa", ""),
+            "zona_estudio": click_data.get("zona_estudio", ""),
+            "estado": click_data.get("estado", "Sin estado"),
+            "presupuesto_enviado": click_data.get("presupuesto_enviado", ""),
+            "nuevapromocion": click_data.get("nuevapromocion", "NO"),
+            "resultado": click_data.get("resultado", "NO"),
+            "justificacion": click_data.get("justificacion", "SIN JUSTIFICACIÓN"),
+            "contratos": click_data.get("contratos", ""),
+            "respuesta_comercial": click_data.get("respuesta_comercial", ""),
+            "comentarios_gestor": click_data.get("comentarios_gestor", "")
+        }
 
-    # 🔥 SOLUCIÓN: Usar un contador único para forzar la reconstrucción
-    if f"form_counter_{ticket}" not in st.session_state:
-        st.session_state[f"form_counter_{ticket}"] = 0
-    else:
-        st.session_state[f"form_counter_{ticket}"] += 1
+    # Obtener datos actuales del formulario
+    form_data = st.session_state[f"form_data_{ticket}"]
 
-    form_key = f"form_viabilidad_{ticket}_{st.session_state[f'form_counter_{ticket}']}"
+    # Función para actualizar valores en session_state
+    def update_form_data(field, value):
+        st.session_state[f"form_data_{ticket}"][field] = value
 
-    with st.form(key=form_key):
+    with st.form(key=f"form_viabilidad_{ticket}"):
         st.subheader(f"✏️ Editar Viabilidad - Ticket {ticket}")
 
         # --- UBICACIÓN ---
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.text_input("🎟️ Ticket", value=ticket, disabled=True,
-                          key=f"ticket_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            st.text_input("🎟️ Ticket", value=ticket, disabled=True, key=f"ticket_{ticket}")
         with col2:
-            st.text_input("📍 Latitud", value=campos["latitud"],
-                          key=f"latitud_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            latitud = st.text_input("📍 Latitud", value=form_data["latitud"],
+                                    key=f"latitud_{ticket}")
+            if latitud != form_data["latitud"]:
+                update_form_data("latitud", latitud)
         with col3:
-            st.text_input("📍 Longitud", value=campos["longitud"],
-                          key=f"longitud_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            longitud = st.text_input("📍 Longitud", value=form_data["longitud"],
+                                     key=f"longitud_{ticket}")
+            if longitud != form_data["longitud"]:
+                update_form_data("longitud", longitud)
 
         col4, col5, col6 = st.columns(3)
         with col4:
-            st.text_input("🏠 Provincia", value=campos["provincia"],
-                          key=f"provincia_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            provincia = st.text_input("🏠 Provincia", value=form_data["provincia"],
+                                      key=f"provincia_{ticket}")
+            if provincia != form_data["provincia"]:
+                update_form_data("provincia", provincia)
         with col5:
-            st.text_input("🏙️ Municipio", value=campos["municipio"],
-                          key=f"municipio_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            municipio = st.text_input("🏙️ Municipio", value=form_data["municipio"],
+                                      key=f"municipio_{ticket}")
+            if municipio != form_data["municipio"]:
+                update_form_data("municipio", municipio)
         with col6:
-            st.text_input("👥 Población", value=campos["poblacion"],
-                          key=f"poblacion_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            poblacion = st.text_input("👥 Población", value=form_data["poblacion"],
+                                      key=f"poblacion_{ticket}")
+            if poblacion != form_data["poblacion"]:
+                update_form_data("poblacion", poblacion)
 
         col7, col8, col9, col10 = st.columns([2, 1, 1, 1])
         with col7:
-            st.text_input("🚦 Vial", value=campos["vial"],
-                          key=f"vial_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            vial = st.text_input("🚦 Vial", value=form_data["vial"],
+                                 key=f"vial_{ticket}")
+            if vial != form_data["vial"]:
+                update_form_data("vial", vial)
         with col8:
-            st.text_input("🔢 Número", value=campos["numero"],
-                          key=f"numero_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            numero = st.text_input("🔢 Número", value=form_data["numero"],
+                                   key=f"numero_{ticket}")
+            if numero != form_data["numero"]:
+                update_form_data("numero", numero)
         with col9:
-            st.text_input("🔠 Letra", value=campos["letra"],
-                          key=f"letra_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            letra = st.text_input("🔠 Letra", value=form_data["letra"],
+                                  key=f"letra_{ticket}")
+            if letra != form_data["letra"]:
+                update_form_data("letra", letra)
         with col10:
-            st.text_input("📮 Código Postal", value=campos["cp"],
-                          key=f"cp_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            cp = st.text_input("📮 Código Postal", value=form_data["cp"],
+                               key=f"cp_{ticket}")
+            if cp != form_data["cp"]:
+                update_form_data("cp", cp)
 
-        st.text_area("💬 Comentarios", value=campos["comentario"],
-                     key=f"comentario_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        comentario = st.text_area("💬 Comentarios", value=form_data["comentario"],
+                                  key=f"comentario_{ticket}")
+        if comentario != form_data["comentario"]:
+            update_form_data("comentario", comentario)
 
         # --- CONTACTO ---
         colc1, colc2, colc3 = st.columns(3)
         with colc1:
-            st.text_input("👤 Nombre Cliente", value=campos["nombre_cliente"],
-                          key=f"nombre_cliente_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            nombre_cliente = st.text_input("👤 Nombre Cliente", value=form_data["nombre_cliente"],
+                                           key=f"nombre_cliente_{ticket}")
+            if nombre_cliente != form_data["nombre_cliente"]:
+                update_form_data("nombre_cliente", nombre_cliente)
         with colc2:
-            st.text_input("📞 Teléfono", value=campos["telefono"],
-                          key=f"telefono_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            telefono = st.text_input("📞 Teléfono", value=form_data["telefono"],
+                                     key=f"telefono_{ticket}")
+            if telefono != form_data["telefono"]:
+                update_form_data("telefono", telefono)
         with colc3:
-            st.text_input("👤 Comercial", value=campos["usuario"],
-                          key=f"usuario_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            usuario = st.text_input("👤 Comercial", value=form_data["usuario"],
+                                    key=f"usuario_{ticket}")
+            if usuario != form_data["usuario"]:
+                update_form_data("usuario", usuario)
 
         # --- FECHAS Y CTO ---
         colf1, colf2 = st.columns(2)
         with colf1:
-            st.text_input("📅 Fecha Viabilidad", value=campos["fecha_viabilidad"], disabled=True,
-                          key=f"fecha_viabilidad_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            st.text_input("📅 Fecha Viabilidad", value=form_data["fecha_viabilidad"],
+                          disabled=True, key=f"fecha_viabilidad_{ticket}")
         with colf2:
-            st.text_input("🔌 CTO Cercana", value=campos["cto_cercana"],
-                          key=f"cto_cercana_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            cto_cercana = st.text_input("🔌 CTO Cercana", value=form_data["cto_cercana"],
+                                        key=f"cto_cercana_{ticket}")
+            if cto_cercana != form_data["cto_cercana"]:
+                update_form_data("cto_cercana", cto_cercana)
 
         # --- APARTAMENTO / DIRECCIÓN / OLT ---
         col11, col12, col13 = st.columns(3)
         with col11:
-            st.text_area("🏠 Apartment IDs", value=campos["apartment_id"],
-                         key=f"apartment_id_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            apartment_id = st.text_area("🏠 Apartment IDs", value=form_data["apartment_id"],
+                                        key=f"apartment_id_{ticket}")
+            if apartment_id != form_data["apartment_id"]:
+                update_form_data("apartment_id", apartment_id)
         with col12:
-            st.text_input("📍 Dirección ID", value=campos["direccion_id"],
-                          key=f"direccion_id_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            direccion_id = st.text_input("📍 Dirección ID", value=form_data["direccion_id"],
+                                         key=f"direccion_id_{ticket}")
+            if direccion_id != form_data["direccion_id"]:
+                update_form_data("direccion_id", direccion_id)
         with col13:
-            # Lógica para OLT - mantener formato "número - nombre"
-            olt_guardado = str(campos["olt"]) if campos["olt"] else ""
+            # Lógica para OLT
+            olt_guardado = str(form_data["olt"]) if form_data["olt"] else ""
             indice_default = 0
 
             if olt_guardado:
@@ -1668,90 +1699,136 @@ def mostrar_formulario(click_data):
                         indice_default = i
                         break
 
-            st.selectbox("⚡ OLT", opciones_olt, index=indice_default,
-                         key=f"olt_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            olt_seleccionado = st.selectbox("⚡ OLT", opciones_olt, index=indice_default,
+                                            key=f"olt_{ticket}")
+            if olt_seleccionado != form_data["olt"]:
+                update_form_data("olt", olt_seleccionado)
 
         # --- ADMINISTRACIÓN CTO ---
         col14, col15, col16 = st.columns(3)
         with col14:
-            st.text_input("⚙️ CTO Admin", value=campos["cto_admin"],
-                          key=f"cto_admin_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            cto_admin = st.text_input("⚙️ CTO Admin", value=form_data["cto_admin"],
+                                      key=f"cto_admin_{ticket}")
+            if cto_admin != form_data["cto_admin"]:
+                update_form_data("cto_admin", cto_admin)
         with col15:
-            st.text_input("🌍 Municipio Admin", value=campos["municipio_admin"],
-                          key=f"municipio_admin_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            municipio_admin = st.text_input("🌍 Municipio Admin", value=form_data["municipio_admin"],
+                                            key=f"municipio_admin_{ticket}")
+            if municipio_admin != form_data["municipio_admin"]:
+                update_form_data("municipio_admin", municipio_admin)
         with col16:
-            st.text_input("🔧 ID CTO", value=campos["id_cto"],
-                          key=f"id_cto_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            id_cto = st.text_input("🔧 ID CTO", value=form_data["id_cto"],
+                                   key=f"id_cto_{ticket}")
+            if id_cto != form_data["id_cto"]:
+                update_form_data("id_cto", id_cto)
 
         # --- ESTADO Y VIABILIDAD ---
         col17, col18, col19, col20 = st.columns([1, 1, 1, 1])
         with col17:
-            serviciable_index = 0 if str(campos["serviciable"]).upper() in ["SÍ", "SI", "S", "YES", "TRUE", "1"] else 1
-            st.selectbox("🔍 Serviciable", ["Sí", "No"],
-                         index=serviciable_index,
-                         key=f"serviciable_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            serviciable_index = 0 if str(form_data["serviciable"]).upper() in ["SÍ", "SI", "S", "YES", "TRUE",
+                                                                               "1"] else 1
+            serviciable = st.selectbox("🔍 Serviciable", ["Sí", "No"],
+                                       index=serviciable_index,
+                                       key=f"serviciable_{ticket}")
+            if serviciable != form_data["serviciable"]:
+                update_form_data("serviciable", serviciable)
         with col18:
-            coste_valor = float(campos["coste"]) if campos["coste"] else 0.0
-            st.number_input(
+            coste = st.number_input(
                 "💰 Coste (sin IVA)",
-                value=coste_valor,
+                value=float(form_data["coste"]),
                 step=0.01,
-                key=f"coste_{ticket}_{st.session_state[f'form_counter_{ticket}']}"
+                key=f"coste_{ticket}"
             )
+            if coste != form_data["coste"]:
+                update_form_data("coste", coste)
         with col19:
-            coste_con_iva = round(coste_valor * 1.21, 2)
-            st.text_input("💰 Coste con IVA 21%", value=f"{coste_con_iva:.2f}", disabled=True,
-                          key=f"coste_iva_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            coste_con_iva = round(float(form_data["coste"]) * 1.21, 2)
+            st.text_input("💰 Coste con IVA 21%", value=f"{coste_con_iva:.2f}",
+                          disabled=True, key=f"coste_iva_{ticket}")
         with col20:
-            st.text_input("📤 Presupuesto Enviado", value=campos["presupuesto_enviado"],
-                          key=f"presupuesto_enviado_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            presupuesto_enviado = st.text_input("📤 Presupuesto Enviado",
+                                                value=form_data["presupuesto_enviado"],
+                                                key=f"presupuesto_enviado_{ticket}")
+            if presupuesto_enviado != form_data["presupuesto_enviado"]:
+                update_form_data("presupuesto_enviado", presupuesto_enviado)
 
         # --- COMENTARIOS ---
-        st.text_area("📝 Comentarios Comerciales", value=campos["comentarios_comercial"],
-                     key=f"comentarios_comercial_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
-        st.text_area("📄 Comentarios Internos", value=campos["comentarios_internos"],
-                     key=f"comentarios_internos_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
-        st.text_area("🗒️ Comentarios Gestor", value=campos["comentarios_gestor"],
-                     key=f"comentarios_gestor_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        comentarios_comercial = st.text_area("📝 Comentarios Comerciales",
+                                             value=form_data["comentarios_comercial"],
+                                             key=f"comentarios_comercial_{ticket}")
+        if comentarios_comercial != form_data["comentarios_comercial"]:
+            update_form_data("comentarios_comercial", comentarios_comercial)
+
+        comentarios_internos = st.text_area("📄 Comentarios Internos",
+                                            value=form_data["comentarios_internos"],
+                                            key=f"comentarios_internos_{ticket}")
+        if comentarios_internos != form_data["comentarios_internos"]:
+            update_form_data("comentarios_internos", comentarios_internos)
+
+        comentarios_gestor = st.text_area("🗒️ Comentarios Gestor",
+                                          value=form_data["comentarios_gestor"],
+                                          key=f"comentarios_gestor_{ticket}")
+        if comentarios_gestor != form_data["comentarios_gestor"]:
+            update_form_data("comentarios_gestor", comentarios_gestor)
 
         # --- OTROS CAMPOS ---
         col20, col21, col22 = st.columns(3)
         with col20:
-            st.text_input("📍 Confirmación Rafa", value=campos["confirmacion_rafa"],
-                          key=f"confirmacion_rafa_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            confirmacion_rafa = st.text_input("📍 Confirmación Rafa",
+                                              value=form_data["confirmacion_rafa"],
+                                              key=f"confirmacion_rafa_{ticket}")
+            if confirmacion_rafa != form_data["confirmacion_rafa"]:
+                update_form_data("confirmacion_rafa", confirmacion_rafa)
         with col21:
-            st.text_input("🗺️ Zona de Estudio", value=campos["zona_estudio"],
-                          key=f"zona_estudio_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            zona_estudio = st.text_input("🗺️ Zona de Estudio",
+                                         value=form_data["zona_estudio"],
+                                         key=f"zona_estudio_{ticket}")
+            if zona_estudio != form_data["zona_estudio"]:
+                update_form_data("zona_estudio", zona_estudio)
         with col22:
-            st.text_input("📌 Estado", value=campos["estado"],
-                          key=f"estado_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            estado = st.text_input("📌 Estado", value=form_data["estado"],
+                                   key=f"estado_{ticket}")
+            if estado != form_data["estado"]:
+                update_form_data("estado", estado)
 
         col23, col24, col25 = st.columns(3)
         with col23:
-            nueva_promocion_index = 0 if str(campos["nuevapromocion"]).upper() == "SI" else 1
-            st.selectbox("🏗️ Nueva Promoción", ["SI", "NO"],
-                         index=nueva_promocion_index,
-                         key=f"nueva_promocion_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            nueva_promocion_index = 0 if str(form_data["nuevapromocion"]).upper() == "SI" else 1
+            nueva_promocion = st.selectbox("🏗️ Nueva Promoción", ["SI", "NO"],
+                                           index=nueva_promocion_index,
+                                           key=f"nueva_promocion_{ticket}")
+            if nueva_promocion != form_data["nuevapromocion"]:
+                update_form_data("nuevapromocion", nueva_promocion)
         with col24:
             opciones_resultado = ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"]
-            resultado_index = opciones_resultado.index(campos["resultado"]) if campos[
-                                                                                   "resultado"] in opciones_resultado else 0
-            st.selectbox("✅ Resultado", opciones_resultado,
-                         index=resultado_index,
-                         key=f"resultado_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            resultado_index = opciones_resultado.index(form_data["resultado"]) if form_data[
+                                                                                      "resultado"] in opciones_resultado else 0
+            resultado = st.selectbox("✅ Resultado", opciones_resultado,
+                                     index=resultado_index,
+                                     key=f"resultado_{ticket}")
+            if resultado != form_data["resultado"]:
+                update_form_data("resultado", resultado)
         with col25:
             opciones_justificacion = ["SIN JUSTIFICACIÓN", "ZONA SUBVENCIONADA", "INVIABLE", "MAS PREVENTA",
                                       "RESERVADA WHL", "PDTE. RAFA FIN DE OBRA", "NO ES UNA VIABILIDAD"]
-            justificacion_index = opciones_justificacion.index(campos["justificacion"]) if campos[
-                                                                                               "justificacion"] in opciones_justificacion else 0
-            st.selectbox("📌 Justificación", opciones_justificacion,
-                         index=justificacion_index,
-                         key=f"justificacion_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+            justificacion_index = opciones_justificacion.index(form_data["justificacion"]) if form_data[
+                                                                                                  "justificacion"] in opciones_justificacion else 0
+            justificacion = st.selectbox("📌 Justificación", opciones_justificacion,
+                                         index=justificacion_index,
+                                         key=f"justificacion_{ticket}")
+            if justificacion != form_data["justificacion"]:
+                update_form_data("justificacion", justificacion)
 
-        st.text_input("📑 Contratos", value=campos["contratos"],
-                      key=f"contratos_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
-        st.text_input("📨 Respuesta Comercial", value=campos["respuesta_comercial"],
-                      key=f"respuesta_comercial_{ticket}_{st.session_state[f'form_counter_{ticket}']}")
+        contratos = st.text_input("📑 Contratos", value=form_data["contratos"],
+                                  key=f"contratos_{ticket}")
+        if contratos != form_data["contratos"]:
+            update_form_data("contratos", contratos)
+
+        respuesta_comercial = st.text_input("📨 Respuesta Comercial",
+                                            value=form_data["respuesta_comercial"],
+                                            key=f"respuesta_comercial_{ticket}")
+        if respuesta_comercial != form_data["respuesta_comercial"]:
+            update_form_data("respuesta_comercial", respuesta_comercial)
 
         submit = st.form_submit_button("💾 Guardar cambios")
 
@@ -1760,11 +1837,12 @@ def mostrar_formulario(click_data):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            current_counter = st.session_state[f'form_counter_{ticket}']
+            # Obtener datos actualizados del session_state
+            current_data = st.session_state[f"form_data_{ticket}"]
 
+            # Limpiar apartment_id
             apartment_id_clean = ",".join(
-                [aid.strip() for aid in st.session_state.get(f"apartment_id_{ticket}_{current_counter}", "").split(",")
-                 if aid.strip()])
+                [aid.strip() for aid in current_data["apartment_id"].split(",") if aid.strip()])
 
             # Actualización completa
             cursor.execute("""
@@ -1776,47 +1854,50 @@ def mostrar_formulario(click_data):
                     resultado=?, justificacion=?, contratos=?, respuesta_comercial=?, comentarios_gestor=?
                 WHERE ticket=?
             """, (
-                st.session_state.get(f"latitud_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"longitud_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"provincia_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"municipio_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"poblacion_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"vial_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"numero_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"letra_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"cp_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"comentario_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"cto_cercana_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"olt_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"cto_admin_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"id_cto_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"municipio_admin_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"serviciable_{ticket}_{current_counter}", "Sí"),
-                st.session_state.get(f"coste_{ticket}_{current_counter}", 0.0),
-                st.session_state.get(f"comentarios_comercial_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"comentarios_internos_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"fecha_viabilidad_{ticket}_{current_counter}", ""),
+                current_data["latitud"],
+                current_data["longitud"],
+                current_data["provincia"],
+                current_data["municipio"],
+                current_data["poblacion"],
+                current_data["vial"],
+                current_data["numero"],
+                current_data["letra"],
+                current_data["cp"],
+                current_data["comentario"],
+                current_data["cto_cercana"],
+                current_data["olt"],
+                current_data["cto_admin"],
+                current_data["id_cto"],
+                current_data["municipio_admin"],
+                current_data["serviciable"],
+                current_data["coste"],
+                current_data["comentarios_comercial"],
+                current_data["comentarios_internos"],
+                current_data["fecha_viabilidad"],
                 apartment_id_clean,
-                st.session_state.get(f"nombre_cliente_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"telefono_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"usuario_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"direccion_id_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"confirmacion_rafa_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"zona_estudio_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"estado_{ticket}_{current_counter}", "Sin estado"),
-                st.session_state.get(f"presupuesto_enviado_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"nueva_promocion_{ticket}_{current_counter}", "NO"),
-                st.session_state.get(f"resultado_{ticket}_{current_counter}", "NO"),
-                st.session_state.get(f"justificacion_{ticket}_{current_counter}", "SIN JUSTIFICACIÓN"),
-                st.session_state.get(f"contratos_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"respuesta_comercial_{ticket}_{current_counter}", ""),
-                st.session_state.get(f"comentarios_gestor_{ticket}_{current_counter}", ""),
+                current_data["nombre_cliente"],
+                current_data["telefono"],
+                current_data["usuario"],
+                current_data["direccion_id"],
+                current_data["confirmacion_rafa"],
+                current_data["zona_estudio"],
+                current_data["estado"],
+                current_data["presupuesto_enviado"],
+                current_data["nuevapromocion"],
+                current_data["resultado"],
+                current_data["justificacion"],
+                current_data["contratos"],
+                current_data["respuesta_comercial"],
+                current_data["comentarios_gestor"],
                 ticket
             ))
 
             conn.commit()
             conn.close()
             st.success(f"✅ Cambios guardados correctamente para el ticket {ticket}")
+            # Limpiar el session_state para forzar recarga de datos
+            if f"form_data_{ticket}" in st.session_state:
+                del st.session_state[f"form_data_{ticket}"]
             st.rerun()
 
         except Exception as e:
@@ -1962,8 +2043,8 @@ def admin_dashboard():
 
         sub_seccion = option_menu(
             menu_title=None,  # Sin título encima del menú
-            options=["Visualizar Datos UIS", "Seguimiento de Contratos"],
-            icons=["table", "file-earmark-spreadsheet"],  # Puedes cambiar iconos
+            options=["Visualizar Datos UIS", "Seguimiento de Contratos", "TIRC"],
+            icons=["table", "file-earmark-spreadsheet", "puzzle"],  # Puedes cambiar iconos
             default_index=0,
             orientation="horizontal",  # horizontal para que quede tipo pestañas arriba
             styles={
@@ -2445,6 +2526,9 @@ def admin_dashboard():
                             st.dataframe(existing[cols], use_container_width=True)
                     except Exception as e:
                         st.error(f"❌ Error al cargar registros existentes: {e}")
+        if sub_seccion == "TIRC":
+            st.info(
+                "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos UIS, Viabilidades y Contratos en formato Excel.")
 
     # Opción: Visualizar datos de la tabla comercial_rafa
     elif opcion == "Ofertas Comerciales":
