@@ -1752,16 +1752,18 @@ def mostrar_formulario(click_data):
 
             olt_guardado_norm = normalizar_id(olt_guardado)
 
+            # Buscar cuál de las opciones tiene ese mismo ID
             for i, opcion in enumerate(opciones_olt):
                 id_opcion = normalizar_id(opcion)
                 if id_opcion == olt_guardado_norm:
                     indice_default = i
                     break
 
+            # Selectbox para seleccionar la OLT
             olt_seleccionado = st.selectbox("⚡ OLT", opciones_olt, index=indice_default, key=f"olt_{ticket}")
 
-            # Guardar solo el id seleccionado en session_state
-            update_form_data("olt", normalizar_id(olt_seleccionado))
+            # 🟢 Guardar el texto completo (id - nombre)
+            update_form_data("olt", olt_seleccionado)
 
         # --- ADMINISTRACIÓN CTO ---
         col14, col15, col16 = st.columns(3)
@@ -2587,7 +2589,44 @@ def admin_dashboard():
                         st.error(f"❌ Error al cargar registros existentes: {e}")
         if sub_seccion == "TIRC":
             st.info(
-                "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos UIS, Viabilidades y Contratos en formato Excel.")
+                "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos TIRC.")
+            # --- 1️⃣ Leer datos de la base de datos ---
+            try:
+                conn = obtener_conexion()
+                df_tirc = pd.read_sql("SELECT * FROM TIRC", conn)
+                conn.close()
+            except Exception as e:
+                st.error(f"❌ Error al cargar datos de TIRC: {e}")
+                df_tirc = pd.DataFrame()  # tabla vacía para evitar errores
+
+            if not df_tirc.empty:
+                # --- 2️⃣ Configurar AgGrid ---
+                gb = GridOptionsBuilder.from_dataframe(df_tirc)
+                gb.configure_pagination(paginationAutoPageSize=True)
+                gb.configure_default_column(editable=False, filter=True, sortable=True)
+                gb.configure_selection('single', use_checkbox=True)  # si quieres seleccionar filas
+                grid_options = gb.build()
+
+                # --- 3️⃣ Mostrar tabla ---
+                AgGrid(
+                    df_tirc,
+                    gridOptions=grid_options,
+                    enable_enterprise_modules=True,
+                    update_mode="MODEL_CHANGED",
+                    height=400,
+                    fit_columns_on_grid_load=True
+                )
+
+                # --- 4️⃣ Opción de exportar a CSV ---
+                csv = df_tirc.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Descargar CSV",
+                    data=csv,
+                    file_name="tirc_datos.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.warning("⚠️ No hay datos en la tabla TIRC.")
 
     # Opción: Visualizar datos de la tabla comercial_rafa
     elif opcion == "Ofertas Comerciales":
