@@ -1903,7 +1903,8 @@ def mostrar_formulario(click_data):
 
             # Limpiar apartment_id
             apartment_id_clean = ",".join(
-                [aid.strip() for aid in current_data["apartment_id"].split(",") if aid.strip()])
+                [aid.strip() for aid in (current_data["apartment_id"] or "").split(",") if aid.strip()]
+            )
 
             # Actualización completa
             cursor.execute("""
