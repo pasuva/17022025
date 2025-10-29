@@ -140,36 +140,61 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
             "RESPUESTA COMERCIAL": "respuesta_comercial"
         }
 
-        # --- 7️⃣ Actualizar o agregar filas por apartment_id ---
+        # --- 7️⃣ Actualizar o agregar filas por apartment_id y ticket ---
         updated = 0
         added = 0
         df_sheet = df_sheet.copy()
 
+        # Normalizar columnas clave
+        if "apartment_id" not in df_sheet.columns:
+            st.error("❌ La hoja no tiene columna 'apartment_id'.")
+            return
+        if "ticket" not in df_sheet.columns:
+            df_sheet["ticket"] = ""
+
+        df_sheet["apartment_id"] = df_sheet["apartment_id"].astype(str).str.strip().str.upper()
+        df_sheet["ticket"] = df_sheet["ticket"].astype(str).str.strip()
+
         for _, row_db in df_db_expanded.iterrows():
-            apt_db = str(row_db.get("apartment_id", "")).strip()
+            apt_db = str(row_db.get("apartment_id", "")).strip().upper()
             ticket_db = str(row_db.get("ticket", "")).strip()
-            if not apt_db and not ticket_db:
-                continue
+            if not ticket_db:
+                continue  # ignorar filas sin ticket
 
-            # Buscar fila existente por apartment_id
-            mask = df_sheet["apartment_id"].astype(str).str.strip() == apt_db
+            # Buscar coincidencia exacta de ticket + apartment_id
+            mask = (
+                    (df_sheet["ticket"] == ticket_db) &
+                    (df_sheet["apartment_id"] == apt_db)
+            )
 
+            # --- Si la fila ya existe en el Sheet ---
             if mask.any():
                 idx = df_sheet[mask].index[0]
-                # Actualizar columnas mapeadas
-                for excel_col, db_col in excel_to_db_map.items():
-                    if excel_col in df_sheet.columns and db_col in df_db_expanded.columns:
-                        df_sheet.at[idx, excel_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
-                updated += 1
+                cambios_realizados = False
+
+                # 🔹 Actualizar todas las columnas mapeadas y coincidentes
+                for col in headers:
+                    db_col = excel_to_db_map.get(col, col)  # Usa el mapeo si existe, sino el mismo nombre
+                    if db_col in df_db_expanded.columns:
+                        nuevo_valor = "" if pd.isna(row_db[db_col]) else str(row_db[db_col])
+                        actual_valor = "" if pd.isna(df_sheet.at[idx, col]) else str(df_sheet.at[idx, col])
+                        # Compara sin espacios y sin distinción de mayúsculas
+                        if nuevo_valor.strip() != actual_valor.strip():
+                            df_sheet.at[idx, col] = nuevo_valor
+                            cambios_realizados = True
+
+                if cambios_realizados:
+                    updated += 1
+
+            # --- Si la fila no existe, crearla ---
             else:
                 new_row = {col: "" for col in headers}
-                for excel_col, db_col in excel_to_db_map.items():
-                    if excel_col in df_sheet.columns and db_col in df_db_expanded.columns:
-                        new_row[excel_col] = str(row_db[db_col]) if pd.notna(row_db[db_col]) else ""
-                # También copiamos columnas coincidentes restantes automáticamente
                 for col in headers:
-                    if col not in excel_to_db_map and col in df_db_expanded.columns:
-                        new_row[col] = str(row_db[col]) if pd.notna(row_db[col]) else ""
+                    db_col = excel_to_db_map.get(col, col)
+                    if db_col in df_db_expanded.columns:
+                        new_row[col] = "" if pd.isna(row_db[db_col]) else str(row_db[db_col])
+                new_row["ticket"] = ticket_db
+                new_row["apartment_id"] = apt_db
                 df_sheet = pd.concat([df_sheet, pd.DataFrame([new_row])], ignore_index=True)
                 added += 1
 
@@ -1078,15 +1103,22 @@ def viabilidades_seccion():
             mostrar_formulario(selected_viabilidad)
 
             if st.session_state.get("selected_ticket"):
-                archivo = st.file_uploader(f"📁 Sube el archivo Excel del presupuesto para Ticket {st.session_state['selected_ticket']}", type=["xlsx"])
+                archivo = st.file_uploader(
+                    f"📁 Sube el archivo PDF del presupuesto para Ticket {st.session_state['selected_ticket']}",
+                    type=["pdf"]
+                )
 
                 if archivo:
-                    st.success("✅ Archivo cargado correctamente.")
+                    st.success("✅ Archivo PDF cargado correctamente.")
 
-                    proyecto = st.text_input("🔖 Proyecto / Nombre del presupuesto",
-                                             value=f"Ticket {st.session_state['selected_ticket']}")
-                    mensaje = st.text_area("📝 Mensaje para los destinatarios",
-                                           value="Adjunto presupuesto para su revisión.")
+                    proyecto = st.text_input(
+                        "🔖 Proyecto / Nombre del presupuesto",
+                        value=f"Ticket {st.session_state['selected_ticket']}"
+                    )
+                    mensaje = st.text_area(
+                        "📝 Mensaje para los destinatarios",
+                        value="Adjunto presupuesto en formato PDF para su revisión."
+                    )
 
                     # Define los destinatarios disponibles
                     destinatarios_posibles = {
@@ -1097,13 +1129,13 @@ def viabilidades_seccion():
 
                     seleccionados = st.multiselect("👥 Selecciona destinatarios", list(destinatarios_posibles.keys()))
 
-                    if seleccionados and st.button("🚀 Enviar presupuesto por correo"):
+                    if seleccionados and st.button("🚀 Enviar presupuesto en PDF por correo"):
                         try:
                             nombre_archivo = archivo.name
-                            archivo_bytes = archivo.getvalue()  # 🔹 Leemos los bytes UNA sola vez
+                            archivo_bytes = archivo.getvalue()  # Leer bytes del PDF
 
-                            # 🔹 Subir el archivo Excel a Cloudinary (como tipo raw)
-                            st.info("📤 Subiendo archivo a Cloudinary...")
+                            # 🔹 Subir PDF a Cloudinary (como tipo raw)
+                            st.info("📤 Subiendo PDF a Cloudinary...")
                             cloudinary_url = upload_file_to_cloudinary(io.BytesIO(archivo_bytes), nombre_archivo)
                             if not cloudinary_url:
                                 st.error("❌ Error al subir el archivo a Cloudinary. No se puede continuar.")
@@ -1155,15 +1187,15 @@ def viabilidades_seccion():
                                 """, (st.session_state["selected_ticket"],))
                                 conn.commit()
                                 conn.close()
-                                st.info("🗂️ Se ha registrado en la BBDD que el presupuesto ha sido enviado.")
+                                st.info("🗂️ Se ha registrado en la BBDD que el presupuesto en PDF ha sido enviado.")
                             except Exception as db_error:
                                 st.warning(
                                     f"⚠️ El correo fue enviado, pero hubo un error al actualizar la BBDD: {db_error}"
                                 )
 
-                            st.success("✅ Presupuesto enviado y guardado correctamente en Cloudinary.")
+                            st.success("✅ Presupuesto en PDF enviado y guardado correctamente en Cloudinary.")
                         except Exception as e:
-                            st.error(f"❌ Error al enviar o guardar el presupuesto: {e}")
+                            st.error(f"❌ Error al enviar o guardar el presupuesto PDF: {e}")
 
         with st.expander("📜 Historial de Envíos de Presupuesto"):
             try:
@@ -1660,8 +1692,30 @@ def mostrar_formulario(click_data):
             if telefono != form_data["telefono"]:
                 update_form_data("telefono", telefono)
         with colc3:
-            usuario = st.text_input("👤 Comercial", value=form_data["usuario"],
-                                    key=f"usuario_{ticket}")
+            # --- Obtener lista de comerciales desde la base de datos ---
+            try:
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                cursor.execute("SELECT DISTINCT usuario FROM viabilidades WHERE usuario IS NOT NULL AND usuario != ''")
+                comerciales = [row[0] for row in cursor.fetchall()]
+                conn.close()
+            except Exception as e:
+                st.error(f"Error al cargar comerciales: {e}")
+                comerciales = []
+
+            # Añadir el valor actual si no está en la lista
+            if form_data["usuario"] and form_data["usuario"] not in comerciales:
+                comerciales.append(form_data["usuario"])
+
+            comerciales = sorted(comerciales)  # ordenar alfabéticamente
+
+            # --- Mostrar selectbox con comercial actual seleccionado ---
+            if comerciales:
+                index_actual = comerciales.index(form_data["usuario"]) if form_data["usuario"] in comerciales else 0
+                usuario = st.selectbox("👤 Comercial", comerciales, index=index_actual, key=f"usuario_{ticket}")
+            else:
+                usuario = st.text_input("👤 Comercial", value=form_data["usuario"], key=f"usuario_{ticket}")
+
             if usuario != form_data["usuario"]:
                 update_form_data("usuario", usuario)
 
@@ -1689,20 +1743,25 @@ def mostrar_formulario(click_data):
             if direccion_id != form_data["direccion_id"]:
                 update_form_data("direccion_id", direccion_id)
         with col13:
-            # Lógica para OLT
             olt_guardado = str(form_data["olt"]) if form_data["olt"] else ""
             indice_default = 0
 
-            if olt_guardado:
-                for i, opcion in enumerate(opciones_olt):
-                    if opcion.startswith(f"{olt_guardado} -"):
-                        indice_default = i
-                        break
+            def normalizar_id(olt_value):
+                # Toma solo la parte antes de "-" o "."
+                return str(olt_value).split("-")[0].split(".")[0].strip().upper()
 
-            olt_seleccionado = st.selectbox("⚡ OLT", opciones_olt, index=indice_default,
-                                            key=f"olt_{ticket}")
-            if olt_seleccionado != form_data["olt"]:
-                update_form_data("olt", olt_seleccionado)
+            olt_guardado_norm = normalizar_id(olt_guardado)
+
+            for i, opcion in enumerate(opciones_olt):
+                id_opcion = normalizar_id(opcion)
+                if id_opcion == olt_guardado_norm:
+                    indice_default = i
+                    break
+
+            olt_seleccionado = st.selectbox("⚡ OLT", opciones_olt, index=indice_default, key=f"olt_{ticket}")
+
+            # Guardar solo el id seleccionado en session_state
+            update_form_data("olt", normalizar_id(olt_seleccionado))
 
         # --- ADMINISTRACIÓN CTO ---
         col14, col15, col16 = st.columns(3)
@@ -1800,7 +1859,7 @@ def mostrar_formulario(click_data):
             if nueva_promocion != form_data["nuevapromocion"]:
                 update_form_data("nuevapromocion", nueva_promocion)
         with col24:
-            opciones_resultado = ["NO", "OK", "PDTE. INFORMACION RAFA", "SERVICIADO", "SOBRECOSTE"]
+            opciones_resultado = ["NO", "OK", "PDTE. INFORMACION", "SERVICIADO", "SOBRECOSTE"]
             resultado_index = opciones_resultado.index(form_data["resultado"]) if form_data[
                                                                                       "resultado"] in opciones_resultado else 0
             resultado = st.selectbox("✅ Resultado", opciones_resultado,
