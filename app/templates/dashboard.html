@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block header %}Panel de Control{% endblock %}
+
+{% block content %}
+<div class="dashboard-cards">
+  <div class="dashboard-card total"><h3>Total Tickets</h3><p>{{ stats.total }}</p></div>
+  <div class="dashboard-card abierto"><h3>Abiertos</h3><p>{{ stats.abierto }}</p></div>
+  <div class="dashboard-card proceso"><h3>En Proceso</h3><p>{{ stats.proceso }}</p></div>
+  <div class="dashboard-card cerrado"><h3>Cerrados</h3><p>{{ stats.cerrado }}</p></div>
+</div>
+
+<h2>Estado de Tickets</h2>
+<canvas id="ticketsChart" style="max-width:600px; margin:20px auto; display:block;"></canvas>
+
+<h2>Últimos Tickets</h2>
+<div class="tickets-list">
+  {% for t in latest_tickets %}
+  <div class="ticket-card">
+    <h3>#{{ t.id }} - {{ t.primary_key }}</h3>
+    <p><strong>Estado:</strong>
+      {% if t.state == "abierto" %}
+        <span class="status-abierto">{{ t.state }}</span>
+      {% elif t.state == "proceso" %}
+        <span class="status-proceso">{{ t.state }}</span>
+      {% elif t.state == "cerrado" %}
+        <span class="status-cerrado">{{ t.state }}</span>
+      {% else %}{{ t.state }}{% endif %}
+    </p>
+    <p><strong>Fecha:</strong> {{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+    <a href="/web/tickets/{{ t.id }}" class="btn">Ver detalles</a>
+  </div>
+  {% endfor %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('ticketsChart').getContext('2d');
+new Chart(ctx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Abiertos','En Proceso','Cerrados'],
+    datasets: [{
+      label:'Tickets',
+      data: [{{ stats.abierto }}, {{ stats.proceso }}, {{ stats.cerrado }}],
+      backgroundColor: ['#e74c3c','#f39c12','#27ae60'],
+      borderColor: ['#c0392b','#d35400','#1e8449'],
+      borderWidth: 1
+    }]
+  },
+  options: {
+    responsive:true,
+    plugins:{ legend:{ position:'bottom' } }
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Tickets{% endblock %}
+
+{% block content %}
+<h2>Listado de Tickets</h2>
+
+<table class="tickets-table">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>PrimaryKey</th>
+      <th>Tipo</th>
+      <th>Estado</th>
+      <th>Última actualización</th>
+      <th>Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tickets %}
+    <tr>
+      <td>{{ t.id }}</td>
+      <td>{{ t.primary_key }}</td>
+      <td>
+        {% if t.ticket_type == 'ftth_cliente' %}
+          <span class="ticket-type ticket-client">Cliente</span>
+        {% elif t.ticket_type == 'ftth_masivo' %}
+          <span class="ticket-type ticket-massive">Masivo</span>
+        {% elif t.ticket_type == 'trabajos_programados' %}
+          <span class="ticket-type ticket-workflow">Trabajo programado</span>
+        {% else %}
+          <span class="ticket-type">Desconocido</span>
+        {% endif %}
+      </td>
+      <td>
+        <span class="status-tag status-{{ t.state }}">
+          {{ t.state|capitalize }}
+        </span>
+      </td>
+      <td>
+        {{ t.updated_at.strftime('%Y-%m-%d %H:%M') if t.updated_at else t.created_at.strftime('%Y-%m-%d %H:%M') }}
+      </td>
+      <td>
+        <a href="/web/tickets/{{ t.id }}" class="btn btn-primary">Ver</a>
+        {% if t.state != 'cerrado' %}
+          <a href="/web/tickets/{{ t.id }}/retry" class="btn btn-warning">Reintentar Adamo</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+
+

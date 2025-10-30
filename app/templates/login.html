@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+{% block content %}
+<div class="login-container">
+  <h2>Iniciar Sesión</h2>
+  <form action="/web/login" method="post">
+    <input type="text" name="email" placeholder="Email" required>
+    <input type="password" name="password" placeholder="Contraseña" required>
+    <button type="submit">Entrar</button>
+    {% if error %}
+      <p class="error-msg">{{ error }}</p>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}
