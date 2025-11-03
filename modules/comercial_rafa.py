@@ -513,11 +513,14 @@ def comercial_dashboard():
             m = create_optimized_map(df_filtrado, lat_centro, lon_centro, ofertas_df, ams_df)
 
             # --- Añadir marcador para la ubicación actual ---
-            folium.Marker(
-                location=location,
-                popup="📍 Tu ubicación actual",
-                icon=folium.Icon(color="red", icon="user")
-            ).add_to(m)
+            if location is not None and len(location) == 2:
+                folium.Marker(
+                    location=location,
+                    popup="📍 Tu ubicación actual",
+                    icon=folium.Icon(color="red", icon="user")
+                ).add_to(m)
+            else:
+                st.warning("⚠️ No se pudo determinar tu ubicación. Mostrando el mapa sin marcador de usuario.")
 
             st.info(f"📦 Mostrando {len(df_filtrado)} ubicaciones (de {len(df)} puntos que tienes asignados)")
             map_data = st_folium(m, height=680, width="100%", key="optimized_map")
