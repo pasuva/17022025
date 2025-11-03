@@ -32,20 +32,20 @@ def load_comercial_data(comercial):
 
     if comercial in ["nestor", "roberto"]:
         query = """
-            SELECT apartment_id, latitud, longitud, comercial, serviciable 
+            SELECT apartment_id, latitud, longitud, comercial, serviciable, municipio, poblacion 
             FROM comercial_rafa 
             WHERE LOWER(comercial) IN ('nestor', 'roberto')
         """
         df = pd.read_sql(query, conn)
     else:
         query = """
-            SELECT apartment_id, latitud, longitud, comercial, serviciable 
+            SELECT apartment_id, latitud, longitud, comercial, serviciable, municipio, poblacion 
             FROM comercial_rafa 
             WHERE LOWER(comercial) = LOWER(?)
         """
         df = pd.read_sql(query, conn, params=(comercial,))
 
-        query_ofertas = "SELECT apartment_id, Contrato FROM comercial_rafa"
+        query_ofertas = "SELECT apartment_id, Contrato, municipio, poblacion FROM comercial_rafa"
     ofertas_df = pd.read_sql(query_ofertas, conn)
 
     query_ams = "SELECT apartment_id FROM datos_uis WHERE LOWER(serviciable) = 'sí'"
@@ -303,6 +303,7 @@ def comercial_dashboard():
                 controller.set(f'{cookie_name}_role', '', max_age=0, path='/')
 
             # Reiniciar el estado de sesión
+            # Reiniciar el estado de sesión
             st.session_state["login_ok"] = False
             st.session_state["username"] = ""
             st.session_state["role"] = ""
@@ -466,7 +467,59 @@ def comercial_dashboard():
 
         # Crear y mostrar mapa optimizado
         with st.spinner("🗺️ Generando mapa optimizado..."):
-            m = create_optimized_map(df, lat, lon, ofertas_df, ams_df)
+            # Extraer lista de municipios
+            municipios = sorted(df["municipio"].dropna().unique().tolist())
+
+            # --- Filtro de municipio ---
+            municipio_filtro = st.selectbox(
+                "🏙️ Municipio",
+                ["Selecciona un municipio"] + municipios,
+                key="filtro_municipio"
+            )
+
+            # --- Filtro dependiente de población ---
+            if municipio_filtro != "Selecciona un municipio":
+                poblaciones_filtradas = sorted(
+                    df.loc[df["municipio"] == municipio_filtro, "poblacion"].dropna().unique().tolist()
+                )
+            else:
+                poblaciones_filtradas = sorted(df["poblacion"].dropna().unique().tolist())
+
+            poblacion_filtro = st.selectbox(
+                "👥 Población",
+                ["Selecciona una población"] + poblaciones_filtradas,
+                key="filtro_poblacion"
+            )
+
+            # --- Comprobar si ambos filtros están seleccionados ---
+            if municipio_filtro == "Selecciona un municipio" or poblacion_filtro == "Selecciona una población":
+                st.warning("⚠️ Selecciona un municipio y una población para mostrar el mapa. SI NO SE SELECCIONA NINGUN FILTRO, EL MAPA NO SE MOSTRARÁ NUNCA. El marcador rojo es tu ubicación actual.")
+                st.stop()
+
+            # --- Aplicar filtros finales ---
+            df_filtrado = df.copy()
+            df_filtrado = df_filtrado[df_filtrado["municipio"] == municipio_filtro]
+            df_filtrado = df_filtrado[df_filtrado["poblacion"] == poblacion_filtro]
+
+            if df_filtrado.empty:
+                st.warning("⚠️ No hay registros para los filtros seleccionados.")
+                st.stop()
+
+            # --- Centrar mapa según datos filtrados ---
+            lat_centro = df_filtrado["latitud"].mean()
+            lon_centro = df_filtrado["longitud"].mean()
+
+            # --- Crear mapa ---
+            m = create_optimized_map(df_filtrado, lat_centro, lon_centro, ofertas_df, ams_df)
+
+            # --- Añadir marcador para la ubicación actual ---
+            folium.Marker(
+                location=location,
+                popup="📍 Tu ubicación actual",
+                icon=folium.Icon(color="red", icon="user")
+            ).add_to(m)
+
+            st.info(f"📦 Mostrando {len(df_filtrado)} ubicaciones (de {len(df)} puntos que tienes asignados)")
             map_data = st_folium(m, height=680, width="100%", key="optimized_map")
 
         # Manejar clicks en el mapa
