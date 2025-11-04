@@ -188,8 +188,8 @@ def mapa_dashboard():
 
         opcion = option_menu(
             menu_title=None,
-            options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Descargar Datos"],
-            icons=["globe", "check-circle", "bar-chart", "download"],
+            options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Buscar Coordenadas", "Descargar Datos"],
+            icons=["globe", "check-circle", "bar-chart", "compass", "download"],
             menu_icon="list",
             default_index=0,
             styles={
@@ -239,9 +239,184 @@ def mapa_dashboard():
         mostrar_viabilidades()
     elif opcion == "Ver Datos":
         mostrar_descarga_datos()
+    elif opcion == "Buscar Coordenadas":
+        mostrar_coordenadas()
     elif opcion == "Descargar Datos":
         download_datos(datos_uis, total_ofertas, viabilidades)
 
+
+def mostrar_coordenadas():
+    import folium
+    from folium.plugins import MarkerCluster
+    from streamlit_folium import st_folium
+    from geopy.distance import geodesic
+
+    st.info(
+        "📍 **Búsqueda por coordenadas**\n\n"
+        "En esta sección puedes visualizar todos los puntos serviciables disponibles dentro de un radio específico "
+        "a partir de las coordenadas que introduzcas. "
+        "Al hacer clic sobre cualquiera de los puntos del mapa, se mostrará debajo una tarjeta informativa con los datos "
+        "detallados del punto seleccionado. "
+        "Cuando existen muchos puntos muy próximos entre sí, estos se agrupan en un *cluster* con un número en su interior, "
+        "que indica la cantidad de puntos disponibles en esa zona. Puedes pinchar en el *cluster* para desplegar cada uno de los puntos que contiene."
+    )
+
+    # --- Entradas ---
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        lat = st.number_input("🌐 Latitud", value=40.4168, format="%.6f", key="coord_lat")
+    with col2:
+        lon = st.number_input("🌐 Longitud", value=-3.7038, format="%.6f", key="coord_lon")
+    with col3:
+        radio_km = st.number_input("📏 Radio (km)", value=1.0, min_value=0.1, max_value=50.0, step=0.5, key="coord_radio")
+
+    buscar = st.button("🔍 Buscar coordenadas", use_container_width=True)
+
+    if buscar:
+        with st.spinner("🗺️ Calculando puntos dentro del radio..."):
+            try:
+                # --- Cargar datos desde BD ---
+                conn = get_db_connection()
+                query = "SELECT municipio, poblacion, latitud, longitud, vial, numero, cp FROM datos_uis"
+                df = pd.read_sql(query, conn)
+                conn.close()
+
+                # --- Filtrar coordenadas válidas ---
+                df = df[
+                    (df["latitud"].between(-90, 90)) &
+                    (df["longitud"].between(-180, 180))
+                ].dropna(subset=["latitud", "longitud"])
+
+                if df.empty:
+                    st.warning("⚠️ No hay coordenadas válidas en la base de datos.")
+                    return
+
+                # --- Calcular distancias ---
+                df["distancia_km"] = [
+                    geodesic((lat, lon), (r_lat, r_lon)).km
+                    for r_lat, r_lon in zip(df["latitud"], df["longitud"])
+                ]
+
+                # --- Filtrar por radio ---
+                df_radio = df[df["distancia_km"] <= radio_km].copy()
+                df_radio.reset_index(drop=True, inplace=True)
+
+                if df_radio.empty:
+                    st.warning("⚠️ No se encontraron puntos dentro del radio indicado.")
+                    return
+
+                # --- Guardar en sesión ---
+                st.session_state["busqueda_coordenadas"] = {
+                    "lat": lat,
+                    "lon": lon,
+                    "radio_km": radio_km,
+                    "df_radio": df_radio
+                }
+
+                st.success(f"✅ Se encontraron {len(df_radio)} puntos dentro de {radio_km:.2f} km.")
+
+            except Exception as e:
+                st.error(f"❌ Error al buscar coordenadas: {e}")
+
+    # --- Mostrar mapa si ya hay datos ---
+    if "busqueda_coordenadas" in st.session_state:
+        datos = st.session_state["busqueda_coordenadas"]
+        lat, lon, radio_km, df_radio = (
+            datos["lat"], datos["lon"], datos["radio_km"], datos["df_radio"]
+        )
+
+        # Crear mapa centrado en las coordenadas
+        m = folium.Map(location=[lat, lon], zoom_start=15, control_scale=True, max_zoom=19)
+
+        # Capa satélite + etiquetas (persistente al hacer zoom)
+        folium.TileLayer(
+            tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+            attr="Google Satellite",
+            name="🛰️ Google Satélite",
+            overlay=False,
+            control=True,
+            max_zoom=20
+        ).add_to(m)
+        folium.TileLayer(
+            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+            attr="Google Hybrid",
+            name="🗺️ Etiquetas",
+            overlay=True,
+            control=True,
+            max_zoom=20
+        ).add_to(m)
+
+        # Círculo del radio
+        folium.Circle(
+            location=[lat, lon],
+            radius=radio_km * 1000,
+            color="blue",
+            weight=2,
+            fill=True,
+            fill_color="#3186cc",
+            fill_opacity=0.15,
+            popup=f"Radio: {radio_km} km"
+        ).add_to(m)
+
+        # Marcador central
+        folium.Marker(
+            location=[lat, lon],
+            popup="📍 Coordenadas buscadas",
+            icon=folium.Icon(color="red", icon="glyphicon-screenshot")
+        ).add_to(m)
+
+        # Agrupar puntos dentro del radio
+        cluster = MarkerCluster().add_to(m)
+        for i, row in df_radio.iterrows():
+            folium.Marker(
+                location=[row["latitud"], row["longitud"]],
+                popup=f"{row.get('municipio', '—')} - {row.get('poblacion', '—')}",
+                tooltip=f"📍 {row.get('municipio', '—')} ({row['distancia_km']:.2f} km)",
+                icon=folium.Icon(color="green", icon="glyphicon-tint")  # vuelve al icono gotita
+            ).add_to(cluster)
+
+        # Mostrar mapa
+        mapa_output = st_folium(m, height=680, width="100%", key="mapa_busqueda_coordenadas")
+
+        # --- Detectar clic y guardar punto seleccionado ---
+        if mapa_output and mapa_output.get("last_object_clicked") is not None:
+            click_lat = mapa_output["last_object_clicked"]["lat"]
+            click_lon = mapa_output["last_object_clicked"]["lng"]
+
+            df_radio["distancia_click"] = [
+                geodesic((click_lat, click_lon), (r_lat, r_lon)).meters
+                for r_lat, r_lon in zip(df_radio["latitud"], df_radio["longitud"])
+            ]
+
+            punto_mas_cercano = df_radio.loc[df_radio["distancia_click"].idxmin()]
+            st.session_state["punto_seleccionado"] = punto_mas_cercano
+
+        # --- Mostrar ficha del punto seleccionado ---
+        if st.session_state.get("punto_seleccionado") is not None:
+            seleccionado = st.session_state["punto_seleccionado"].fillna("—")
+
+            st.markdown("### 📋 Detalles del punto seleccionado")
+
+            st.markdown(
+                f"""
+                <div style='background-color:#f9f9f9; padding:15px; border-radius:10px; border:1px solid #ddd;'>
+                    <p><strong>🏘️ Municipio:</strong> {seleccionado.get('municipio', '—')}</p>
+                    <p><strong>🏡 Población:</strong> {seleccionado.get('poblacion', '—')}</p>
+                    <p><strong>📍 Dirección:</strong> {seleccionado.get('vial', '—')} {seleccionado.get('numero', '—')}</p>
+                    <p><strong>📮 Código Postal:</strong> {seleccionado.get('cp', '—')}</p>
+                    <p><strong>🌐 Latitud:</strong> {seleccionado.get('latitud', '—')}</p>
+                    <p><strong>🌐 Longitud:</strong> {seleccionado.get('longitud', '—')}</p>
+                    <p><strong>📏 Distancia al punto:</strong> {seleccionado.get('distancia_km', '—')} km</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # Botón limpiar búsqueda
+        if st.button("🧹 Limpiar búsqueda"):
+            for key in ["busqueda_coordenadas", "punto_seleccionado"]:
+                st.session_state.pop(key, None)
+            st.rerun()
 
 def mostrar_mapa_de_asignaciones():
     st.title("Mapa Asignaciones")
