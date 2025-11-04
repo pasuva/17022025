@@ -342,6 +342,7 @@ def comercial_dashboard_vip():
 
         # NUEVO CHECKBOX: sin comercial asignado
         sin_comercial = st.checkbox("Mostrar solo apartamentos sin comercial asignado", key="vip_sin_comercial")
+        solo_mios = st.checkbox("Mostrar solo mis puntos asignados", key="vip_solo_mios")
 
         # Botones: aplicar y limpiar
         colA, colB = st.columns([1, 1])
@@ -394,6 +395,11 @@ def comercial_dashboard_vip():
                     if sin_comercial:
                         query += " AND (c.comercial IS NULL OR TRIM(c.comercial) = '')"
 
+                    # Filtro: solo mis puntos asignados (ignorando mayúsculas/minúsculas)
+                    if solo_mios:
+                        query += " AND LOWER(TRIM(c.comercial)) = LOWER(TRIM(?))"
+                        params.append(comercial)
+
                     df = pd.read_sql(query, conn, params=params)
                     conn.close()
 
@@ -405,7 +411,8 @@ def comercial_dashboard_vip():
                             "provincia": provincia_sel,
                             "municipio": municipio_sel,
                             "poblacion": poblacion_sel,
-                            "sin_comercial": sin_comercial
+                            "sin_comercial": sin_comercial,
+                            "solo_mios": solo_mios
                         }
                         st.success(f"✅ Se han cargado {len(df)} puntos. (Filtros guardados en sesión)")
 
@@ -610,7 +617,7 @@ def comercial_dashboard_vip():
             # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
             query_viabilidades = """
             SELECT v.ticket, v.latitud, v.longitud, v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
-                   v.serviciable, v.coste, v.comentarios_comercial, v.justificacion, v.resultado, v.respuesta_comercial
+                   v.serviciable, v.coste, v.comentarios_comercial, v.comentarios_internos, v.nombre_cliente, v.telefono, v.justificacion, v.Presupuesto_enviado, v.resultado, v.respuesta_comercial
             FROM viabilidades v
             WHERE LOWER(v.usuario) = LOWER(?)
             """
@@ -660,12 +667,21 @@ def comercial_dashboard_vip():
                         with st.expander(f"Ticket {row['ticket']} - {row['municipio']} {row['vial']} {row['numero']}"):
                             # Mostrar información contextual
                             st.markdown(f"""
-                                    **📌 Justificación oficina:**  
-                                    {row.get('justificacion', '—')}
+                                **👤 Nombre del cliente:**  
+                                {row.get('nombre_cliente', '—')}
 
-                                    **📊 Resultado oficina:**  
-                                    {row.get('resultado', '—')}
-                                    """)
+                                **📌 Justificación oficina:**  
+                                {row.get('justificacion', '—')}
+
+                                **📊 Resultado oficina:**  
+                                {row.get('resultado', '—')}
+
+                                **💬 Comentarios a comercial:**  
+                                {row.get('comentarios_comercial', '—')}
+
+                                **🧩 Comentarios internos:**  
+                                {row.get('comentarios_internos', '—')}
+                            """)
 
                             st.info("""
                                     ℹ️ **Por favor, completa este campo indicando:**  
