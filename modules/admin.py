@@ -1134,9 +1134,12 @@ def viabilidades_seccion():
                             nombre_archivo = archivo.name
                             archivo_bytes = archivo.getvalue()  # Leer bytes del PDF
 
+                            # 📂 Subir a la carpeta "PRESUPUESTOS" en Cloudinary
+                            nombre_archivo_cloud = f"PRESUPUESTOS/{nombre_archivo}"
+
                             # 🔹 Subir PDF a Cloudinary (como tipo raw)
                             st.info("📤 Subiendo PDF a Cloudinary...")
-                            cloudinary_url = upload_file_to_cloudinary(io.BytesIO(archivo_bytes), nombre_archivo)
+                            cloudinary_url = upload_file_to_cloudinary(io.BytesIO(archivo_bytes), nombre_archivo_cloud)
                             if not cloudinary_url:
                                 st.error("❌ Error al subir el archivo a Cloudinary. No se puede continuar.")
                                 st.stop()

@@ -1011,7 +1011,7 @@ def viabilidades_section():
 
                             # Aquí puedes subir a Cloudinary o a tu sistema de almacenamiento
                             url = upload_image_to_cloudinary(archivo_bytes,
-                                                     nombre_archivo)  # Necesitas implementar esta función
+                                                     nombre_archivo, folder="incidencias")  # Necesitas implementar esta función
 
                             # Guardar URL y ticket en base de datos
                             conn = get_db_connection()
