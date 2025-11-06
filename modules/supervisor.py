@@ -53,7 +53,7 @@ def load_datos_uis():
             st.warning("⚠️ No hay datos disponibles.")
         return datos_uis_data
     except Exception as e:
-        st.error(f"❌ Error al cargar Datos UIS: {e}")
+        st.toast(f"❌ Error al cargar Datos UIS: {e}")
         return None
 
 # Función para cargar datos de Ofertas Comerciales (combinando dos tablas)
@@ -74,7 +74,7 @@ def load_ofertas_comercial():
 
         return combined_data
     except Exception as e:
-        st.error(f"❌ Error al cargar Ofertas Comerciales: {e}")
+        st.toast(f"❌ Error al cargar Ofertas Comerciales: {e}")
         return None
 
 # Función para cargar datos de Viabilidades
@@ -90,7 +90,7 @@ def load_viabilidades():
             st.warning("⚠ No hay datos disponibles.")
         return viabilidades_data
     except Exception as e:
-        st.error(f"❌ Error al cargar Viabilidades: {e}")
+        st.toast(f"❌ Error al cargar Viabilidades: {e}")
         return None
 
 # Función para descargar los datos
@@ -231,7 +231,7 @@ def supervisor_dashboard():
 
             # Limpiar parámetros de la URL
             st.experimental_set_query_params()
-            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+            st.toast("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
 
     if "data" in st.session_state:

@@ -76,11 +76,11 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
         # Verificar si el apartment_id existe
         cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE apartment_id = ?", (apartment_id,))
         if cursor.fetchone()[0] == 0:
-            st.error("❌ El Apartment ID no existe en la base de datos. No se puede guardar ni actualizar la oferta.")
+            st.toast("❌ El Apartment ID no existe en la base de datos. No se puede guardar ni actualizar la oferta.")
             conn.close()
             return
 
-        st.info(f"⚠️ El Apartment ID {apartment_id} está asignado, se actualizarán los datos.")
+        st.toast(f"⚠️ El Apartment ID {apartment_id} está asignado, se actualizarán los datos.")
 
         # Subir imagen si hay incidencia
         imagen_url = None
@@ -129,7 +129,7 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
 
         conn.commit()
         conn.close()
-        st.success("✅ ¡Oferta actualizada con éxito en la base de datos!")
+        st.toast("✅ ¡Oferta actualizada con éxito en la base de datos!")
 
         # Notificación a administradores
         conn = get_db_connection()
@@ -147,14 +147,14 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
         for correo in destinatario_admin:
             correo_oferta_comercial(correo, apartment_id, descripcion_oferta)
 
-        st.info(f"📧 Se ha notificado a {len(destinatario_admin)} administrador(es).")
+        st.toast(f"📧 Se ha notificado a {len(destinatario_admin)} administrador(es).")
 
         # Registrar trazabilidad
         log_trazabilidad(st.session_state["username"], "Actualizar Oferta",
                          f"Oferta actualizada para Apartment ID: {apartment_id}")
 
     except Exception as e:
-        st.error(f"❌ Error al guardar o actualizar la oferta en la base de datos: {e}")
+        st.toast(f"❌ Error al guardar o actualizar la oferta en la base de datos: {e}")
 
 def mostrar_ultimo_anuncio():
     """Muestra el anuncio más reciente a los usuarios normales."""
@@ -307,7 +307,7 @@ def comercial_dashboard():
             st.session_state["role"] = ""
             st.session_state["session_id"] = ""
 
-            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+            st.toast("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
 
     # Se utiliza un ícono de marcador por defecto (sin comprobación de tipo_olt_rental)
@@ -440,7 +440,7 @@ def comercial_dashboard():
                 conn.close()
 
                 if 'comercial_rafa' not in tables['name'].values:
-                    st.error("❌ La tabla 'comercial_rafa' no se encuentra en la base de datos.")
+                    st.toast("❌ La tabla 'comercial_rafa' no se encuentra en la base de datos.")
                     st.stop()
 
                 # Cargar datos con caché
@@ -465,11 +465,11 @@ def comercial_dashboard():
                 essential_cols = ['latitud', 'longitud', 'apartment_id']
                 missing_cols = [col for col in essential_cols if col not in df.columns]
                 if missing_cols:
-                    st.error(f"❌ Faltan columnas: {missing_cols}")
+                    st.toast(f"❌ Faltan columnas: {missing_cols}")
                     st.stop()
 
             except Exception as e:
-                st.error(f"❌ Error al cargar los datos: {e}")
+                st.toast(f"❌ Error al cargar los datos: {e}")
                 st.stop()
 
         # Inicializar clicks si no existe
@@ -482,7 +482,7 @@ def comercial_dashboard():
 
         if location:
             lat, lon = location
-            st.success(f"✅ Ubicación obtenida: {lat:.6f}, {lon:.6f}")
+            st.toast(f"✅ Ubicación obtenida: {lat:.6f}, {lon:.6f}")
         else:
             st.warning("⚠️ No se pudo obtener la ubicación automática.")
             # Usar última ubicación o ubicación por defecto
@@ -616,7 +616,7 @@ def comercial_dashboard():
 
         # Verificar si el usuario ha iniciado sesión
         if "username" not in st.session_state:
-            st.error("❌ No has iniciado sesión. Por favor, vuelve a la pantalla de inicio de sesión.")
+            st.toast("❌ No has iniciado sesión. Por favor, vuelve a la pantalla de inicio de sesión.")
             st.stop()
 
         comercial_usuario = st.session_state.get("username", None)
@@ -745,16 +745,16 @@ def comercial_dashboard():
                                         correo_respuesta_comercial(email, row['ticket'], comercial_usuario,
                                                                    nuevo_comentario)
 
-                                    st.success(
+                                    st.toast(
                                         f"✅ Comentario guardado y notificación enviada para el ticket {row['ticket']}.")
                                     st.rerun()  # 🔄 Refrescar la página para que desaparezca de pendientes
                                 except Exception as e:
-                                    st.error(f"❌ Error al guardar el comentario para el ticket {row['ticket']}: {e}")
+                                    st.toast(f"❌ Error al guardar el comentario para el ticket {row['ticket']}: {e}")
                 else:
                     st.info("🎉 No tienes viabilidades pendientes de contestar. ✅")
 
         except Exception as e:
-            st.error(f"❌ Error al cargar los datos: {e}")
+            st.toast(f"❌ Error al cargar los datos: {e}")
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
@@ -852,7 +852,7 @@ def guardar_viabilidad(datos):
     if emails_admin:
         for email in emails_admin:
             correo_viabilidad_comercial(email, ticket_id, descripcion_viabilidad)
-        st.info(
+        st.toast(
             f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada."
         )
     else:
@@ -861,12 +861,12 @@ def guardar_viabilidad(datos):
     # Notificar al comercial jefe específico
     if email_comercial_jefe:
         correo_viabilidad_comercial(email_comercial_jefe, ticket_id, descripcion_viabilidad)
-        st.info(f"📧 Notificación enviada al comercial jefe: {email_comercial_jefe}")
+        st.toast(f"📧 Notificación enviada al comercial jefe: {email_comercial_jefe}")
     else:
         st.warning("⚠️ No se encontró email del comercial jefe, no se pudo enviar la notificación.")
 
     # Mostrar mensaje de éxito en Streamlit
-    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
+    st.toast("✅ Los cambios para la viabilidad han sido guardados correctamente")
 
 
 
@@ -1047,7 +1047,7 @@ def viabilidades_section():
                 ))
                 # ------------------- GUARDAR IMÁGENES -------------------
                 if imagenes_viabilidad:
-                    st.info("📤 Subiendo imágenes...")
+                    st.toast("📤 Subiendo imágenes...")
                     for imagen in imagenes_viabilidad:
                         try:
                             archivo_bytes = imagen.getvalue()
@@ -1070,9 +1070,9 @@ def viabilidades_section():
                         except Exception as e:
                             st.warning(f"⚠️ No se pudo subir la imagen {nombre_archivo}: {e}")
 
-                    st.success("✅ Imágenes guardadas correctamente.")
+                    st.toast("✅ Imágenes guardadas correctamente.")
 
-                st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+                st.toast(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
 
                 # Resetear marcador para permitir nuevas viabilidades
                 st.session_state.viabilidad_marker = None
@@ -1107,7 +1107,7 @@ def mostrar_formulario(click_data):
         lat_value = float(click_data.get("lat"))
         lng_value = float(click_data.get("lng"))
     except (TypeError, ValueError):
-        st.error("❌ Coordenadas inválidas.")
+        st.toast("❌ Coordenadas inválidas.")
         return
 
     form_key = f"{lat_value}_{lng_value}"
@@ -1124,7 +1124,7 @@ def mostrar_formulario(click_data):
         df = pd.read_sql(query, conn, params=params)
         conn.close()
     except Exception as e:
-        st.error(f"❌ Error al obtener datos de la base de datos: {e}")
+        st.toast(f"❌ Error al obtener datos de la base de datos: {e}")
         return
 
     # Si no se encontraron registros, avisar y salir
@@ -1294,7 +1294,7 @@ def mostrar_formulario(click_data):
     # Procesar envío
     if submit:
         if es_serviciable == "Sí" and phone and not phone.isdigit():
-            st.error("❌ El teléfono debe contener solo números.")
+            st.toast("❌ El teléfono debe contener solo números.")
             return
 
         oferta_data = {
@@ -1321,7 +1321,7 @@ def mostrar_formulario(click_data):
             "fecha": pd.Timestamp.now(tz="Europe/Madrid")
         }
 
-        st.success("✅ Oferta enviada correctamente.")
+        st.toast("✅ Oferta enviada correctamente.")
 
         with st.spinner("⏳ Guardando la oferta en la base de datos..."):
             guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id)
@@ -1365,8 +1365,8 @@ def mostrar_formulario(click_data):
                 if email_comercial:
                     correo_oferta_comercial(email_comercial, apartment_id, descripcion_oferta)
 
-                st.success("✅ Oferta enviada con éxito")
-                st.info(
+                st.toast("✅ Oferta enviada con éxito")
+                st.toast(
                     f"📧 Se ha enviado una notificación a: {', '.join(emails_admin + ([email_comercial] if email_comercial else []))}")
             else:
                 st.warning("⚠️ No se encontró ningún email de administrador/gestor, no se pudo enviar la notificación.")
@@ -1391,9 +1391,9 @@ def mostrar_formulario(click_data):
                     nombre_archivo=nombre_archivo
                 )
 
-                st.success(f"✅ PDF precontrato enviado correctamente a {destinatario_bo}.")
+                st.toast(f"✅ PDF precontrato enviado correctamente a {destinatario_bo}.")
             except Exception as e:
-                st.error(f"❌ Error al enviar PDF precontrato: {e}")
+                st.toast(f"❌ Error al enviar PDF precontrato: {e}")
 
 if __name__ == "__main__":
     comercial_dashboard()

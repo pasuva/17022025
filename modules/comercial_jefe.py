@@ -74,7 +74,7 @@ def cargar_total_ofertas():
         return total_ofertas
     except Exception as e:
         import streamlit as st
-        st.error(f"Error cargando total_ofertas: {e}")
+        st.toast(f"Error cargando total_ofertas: {e}")
         return pd.DataFrame()
 
 
@@ -90,7 +90,7 @@ def cargar_viabilidades():
         return viabilidades
     except Exception as e:
         import streamlit as st
-        st.error(f"Error cargando total_ofertas: {e}")
+        st.toast(f"Error cargando total_ofertas: {e}")
         return pd.DataFrame()
 
 def mostrar_ultimo_anuncio():
@@ -227,7 +227,7 @@ def mapa_dashboard():
             st.session_state["username"] = ""
             st.session_state["role"] = ""
             st.session_state["session_id"] = ""
-            st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+            st.toast("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
             st.rerun()
 
     # Lógica principal según la opción
@@ -312,10 +312,10 @@ def mostrar_coordenadas():
                     "df_radio": df_radio
                 }
 
-                st.success(f"✅ Se encontraron {len(df_radio)} puntos dentro de {radio_km:.2f} km.")
+                st.toast(f"✅ Se encontraron {len(df_radio)} puntos dentro de {radio_km:.2f} km.")
 
             except Exception as e:
-                st.error(f"❌ Error al buscar coordenadas: {e}")
+                st.toast(f"❌ Error al buscar coordenadas: {e}")
 
     # --- Mostrar mapa si ya hay datos ---
     if "busqueda_coordenadas" in st.session_state:
@@ -681,7 +681,7 @@ def mostrar_mapa_de_asignaciones():
                                                                  poblacion_sel if poblacion_sel else "",
                                                                  descripcion_asignacion)
                             except Exception as e:
-                                st.error(f"❌ Error al notificar a {comercial}: {e}")
+                                st.toast(f"❌ Error al notificar a {comercial}: {e}")
 
                         # Notificar administradores
                         cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
@@ -699,9 +699,9 @@ def mostrar_mapa_de_asignaciones():
                                                               poblacion_sel if poblacion_sel else "",
                                                               descripcion_admin)
 
-                        st.success("✅ Zona asignada correctamente y notificaciones enviadas.")
-                        st.info(f"📧 Se notificó a: {', '.join(comerciales_seleccionados)}")
-                        st.info(
+                        st.toast("✅ Zona asignada correctamente y notificaciones enviadas.")
+                        st.toast(f"📧 Se notificó a: {', '.join(comerciales_seleccionados)}")
+                        st.toast(
                             f"📊 Total puntos: {total_puntos} | Ya asignados: {asignados} | Nuevos: {nuevos_asignados} | Pendientes tras asignación: {total_puntos - (asignados + nuevos_asignados)}"
                         )
 
@@ -823,7 +823,7 @@ def mostrar_mapa_de_asignaciones():
                                                                       descripcion_admin)
 
                                 # Mensajes claros en la interfaz
-                                st.success(
+                                st.toast(
                                     f"✅ Se ha desasignado completamente la zona {municipio_sel} - {poblacion_sel} "
                                     f"para el comercial **{comercial_a_eliminar}**.\n\n"
                                     f"📊 Total puntos eliminados: {total_registros}"
@@ -839,7 +839,7 @@ def mostrar_mapa_de_asignaciones():
 
                             else:
                                 conn.close()
-                                st.info(
+                                st.toast(
                                     f"ℹ️ No había puntos para desasignar en la zona {municipio_sel} - {poblacion_sel} "
                                     f"para el comercial **{comercial_a_eliminar}**."
                                 )
@@ -964,7 +964,7 @@ def mostrar_mapa_de_asignaciones():
                                 for email_admin in emails_admins:
                                     correo_asignacion_administracion2(email_admin, puntos[0][2], puntos[0][3],
                                                                       descripcion_admin)
-                                st.success(f"✅ Puntos liberados reasignados correctamente.\nTotal puntos: {total_puntos}\n{resumen}")
+                                st.toast(f"✅ Puntos liberados reasignados correctamente.\nTotal puntos: {total_puntos}\n{resumen}")
 
                                 # Recargar la página para ver los cambios
                                 st.rerun()
@@ -973,7 +973,7 @@ def mostrar_mapa_de_asignaciones():
                             # En caso de error, revertir los cambios
                             if 'conn' in locals():
                                 conn.rollback()
-                                st.error(f"❌ Error al reasignar: {str(e)}")
+                                st.toast(f"❌ Error al reasignar: {str(e)}")
                         finally:
                             # Cerrar la conexión
                             if 'conn' in locals():
@@ -1426,7 +1426,7 @@ def mostrar_viabilidades():
             """)
 
         if df_viab.empty:
-            st.success("🎉No hay viabilidades pendientes de confirmación.")
+            st.toast("🎉No hay viabilidades pendientes de confirmación.")
         else:
             if not df_viab.empty:
 
@@ -1568,7 +1568,7 @@ def mostrar_viabilidades():
                                         comercial_orig=row.comercial_reporta
                                     )
 
-                            st.success(f"Viabilidad {row.id} confirmada.")
+                            st.toast(f"Viabilidad {row.id} confirmada.")
                             st.session_state[f"ocultar_{row.id}"] = True  # Oculta la fila
 
                     # --------------- REASIGNAR ----------------
@@ -1603,7 +1603,7 @@ def mostrar_viabilidades():
                                         comercial_orig=row.comercial_reporta
                                     )
 
-                                st.success(f"Viabilidad {row.id} reasignada a {nuevo_com}.")
+                                st.toast(f"Viabilidad {row.id} reasignada a {nuevo_com}.")
 
         # 🔒 Cerrar la conexión al final
         conn.close()
@@ -1810,7 +1810,7 @@ def mostrar_viabilidades():
                         apartment_id  # nuevo campo
                     ))
 
-                    st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+                    st.toast(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
 
                     # Resetear marcador para permitir nuevas viabilidades
                     st.session_state.viabilidad_marker = None
@@ -1904,14 +1904,14 @@ def guardar_viabilidad(datos):
     if emails_admin:
         for email in emails_admin:
             correo_viabilidad_comercial(email, ticket_id, descripcion_viabilidad)
-        st.info(
+        st.toast(
             f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada."
         )
     else:
         st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
 
     # Mostrar mensaje de éxito en Streamlit
-    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
+    st.toast("✅ Los cambios para la viabilidad han sido guardados correctamente")
 
 def obtener_viabilidades():
     conn = get_db_connection()
@@ -2038,7 +2038,7 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
             descargar_excel({"Datos Gestor": df_db}, nombre_archivo_final)
 
         except Exception as e:
-            st.error(f"❌ Error al obtener los datos de la base de datos: {e}")
+            st.toast(f"❌ Error al obtener los datos de la base de datos: {e}")
 
     elif dataset_opcion == "Ofertas asignadas":
         log_trazabilidad(username, "Descarga de datos", "Usuario descargó ofertas asignadas.")

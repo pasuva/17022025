@@ -121,7 +121,7 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
         headers = result.get("values", [[]])[0]
 
         if not headers:
-            st.error("❌ No se encontraron encabezados en la hoja de Google Sheets.")
+            st.toast("❌ No se encontraron encabezados en la hoja de Google Sheets.")
             return
 
         result_data = sheet.values().get(spreadsheetId=sheet_id, range=sheet_name).execute()
@@ -147,7 +147,7 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
 
         # Normalizar columnas clave
         if "apartment_id" not in df_sheet.columns:
-            st.error("❌ La hoja no tiene columna 'apartment_id'.")
+            st.toast("❌ La hoja no tiene columna 'apartment_id'.")
             return
         if "ticket" not in df_sheet.columns:
             df_sheet["ticket"] = ""
@@ -208,14 +208,14 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
             body={"values": values_out}
         ).execute()
 
-        st.success(
+        st.toast(
             f"✅ Google Sheet '{sheet_name}' actualizado correctamente.\n"
             f"🟢 {updated} filas actualizadas.\n"
             f"🆕 {added} filas nuevas añadidas."
         )
 
     except Exception as e:
-        st.error(f"❌ Error al actualizar la hoja de Google Sheets: {e}")
+        st.toast(f"❌ Error al actualizar la hoja de Google Sheets: {e}")
 
 def cargar_contratos_google():
     try:
@@ -319,7 +319,7 @@ def agregar_usuario(username, rol, password, email):
     try:
         cursor.execute("INSERT INTO usuarios (username, password, role, email) VALUES (?, ?, ?, ?)", (username, hashed_pw, rol, email))
         conn.commit()
-        st.success(f"Usuario '{username}' creado con éxito.")
+        st.toast(f"Usuario '{username}' creado con éxito.")
         log_trazabilidad(st.session_state["username"], "Agregar Usuario",
                          f"El admin agregó al usuario '{username}' con rol '{rol}'.")
 
@@ -341,7 +341,7 @@ def agregar_usuario(username, rol, password, email):
         correo_usuario(email, asunto, mensaje)  # Llamada a la función de correo
 
     except sqlite3.IntegrityError:
-        st.error(f"El usuario '{username}' ya existe.")
+        st.toast(f"El usuario '{username}' ya existe.")
     finally:
         conn.close()
 
@@ -371,7 +371,7 @@ def editar_usuario(id, username, rol, password, email):
         conn.commit()
         conn.close()
 
-        st.success(f"Usuario con ID {id} actualizado correctamente.")
+        st.toast(f"Usuario con ID {id} actualizado correctamente.")
         log_trazabilidad(st.session_state["username"], "Editar Usuario", f"El admin editó al usuario con ID {id}.")
 
         # Ahora creamos el mensaje del correo, especificando qué ha cambiado
@@ -403,7 +403,7 @@ def editar_usuario(id, username, rol, password, email):
         correo_usuario(email, asunto, mensaje)  # Llamada a la función de correo
     else:
         conn.close()
-        st.error(f"Usuario con ID {id} no encontrado.")
+        st.toast(f"Usuario con ID {id} no encontrado.")
 
 # Función para eliminar un usuario
 def eliminar_usuario(id):
@@ -420,7 +420,7 @@ def eliminar_usuario(id):
         conn.commit()
         conn.close()
 
-        st.success(f"Usuario con ID {id} eliminado correctamente.")
+        st.toast(f"Usuario con ID {id} eliminado correctamente.")
         log_trazabilidad(st.session_state["username"], "Eliminar Usuario", f"El admin eliminó al usuario con ID {id}.")
 
         # Enviar correo de baja al usuario
@@ -433,7 +433,7 @@ def eliminar_usuario(id):
 
         correo_usuario(email_usuario, asunto, mensaje)  # Llamada a la función de correo
     else:
-        st.error("Usuario no encontrado.")
+        st.toast("Usuario no encontrado.")
 
 def cargar_datos_uis():
     """Carga y cachea los datos de las tablas 'datos_uis', 'comercial_rafa'."""
@@ -509,7 +509,7 @@ def mapa_seccion():
         comercial_rafa_filtradas = comercial_rafa_df[comercial_rafa_df["apartment_id"].astype(str) == apartment_search]
 
         if datos_filtrados.empty:
-            st.error(f"❌ No se encontró ningún Apartment ID **{apartment_search}**.")
+            st.toast(f"❌ No se encontró ningún Apartment ID **{apartment_search}**.")
             return
 
     # —— Si no, fluye tu lógica normal por provincia/municipio/población
@@ -524,7 +524,7 @@ def mapa_seccion():
             datos_uis, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
 
         if datos_uis.empty:
-            st.error("❌ No se encontraron datos para la provincia seleccionada.")
+            st.toast("❌ No se encontraron datos para la provincia seleccionada.")
             return
 
         # 🔹 Filtros de Municipio
@@ -748,14 +748,14 @@ def mostrar_info_apartamento(apartment_id, datos_df, comercial_rafa_df):
                                         help="El comentario se guardará en la tabla correspondiente de la base de datos, asociado al Apartment ID elegido")
         if st.button("Guardar Comentario"):
             if not nuevo_comentario.strip():
-                st.error("❌ El comentario no puede estar vacío.")
+                st.toast("❌ El comentario no puede estar vacío.")
             else:
                 # Actualizamos la base de datos
                 resultado = guardar_comentario(apartment_id, nuevo_comentario, tabla_objetivo)
                 if resultado:
-                    st.success("✅ Comentario guardado exitosamente.")
+                    st.toast("✅ Comentario guardado exitosamente.")
                 else:
-                    st.error("❌ Hubo un error al guardar el comentario. Intenta nuevamente.")
+                    st.toast("❌ Hubo un error al guardar el comentario. Intenta nuevamente.")
 
 
 def guardar_comentario(apartment_id, comentario, tabla):
@@ -771,7 +771,7 @@ def guardar_comentario(apartment_id, comentario, tabla):
         conn.close()
         return True
     except Exception as e:
-        st.error(f"Error al actualizar la base de datos: {str(e)}")
+        st.toast(f"Error al actualizar la base de datos: {str(e)}")
         return False
 
 def upload_file_to_cloudinary(file, public_id=None, folder=None):
@@ -789,7 +789,7 @@ def upload_file_to_cloudinary(file, public_id=None, folder=None):
         )
         return upload_result.get("secure_url")
     except Exception as e:
-        st.error(f"❌ Error al subir el archivo a Cloudinary: {e}")
+        st.toast(f"❌ Error al subir el archivo a Cloudinary: {e}")
         return None
 
 def viabilidades_seccion():
@@ -846,7 +846,7 @@ def viabilidades_seccion():
                 conn = obtener_conexion()
                 tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
                 if 'viabilidades' not in tables['name'].values:
-                    st.error("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
+                    st.toast("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
                     conn.close()
                     return
 
@@ -858,13 +858,13 @@ def viabilidades_seccion():
                     return
 
             except Exception as e:
-                st.error(f"❌ Error al cargar los datos de la base de datos: {e}")
+                st.toast(f"❌ Error al cargar los datos de la base de datos: {e}")
                 return
 
         # Verificamos columnas necesarias
         for col in ['latitud', 'longitud', 'ticket']:
             if col not in viabilidades_df.columns:
-                st.error(f"❌ Falta la columna '{col}'.")
+                st.toast(f"❌ Falta la columna '{col}'.")
                 return
 
         # Agregamos columna de duplicados
@@ -981,8 +981,6 @@ def viabilidades_seccion():
                     st.session_state["selected_ticket"] = clicked_ticket
                     st.session_state["reload_form"] = True
                     st.rerun()
-
-            st.write("🎫 Ticket seleccionado:", st.session_state.get("selected_ticket", "Ninguno"))
 
             # ==============================
             # Mostrar detalles del ticket
@@ -1207,7 +1205,7 @@ def viabilidades_seccion():
                 )
 
                 if archivo:
-                    st.success("✅ Archivo PDF cargado correctamente.")
+                    st.toast("✅ Archivo PDF cargado correctamente.")
 
                     proyecto = st.text_input(
                         "🔖 Proyecto / Nombre del presupuesto",
@@ -1235,7 +1233,7 @@ def viabilidades_seccion():
                             # 📂 Subir a la carpeta "PRESUPUESTOS" en Cloudinary
 
                             # 🔹 Subir PDF a Cloudinary (como tipo raw)
-                            st.info("📤 Subiendo PDF a Cloudinary...")
+                            st.toast("📤 Subiendo PDF a Cloudinary...")
                             cloudinary_url = upload_file_to_cloudinary(
                                 io.BytesIO(archivo_bytes),
                                 public_id=nombre_archivo,  # solo el nombre del archivo
@@ -1243,7 +1241,7 @@ def viabilidades_seccion():
                             )
 
                             if not cloudinary_url:
-                                st.error("❌ Error al subir el archivo a Cloudinary. No se puede continuar.")
+                                st.toast("❌ Error al subir el archivo a Cloudinary. No se puede continuar.")
                                 st.stop()
 
                             # 🔹 Enviar correo a los seleccionados
@@ -1277,7 +1275,7 @@ def viabilidades_seccion():
                                     conn.commit()
                                     conn.close()
                                 except Exception as db_error:
-                                    st.warning(
+                                    st.toast(
                                         f"⚠️ Correo enviado a {correo}, pero no se pudo registrar en la BBDD: {db_error}"
                                     )
 
@@ -1292,15 +1290,15 @@ def viabilidades_seccion():
                                 """, (st.session_state["selected_ticket"],))
                                 conn.commit()
                                 conn.close()
-                                st.info("🗂️ Se ha registrado en la BBDD que el presupuesto en PDF ha sido enviado.")
+                                st.toast("🗂️ Se ha registrado en la BBDD que el presupuesto en PDF ha sido enviado.")
                             except Exception as db_error:
-                                st.warning(
+                                st.toast(
                                     f"⚠️ El correo fue enviado, pero hubo un error al actualizar la BBDD: {db_error}"
                                 )
 
-                            st.success("✅ Presupuesto en PDF enviado y guardado correctamente en Cloudinary.")
+                            st.toast("✅ Presupuesto en PDF enviado y guardado correctamente en Cloudinary.")
                         except Exception as e:
-                            st.error(f"❌ Error al enviar o guardar el presupuesto PDF: {e}")
+                            st.toast(f"❌ Error al enviar o guardar el presupuesto PDF: {e}")
 
         with st.expander("📜 Historial de Envíos de Presupuesto"):
             try:
@@ -1320,7 +1318,7 @@ def viabilidades_seccion():
                     st.dataframe(df_historial, use_container_width=True)
 
             except Exception as e:
-                st.error(f"❌ Error al cargar el historial de envíos: {e}")
+                st.toast(f"❌ Error al cargar el historial de envíos: {e}")
 
         # 🧩 Sección 2: Crear Viabilidades (vacía por ahora)
     elif sub_seccion == "Crear Viabilidades":
@@ -1516,7 +1514,7 @@ def viabilidades_seccion():
                         apartment_id  # nuevo campo
                     ))
 
-                    st.success(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+                    st.toast(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
 
                     # Resetear marcador para permitir nuevas viabilidades
                     st.session_state.viabilidad_marker = None
@@ -1623,22 +1621,22 @@ def guardar_viabilidad(datos):
     if emails_admin:
         for email in emails_admin:
             correo_viabilidad_comercial(email, ticket_id, descripcion_viabilidad)
-        st.info(
+        st.toast(
             f"📧 Se ha enviado una notificación a los administradores: {', '.join(emails_admin)} sobre la viabilidad completada."
         )
     else:
-        st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
+        st.toast("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
 
     # Enviar notificación al comercial seleccionado
     if comercial_email:
         correo_viabilidad_comercial(comercial_email, ticket_id, descripcion_viabilidad)
-        st.info(
+        st.toast(
             f"📧 Se ha enviado una notificación al comercial responsable: {nombre_comercial} ({comercial_email})")
     else:
-        st.warning(f"⚠️ No se pudo encontrar el email del comercial {nombre_comercial}.")
+        st.toast(f"⚠️ No se pudo encontrar el email del comercial {nombre_comercial}.")
 
     # Mostrar mensaje de éxito en Streamlit
-    st.success("✅ Los cambios para la viabilidad han sido guardados correctamente")
+    st.toast("✅ Los cambios para la viabilidad han sido guardados correctamente")
 
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
@@ -1805,7 +1803,7 @@ def mostrar_formulario(click_data):
                 comerciales = [row[0] for row in cursor.fetchall()]
                 conn.close()
             except Exception as e:
-                st.error(f"Error al cargar comerciales: {e}")
+                st.toast(f"Error al cargar comerciales: {e}")
                 comerciales = []
 
             # Añadir el valor actual si no está en la lista
@@ -2061,14 +2059,14 @@ def mostrar_formulario(click_data):
 
             conn.commit()
             conn.close()
-            st.success(f"✅ Cambios guardados correctamente para el ticket {ticket}")
+            st.toast(f"✅ Cambios guardados correctamente para el ticket {ticket}")
             # Limpiar el session_state para forzar recarga de datos
             if f"form_data_{ticket}" in st.session_state:
                 del st.session_state[f"form_data_{ticket}"]
             st.rerun()
 
         except Exception as e:
-            st.error(f"❌ Error al guardar los cambios: {e}")
+            st.toast(f"❌ Error al guardar los cambios: {e}")
 
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")
@@ -2198,7 +2196,7 @@ def admin_dashboard():
                 st.session_state["role"] = ""
                 st.session_state["session_id"] = ""
 
-                st.success("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
+                st.toast("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
                 # Limpiar parámetros de la URL
                 st.experimental_set_query_params()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
                 st.rerun()
@@ -2258,7 +2256,7 @@ def admin_dashboard():
 
                     # --- Cargar datos_uis ---
                     if 'datos_uis' not in tablas_disponibles:
-                        st.error("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
+                        st.toast("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
                         conn.close()
                         st.stop()
                     data_uis = pd.read_sql("SELECT * FROM datos_uis", conn)
@@ -2312,7 +2310,7 @@ def admin_dashboard():
                     conn.close()
 
                 except Exception as e:
-                    st.error(f"❌ Error al cargar los datos: {e}")
+                    st.toast(f"❌ Error al cargar los datos: {e}")
                     st.stop()
 
             # --- Renombrar columnas de viabilidades para alinear con datos_uis ---
@@ -2490,9 +2488,9 @@ def admin_dashboard():
                                 destinatario="aarozamena@symtel.es",
                                 bytes_excel=towrite.getvalue()
                             )
-                            st.success("✅ Correo enviado correctamente.")
+                            st.toast("✅ Correo enviado correctamente.")
                         except Exception as e:
-                            st.error(f"❌ Error al enviar el correo: {e}")
+                            st.toast(f"❌ Error al enviar el correo: {e}")
 
 
         elif sub_seccion == "Seguimiento de Contratos":
@@ -2572,7 +2570,7 @@ def admin_dashboard():
                                     row.get('comentarios')
                                 ))
                             except Exception as e:
-                                st.error(f"⚠️ Error al insertar fila {i}: {e}")
+                                st.toast(f"⚠️ Error al insertar fila {i}: {e}")
                                 st.write(
                                     f"Valores: divisor={divisor}, puerto={puerto}, fecha_fin_contrato={fecha_fin_contrato}")
 
@@ -2594,7 +2592,7 @@ def admin_dashboard():
                             FROM seguimiento_contratos
                         """)
                         stats = cur.fetchone()
-                        st.success(
+                        st.toast(
                             f"📊 En base de datos - Total: {stats[0]}, Con divisor: {stats[1]}, Con puerto: {stats[2]}, Con fecha_fin_contrato: {stats[3]}")
 
                         # 4. Mostrar algunos ejemplos de lo que se guardó
@@ -2667,14 +2665,14 @@ def admin_dashboard():
                                 updated_fecha_fin = cur.rowcount
                                 conn.commit()
 
-                                st.success(
+                                st.toast(
                                     f"✅ Actualizados {updated_divisor} divisores, {updated_puerto} puertos y {updated_fecha_fin} fechas fin contrato en datos_uis")
 
                         # 6. Feedback final
-                        st.success("✅ Proceso completado correctamente.")
+                        st.toast("✅ Proceso completado correctamente.")
 
                     except Exception as e:
-                        st.error(f"❌ Error en el proceso: {e}")
+                        st.toast(f"❌ Error en el proceso: {e}")
                         import traceback
                         st.code(traceback.format_exc())
             # ✅ CHECKBOX RESTAURADO - Mostrar registros existentes
@@ -2692,7 +2690,7 @@ def admin_dashboard():
                                                   key="cols_existing")
                             st.dataframe(existing[cols], use_container_width=True)
                     except Exception as e:
-                        st.error(f"❌ Error al cargar registros existentes: {e}")
+                        st.toast(f"❌ Error al cargar registros existentes: {e}")
         if sub_seccion == "TIRC":
             st.info(
                 "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos TIRC.")
@@ -2702,7 +2700,7 @@ def admin_dashboard():
                 df_tirc = pd.read_sql("SELECT * FROM TIRC", conn)
                 conn.close()
             except Exception as e:
-                st.error(f"❌ Error al cargar datos de TIRC: {e}")
+                st.toast(f"❌ Error al cargar datos de TIRC: {e}")
                 df_tirc = pd.DataFrame()  # tabla vacía para evitar errores
 
             if not df_tirc.empty:
@@ -2783,7 +2781,7 @@ def admin_dashboard():
                     conn.close()
 
                     if comercial_rafa_data.empty:
-                        st.error("❌ No se encontraron ofertas realizadas por los comerciales.")
+                        st.toast("❌ No se encontraron ofertas realizadas por los comerciales.")
                         return
 
                     # Filtrar comercial_rafa para mostrar registros con datos en 'serviciable'
@@ -2794,7 +2792,7 @@ def admin_dashboard():
                         combined_data = pd.concat([comercial_rafa_data_filtrada], ignore_index=True)
 
                 except Exception as e:
-                    st.error(f"❌ Error al cargar datos de la base de datos: {e}")
+                    st.toast(f"❌ Error al cargar datos de la base de datos: {e}")
                     return
 
             if combined_data.empty:
@@ -2803,7 +2801,7 @@ def admin_dashboard():
 
             # Eliminar columnas duplicadas si las hay
             if combined_data.columns.duplicated().any():
-                st.warning("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
+                st.toast("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
                 combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
 
             # Guardar en sesión de Streamlit
@@ -2897,10 +2895,10 @@ def admin_dashboard():
                         conn.commit()
                         conn.close()
 
-                        st.success(f"✅ La oferta con Apartment ID {selected_apartment_id} ha sido eliminada exitosamente.")
+                        st.toast(f"✅ La oferta con Apartment ID {selected_apartment_id} ha sido eliminada exitosamente.")
 
                     except Exception as e:
-                        st.error(f"❌ Error al eliminar la oferta: {e}")
+                        st.toast(f"❌ Error al eliminar la oferta: {e}")
 
             # Desplegable para ofertas con imagen
             offers_with_image = []
@@ -2960,7 +2958,7 @@ def admin_dashboard():
                 try:
                     conn = obtener_conexion()
                     if conn is None:
-                        st.error("❌ No se pudo establecer conexión con la base de datos.")
+                        st.toast("❌ No se pudo establecer conexión con la base de datos.")
                         st.stop()
 
                     # Paso 1: Cargar ofertas unificadas con info de datos_uis
@@ -3133,7 +3131,7 @@ def admin_dashboard():
                     )
 
                 except Exception as e:
-                    st.error(f"❌ Error al generar la certificación completa: {e}")
+                    st.toast(f"❌ Error al generar la certificación completa: {e}")
 
     elif opcion == "Viabilidades":
         st.header("Viabilidades")
@@ -3253,9 +3251,9 @@ def admin_dashboard():
             if st.button("Agregar Usuario"):
                 if nombre and password and email:
                     agregar_usuario(nombre, rol, password, email)
-                    st.success("✅ Usuario agregado correctamente.")
+                    st.toast("✅ Usuario agregado correctamente.")
                 else:
-                    st.error("❌ Por favor, completa todos los campos.")
+                    st.toast("❌ Por favor, completa todos los campos.")
 
         # ✏️ SUBSECCIÓN: Editar/Eliminar usuarios
         elif sub_seccion == "Editar/eliminar usuarios":
@@ -3280,15 +3278,15 @@ def admin_dashboard():
 
                     if st.button("Guardar Cambios"):
                         editar_usuario(usuario_id, nuevo_nombre, nuevo_rol, nueva_contraseña, nuevo_email)
-                        st.success("✅ Usuario editado correctamente.")
+                        st.toast("✅ Usuario editado correctamente.")
                 else:
-                    st.error("❌ Usuario no encontrado.")
+                    st.toast("❌ Usuario no encontrado.")
 
             st.info("ℹ️ Elimina el usuario que quieras del sistema.")
             eliminar_id = st.number_input("ID del Usuario a Eliminar", min_value=1, step=1)
             if eliminar_id and st.button("Eliminar Usuario"):
                 eliminar_usuario(eliminar_id)
-                st.success("✅ Usuario eliminado correctamente.")
+                st.toast("✅ Usuario eliminado correctamente.")
 
 
     elif opcion == "Cargar Nuevos Datos":
@@ -3367,7 +3365,7 @@ def admin_dashboard():
                             # Verificar columnas faltantes
                             faltantes = [c for c in columnas_tirc if c not in df_tirc.columns]
                             if faltantes:
-                                st.error(f"❌ {uploaded_tirc.name}: faltan columnas: {', '.join(faltantes)}")
+                                st.toast(f"❌ {uploaded_tirc.name}: faltan columnas: {', '.join(faltantes)}")
                                 continue
 
                             # Ordenar columnas según estructura esperada
@@ -3385,7 +3383,7 @@ def admin_dashboard():
                             cursor.executemany(insert_query, data_values)
                             conn.commit()
 
-                            st.success(f"✅ {uploaded_tirc.name}: {len(df_tirc)} registros insertados/actualizados.")
+                            st.toast(f"✅ {uploaded_tirc.name}: {len(df_tirc)} registros insertados/actualizados.")
 
                             log_trazabilidad(
                                 st.session_state["username"],
@@ -3394,7 +3392,7 @@ def admin_dashboard():
                             )
 
                     except Exception as e:
-                        st.error(f"❌ Error en {uploaded_tirc.name}: {e}")
+                        st.toast(f"❌ Error en {uploaded_tirc.name}: {e}")
 
                 conn.close()
 
@@ -3452,7 +3450,7 @@ def admin_dashboard():
                         columnas_faltantes = [col for col in mapeo_columnas if col not in data.columns]
 
                         if columnas_faltantes:
-                            st.error(
+                            st.toast(
                                 f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
                         else:
                             data_filtrada = data[list(mapeo_columnas.keys())].copy()
@@ -3557,7 +3555,7 @@ def admin_dashboard():
                                     """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial, 'Pendiente'))
 
                                 if nuevos_para_asignar:
-                                    st.info(
+                                    st.toast(
                                         f"📌 Se asignaron {len(nuevos_para_asignar)} nuevos puntos a {comercial} en la zona {poblacion} ({municipio}, {provincia})"
                                     )
 
@@ -3578,9 +3576,9 @@ def admin_dashboard():
                                             st.write(
                                                 f"📧 Notificación enviada a {comercial} ({email}) por nuevos puntos en zona existente")
                                         except Exception as e:
-                                            st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
+                                            st.toast(f"❌ Error enviando correo a {comercial} ({email}): {e}")
                                     else:
-                                        st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
+                                        st.toast(f"⚠️ No se encontró email para el comercial: {comercial}")
 
                                     # 🔹 Notificación a administradores
                                     cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
@@ -3598,7 +3596,7 @@ def admin_dashboard():
                                             st.write(
                                                 f"📧 Notificación enviada a administrador ({email_admin}) por nuevos puntos en zona existente")
                                         except Exception as e:
-                                            st.error(f"❌ Error enviando correo a admin ({email_admin}): {e}")
+                                            st.toast(f"❌ Error enviando correo a admin ({email_admin}): {e}")
 
                             conn.commit()
 
@@ -3641,9 +3639,9 @@ def admin_dashboard():
                                         )
                                         st.write(f"📧 Notificación enviada a {comercial} ({email})")
                                     except Exception as e:
-                                        st.error(f"❌ Error enviando correo a {comercial} ({email}): {e}")
+                                        st.toast(f"❌ Error enviando correo a {comercial} ({email}): {e}")
                                 else:
-                                    st.warning(f"⚠️ No se encontró email para el comercial: {comercial}")
+                                    st.toast(f"⚠️ No se encontró email para el comercial: {comercial}")
 
                             # 🔹 Notificar también a los administradores
                             cursor.execute("SELECT email FROM usuarios WHERE role = 'admin'")
@@ -3659,9 +3657,9 @@ def admin_dashboard():
                                     )
                                     st.write(f"📧 Notificación enviada a administrador ({email_admin})")
                                 except Exception as e:
-                                    st.error(f"❌ Error enviando correo a admin ({email_admin}): {e}")
+                                    st.toast(f"❌ Error enviando correo a admin ({email_admin}): {e}")
                     except Exception as e:
-                        st.error(f"❌ Error al cargar el archivo: {e}")
+                        st.toast(f"❌ Error al cargar el archivo: {e}")
 
 
     # Opción: Trazabilidad y logs
@@ -3687,9 +3685,9 @@ def admin_dashboard():
                     cursor.execute("VACUUM")  # Esto optimiza la base de datos y resetea los IDs autoincrementables
                     conn.commit()
                     conn.close()
-                    st.success("✔️ Tabla vaciada y IDs reseteados con éxito.")
+                    st.toast("✔️ Tabla vaciada y IDs reseteados con éxito.")
                 except Exception as e:
-                    st.error(f"❌ Error al vaciar la tabla: {e}")
+                    st.toast(f"❌ Error al vaciar la tabla: {e}")
 
         with st.spinner("Cargando trazabilidad..."):
             try:
@@ -3723,7 +3721,7 @@ def admin_dashboard():
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
             except Exception as e:
-                st.error(f"❌ Error al cargar la trazabilidad: {e}")
+                st.toast(f"❌ Error al cargar la trazabilidad: {e}")
 
     elif opcion == "Anuncios":
         st.info(f"📢 Panel de Anuncios Internos")
@@ -3758,7 +3756,7 @@ def admin_dashboard():
 
                 if enviar:
                     if not titulo or not descripcion:
-                        st.error("❌ Debes completar todos los campos.")
+                        st.toast("❌ Debes completar todos los campos.")
                     else:
                         fecha_actual = pd.Timestamp.now(tz="Europe/Madrid").strftime("%Y-%m-%d %H:%M:%S")
                         cursor.execute("""
@@ -3766,7 +3764,7 @@ def admin_dashboard():
                                 VALUES (?, ?, ?)
                             """, (titulo, descripcion, fecha_actual))
                         conn.commit()
-                        st.success("✅ Anuncio publicado correctamente.")
+                        st.toast("✅ Anuncio publicado correctamente.")
 
         # ───────────────────────────────────────
         # 🗂️ Listado de anuncios
@@ -4207,7 +4205,7 @@ def mostrar_control_versiones():
 
             if enviar:
                 if not nueva_version.strip() or not descripcion.strip():
-                    st.error("Por favor completa todos los campos.")
+                    st.toast("Por favor completa todos los campos.")
                 else:
                     fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     # Insertar en base de datos
@@ -4224,7 +4222,7 @@ def mostrar_control_versiones():
                     for (email,) in usuarios:
                         correo_nueva_version(email, nueva_version.strip(), descripcion.strip())
 
-                    st.success("Versión agregada y notificaciones enviadas.")
+                    st.toast("Versión agregada y notificaciones enviadas.")
                     st.rerun()  # Recarga para mostrar la nueva versión
 
         # --- LISTADO DE VERSIONES ---
@@ -4253,7 +4251,7 @@ def mostrar_control_versiones():
         conn.close()
 
     except Exception as e:
-        st.error(f"Ha ocurrido un error al cargar el control de versiones: {e}")
+        st.toast(f"Ha ocurrido un error al cargar el control de versiones: {e}")
 
 # Función para crear el gráfico interactivo de Serviciabilidad
 def create_serviciable_graph():
@@ -4386,7 +4384,7 @@ def home_page():
             st.plotly_chart(create_viabilities_by_municipio_graph(cursor))
 
     except Exception as e:
-        st.error(f"Hubo un error al cargar los gráficos: {e}")
+        st.toast(f"Hubo un error al cargar los gráficos: {e}")
     finally:
         conn.close()  # No olvides cerrar la conexión al final
 
