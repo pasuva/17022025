@@ -1,10 +1,8 @@
 import streamlit as st
-from branca.element import Template, MacroElement
 from folium.plugins import MarkerCluster
 import pandas as pd
 import os, re, time, folium, sqlitecloud
 from streamlit_folium import st_folium
-import streamlit.components.v1 as components
 from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
@@ -529,6 +527,22 @@ def comercial_dashboard():
             df_filtrado = df_filtrado[df_filtrado["municipio"] == municipio_filtro]
             df_filtrado = df_filtrado[df_filtrado["poblacion"] == poblacion_filtro]
 
+            # 🔹 NUEVO FILTRO CTO
+            opcion_cto = st.radio(
+                "Selecciona el tipo de CTO a mostrar:",
+                ["Todas", "CTO VERDE", "CTO COMPARTIDA"],
+                horizontal=True,
+                key="filtro_cto"
+            )
+
+            if opcion_cto == "CTO VERDE":
+                df_filtrado = df_filtrado[df_filtrado["tipo_olt_rental"].str.contains("VERDE", case=False, na=False)]
+            elif opcion_cto == "CTO COMPARTIDA":
+                df_filtrado = df_filtrado[
+                    df_filtrado["tipo_olt_rental"].str.contains("COMPARTIDA", case=False, na=False)]
+
+            # 🔹 Fin nuevo filtro CTO
+
             if df_filtrado.empty:
                 st.warning("⚠️ No hay registros para los filtros seleccionados.")
                 st.stop()
@@ -689,12 +703,14 @@ def comercial_dashboard():
                                     {row.get('resultado', '—')}
                                     """)
 
-                            st.info("""
-                                    ℹ️ **Por favor, completa este campo indicando:**  
-                                            - Si estás de acuerdo o no con la resolución.  
-                                            - Información adicional de tu visita (cliente, obra, accesos, etc.), detalles que ayuden a la oficina a cerrar la viabilidad.  
-                                            - Si el cliente acepta o no el presupuesto.
-                                    """)
+                            with st.expander("ℹ️ Instrucciones para completar este campo", expanded=False):
+                                st.markdown("""
+                                **Por favor, completa este campo indicando:**
+                                - Si estás de acuerdo of no con la resolución.  
+                                - Información adicional de tu visita (cliente, obra, accesos, etc.), detalles que ayuden a la oficina a cerrar la viabilidad.  
+                                - Si el cliente acepta o no el presupuesto.
+                                """)
+
                             nuevo_comentario = st.text_area(
                                 f"✏️ Comentario para ticket {row['ticket']}",
                                 value="",

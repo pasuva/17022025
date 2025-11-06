@@ -435,13 +435,38 @@ def mostrar_mapa_de_asignaciones():
             st.warning("⚠️ No hay datos disponibles para mostrar.")
             st.stop()
 
-    st.info(
-        "🔦 Por cuestiones de eficiencia en la carga de de datos, cuando hay una alta concentración de puntos, el mapa solo mostrará los puntos relativos a los filtros elegidos por el usuario. "
-        "Usa el filtro de Provincia, Municipio y Población para poder ver los puntos que necesites. Opcionalmente, puedes usar los rangos de fecha para mayor precisión.")
-    # Filtro por provincia
+    with st.expander("📊 Información sobre el funcionamiento del mapa", expanded=False):
+        st.info("""
+        🔦 **Por cuestiones de eficiencia en la carga de datos**, cuando hay una alta concentración de puntos, 
+        el mapa solo mostrará los puntos relativos a los **filtros elegidos por el usuario**.
+
+        Usa los filtros de **Provincia**, **Municipio** y **Población** para ver las zonas que necesites.  
+        Opcionalmente, puedes usar los **rangos de fecha** para una búsqueda más precisa.
+        """)# Filtro por provincia
     provincias = datos_uis['provincia'].unique()
     provincia_seleccionada = st.selectbox("Seleccione una provincia:", provincias)
     datos_uis = datos_uis[datos_uis["provincia"] == provincia_seleccionada]
+
+    col_cto1, col_cto2, col_cto3 = st.columns([1, 1, 2])
+    with col_cto1:
+        mostrar_verde = st.checkbox("CTO Verde", value=True)
+    with col_cto2:
+        mostrar_compartida = st.checkbox("CTO Compartida", value=True)
+
+    # Aplica el filtro solo si existe la columna tipo_olt_rental
+    if "tipo_olt_rental" in datos_uis.columns:
+        condiciones = []
+        if mostrar_verde:
+            condiciones.append(datos_uis["tipo_olt_rental"].str.contains("verde", case=False, na=False))
+        if mostrar_compartida:
+            condiciones.append(datos_uis["tipo_olt_rental"].str.contains("compartida", case=False, na=False))
+        if condiciones:
+            datos_uis = datos_uis[pd.concat(condiciones, axis=1).any(axis=1)]
+        else:
+            st.warning("⚠️ Debes seleccionar al menos un tipo de CTO para mostrar datos.")
+            st.stop()
+    else:
+        st.warning("⚠️ No se encontró la columna 'tipo_olt_rental' en los datos.")
 
     # --------------------
     # CONVERTIR FECHA DE TEXTO A DATETIME
@@ -953,13 +978,16 @@ def mostrar_mapa_de_asignaciones():
                             # Cerrar la conexión
                             if 'conn' in locals():
                                 conn.close()
-        st.info(
-            "Para revisar las asignaciones que has realizado y los reportes enviados por los comerciales, dirígete al menú **Ver Datos**. "
-            "Ahora encontrarás un submenú con tres secciones: "
-            "**Zonas asignadas**: muestra las asignaciones realizadas por el gestor. "
-            "**Ofertas realizadas**: detalla las visitas y ofertas gestionadas por los comerciales, junto a su estado actual. "
-            "**Viabilidades estudiadas**: presenta el historial completo de viabilidades reportadas por los comerciales."
-        )
+        with st.expander("🗂️ Guía sobre las secciones del menú 'Ver Datos'", expanded=False):
+            st.info("""
+            📋 **Para revisar las asignaciones y reportes realizados:**
+
+            Dirígete al menú **Ver Datos**, donde encontrarás tres secciones principales:
+
+            - **Zonas asignadas:** muestra las asignaciones realizadas por el gestor.  
+            - **Ofertas realizadas:** detalla las visitas y ofertas gestionadas por los comerciales, junto a su estado actual.  
+            - **Viabilidades estudiadas:** presenta el historial completo de viabilidades reportadas por los comerciales.
+            """)
 
     # --- Generar el mapa (columna izquierda) ---
     with col1:
@@ -1167,8 +1195,17 @@ def mostrar_descarga_datos():
 
     # Subsección: Zonas asignadas
     if sub_seccion == "Zonas asignadas":
-        st.info("ℹ️ Zonas ya asignadas: Visualización del total de asignaciones realizadas por el gestor. Muestra tarjetas visuales con el total de zonas por comercial. "
-                "El color cambia en función de la carga que tenga cada comercial: 🟢 Verde → más de 30 zonas, 🟡 Amarillo → entre 16 y 30, 🔴 Rojo → 15 o menos")
+        with st.expander("📊 Información sobre las zonas asignadas", expanded=False):
+            st.info("""
+            ℹ️ **Zonas ya asignadas:**  
+            Visualiza el total de asignaciones realizadas por el gestor.  
+            Muestra tarjetas con el total de zonas por comercial.  
+            El color indica la carga de trabajo de cada uno:
+
+            - 🟢 **Verde:** más de 30 zonas.  
+            - 🟡 **Amarillo:** entre 16 y 30 zonas.  
+            - 🔴 **Rojo:** 15 o menos zonas.
+            """)
 
         # 🔹 Filtrar los comerciales según el gestor logueado
         if username == "juan":
@@ -1247,7 +1284,7 @@ def mostrar_descarga_datos():
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
         elif username.lower() == "rafa sanz":
             # Rafa Sanz no ve a Juan Pablo
-            viabilidades = viabilidades[viabilidades['usuario'] != ["juan pablo","roberto","nestor", "Comercial2", "Comercial3"]]
+            viabilidades = viabilidades[~viabilidades['usuario'].isin(["juan pablo", "roberto", "nestor", "Comercial2", "Comercial3"])]
 
         st.info(
             "ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
@@ -1374,14 +1411,19 @@ def mostrar_viabilidades():
             "SELECT email FROM usuarios WHERE role = 'admin'", conn
         )["email"].tolist()
 
-        st.info("""ℹ️ Desde este panel podrás: Revisar cuáles están pendientes de confirmación y reasignar una viabilidad a otro comercial, si lo consideras necesario.
+        with st.expander("🧭 Guía para la gestión de viabilidades", expanded=False):
+            st.info("""
+            ℹ️ **Desde este panel podrás:**  
+            Revisar cuáles están pendientes de confirmación y reasignar una viabilidad a otro comercial, si lo consideras necesario.
 
-        🔔 NOTA: Para que una viabilidad sea enviada a la oficina de administración y comience su estudio, es imprescindible que la confirmes.  
-        Solo deben ser confirmadas aquellas que, tras tu revisión, consideres aptas para recibir un estudio y presupuesto.
+            🔔 **NOTA:**  
+            Para que una viabilidad sea enviada a la oficina de administración y comience su estudio, es imprescindible que la confirmes.  
+            Solo deben ser confirmadas aquellas que, tras tu revisión, consideres aptas para recibir un estudio y presupuesto.
 
-        📝 ¿Cómo confirmar una viabilidad? Haz clic sobre cualquier viabilidad del listado: se desplegará su descripción, un enlace directo a Google Maps, 
-        la opción de reasignación y un botón para confirmar.
-        """)
+            📝 **¿Cómo confirmar una viabilidad?**  
+            Haz clic sobre cualquier viabilidad del listado: se desplegará su descripción, un enlace directo a Google Maps,  
+            la opción de reasignación y un botón para confirmar.
+            """)
 
         if df_viab.empty:
             st.success("🎉No hay viabilidades pendientes de confirmación.")

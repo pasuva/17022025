@@ -774,22 +774,23 @@ def guardar_comentario(apartment_id, comentario, tabla):
         st.error(f"Error al actualizar la base de datos: {str(e)}")
         return False
 
-def upload_file_to_cloudinary(file, public_id=None):
+def upload_file_to_cloudinary(file, public_id=None, folder=None):
     """
     Sube un archivo genérico (como Excel, PDF, ZIP...) a Cloudinary y devuelve la URL pública.
+    Puedes especificar una carpeta opcional con el parámetro 'folder'.
     """
     try:
         upload_result = cloudinary.uploader.upload(
             file,
-            resource_type="raw",  # ✅ Permite subir Excel, PDF, ZIP, etc.
-            public_id=public_id,
+            resource_type="raw",  # ✅ Permite subir PDF, ZIP, etc.
+            public_id=public_id,  # opcional, si quieres nombre personalizado
+            folder=folder,        # 👈 Carpeta en Cloudinary (p.ej. "PRESUPUESTOS")
             overwrite=True
         )
         return upload_result.get("secure_url")
     except Exception as e:
         st.error(f"❌ Error al subir el archivo a Cloudinary: {e}")
         return None
-
 
 def viabilidades_seccion():
     # 🟩 Submenú horizontal
@@ -888,7 +889,6 @@ def viabilidades_seccion():
         col1, col2 = st.columns([3, 3])
 
         with col2:
-
             # Reordenamos para que 'ticket' quede primero
             cols = viabilidades_df.columns.tolist()
             if 'ticket' in cols:
@@ -903,78 +903,103 @@ def viabilidades_seccion():
                 floatingFilter=True,
                 sortable=True,
                 resizable=True,
-                minWidth=100,  # ancho mínimo
-                flex=1  # reparte espacio extra
+                minWidth=100,
+                flex=1
             )
-            # (Opcional) Para resaltar duplicados en apartment_id sin pandas styling:
+
+            # Resaltado de duplicados
             dup_ids = viabilidades_df.loc[viabilidades_df['is_duplicate'], 'apartment_id'].unique().tolist()
-            # Configurar estilo para apartment_id (duplicados en amarillo)
+
             gb.configure_column(
                 'apartment_id',
                 cellStyle={
                     'function': f"""
-                                function(params) {{
-                                    if (params.value && {dup_ids}.includes(params.value)) {{
-                                        return {{'backgroundColor': 'yellow'}};
-                                    }}
-                                }}
-                            """
-                }
+                        function(params) {{
+                            if (params.value && {dup_ids}.includes(params.value)) {{
+                                return {{'backgroundColor': 'yellow', 'cursor': 'pointer'}};
+                            }}
+                            return {{'cursor': 'pointer'}};
+                        }}
+                    """
+                },
+                cellRenderer='''function(params) {
+                    return `<a href="#" style="color:#00bfff;text-decoration:underline;">${params.value}</a>`;
+                }'''
             )
+
+            # Selección de fila única
+            gb.configure_selection(selection_mode="single", use_checkbox=False)
 
             gridOptions = gb.build()
 
-            # Aplicar estilo rojo para filas con resultado "NO"
+            # Fila en rojo si resultado = NO
             for col_def in gridOptions['columnDefs']:
-                if col_def['field'] != 'apartment_id':  # No aplicar a apartment_id (ya tiene estilo)
+                if col_def['field'] != 'apartment_id':
                     col_def['cellStyle'] = {
                         'function': """
-                                    function(params) {
-                                        if (params.data.resultado.toUpperCase() === 'NO') {
-                                            return {'backgroundColor': 'red'};
-                                        }
-                                    }
-                                """
+                            function(params) {
+                                if (params.data.resultado && params.data.resultado.toUpperCase() === 'NO') {
+                                    return {'backgroundColor': 'red'};
+                                }
+                            }
+                        """
                     }
 
-            AgGrid(
+            grid_response = AgGrid(
                 df_reordered,
                 gridOptions=gridOptions,
                 enable_enterprise_modules=True,
-                update_mode=GridUpdateMode.NO_UPDATE,
+                update_mode=GridUpdateMode.SELECTION_CHANGED,
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                 fit_columns_on_grid_load=False,
                 height=400,
                 theme='alpine-dark'
             )
 
+            # ==============================
+            # 🔍 Manejo robusto de selección
+            # ==============================
+            selected_rows = grid_response.get("selected_data", [])
+            if isinstance(selected_rows, pd.DataFrame):
+                selected_rows = selected_rows.to_dict(orient="records")
+
+            if not isinstance(selected_rows, list):
+                selected_rows = grid_response.get("selected_rows", [])
+
+            if isinstance(selected_rows, pd.DataFrame):
+                selected_rows = selected_rows.to_dict(orient="records")
+
+            if selected_rows is None:
+                selected_rows = []
+
+            if isinstance(selected_rows, list) and len(selected_rows) > 0:
+                row = selected_rows[0]
+                ticket_key = next((k for k in row.keys() if k.lower().strip() == "ticket"), None)
+                clicked_ticket = str(row.get(ticket_key, "")).strip() if ticket_key else ""
+
+                if clicked_ticket and clicked_ticket != st.session_state.get("selected_ticket"):
+                    st.session_state["selected_ticket"] = clicked_ticket
+                    st.session_state["reload_form"] = True
+                    st.rerun()
+
+            st.write("🎫 Ticket seleccionado:", st.session_state.get("selected_ticket", "Ninguno"))
+
+            # ==============================
+            # Mostrar detalles del ticket
+            # ==============================
+            selected_viabilidad = None
             if st.session_state.get("selected_ticket"):
-                selected_viabilidad = \
-                viabilidades_df[viabilidades_df["ticket"] == st.session_state["selected_ticket"]].iloc[0]
-            # Orden y renombrado de columnas
-            orden_columnas_excel = [
-                "ticket", "usuario", "nuevapromocion", "resultado", "justificacion",
-                "coste", "zona_estudio", "contratos", "latitud", "longitud",
-                "provincia", "municipio", "poblacion", "vial", "numero", "letra",
-                "cp", "olt", "cto_admin", "id_cto", "fecha_viabilidad",
-                "apartment_id", "nombre_cliente", "telefono", "comentarios_internos", "respuesta_comercial"
-            ]
+                ticket_str = str(st.session_state["selected_ticket"]).strip()
+                mask = viabilidades_df["ticket"].astype(str).str.strip() == ticket_str
+                filtered = viabilidades_df.loc[mask]
+                if not filtered.empty:
+                    selected_viabilidad = filtered.iloc[0].copy()
 
-            nombres_excel = {
-                "usuario": "SOLICITANTE",
-                "nuevapromocion": "Nueva Promoción",
-                "zona_estudio": "UUII",
-                "coste": "PRESUPUESTO",
-                "nombre_cliente": "nombre cliente",
-                "comentarios_internos": "comentarios internos",
-                "fecha_viabilidad": "fecha viabilidad",
-                "apartment_id": "apartment id"
-            }
-
-            # Limpiar y preparar DataFrame
+            # ==============================
+            # Exportar a Excel
+            # ==============================
             df_export = viabilidades_df.copy()
 
-            # Duplicar filas por múltiples apartment_id
             def expand_apartments(df):
                 rows = []
                 for _, row in df.iterrows():
@@ -985,22 +1010,20 @@ def viabilidades_seccion():
                         rows.append(new_row)
                 return pd.DataFrame(rows)
 
-            df_export = viabilidades_df.copy()
+            df_export = expand_apartments(viabilidades_df)
 
-            # Convertir a Excel en memoria
             output = BytesIO()
             with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
                 df_export.to_excel(writer, index=False, sheet_name="Viabilidades")
             output.seek(0)
 
-            # Botones alineados a los extremos
             col_b1, _, col_b2 = st.columns([1, 2.3, 1])
 
             with col_b1:
                 if st.button("🔄 Actualizar"):
                     with st.spinner("🔄 Actualizando hoja de Google Sheets..."):
                         actualizar_google_sheet_desde_db(
-                            sheet_id="14nC88hQoCdh6B6pTq7Ktu2k8HWOyS2BaTqcUOIhXuZY",  # 👈 reemplaza por el ID de tu hoja
+                            sheet_id="14nC88hQoCdh6B6pTq7Ktu2k8HWOyS2BaTqcUOIhXuZY",
                             sheet_name="viabilidades_verde"
                         )
 
@@ -1136,11 +1159,15 @@ def viabilidades_seccion():
                             archivo_bytes = archivo.getvalue()  # Leer bytes del PDF
 
                             # 📂 Subir a la carpeta "PRESUPUESTOS" en Cloudinary
-                            nombre_archivo_cloud = f"PRESUPUESTOS/{nombre_archivo}"
 
                             # 🔹 Subir PDF a Cloudinary (como tipo raw)
                             st.info("📤 Subiendo PDF a Cloudinary...")
-                            cloudinary_url = upload_file_to_cloudinary(io.BytesIO(archivo_bytes), nombre_archivo_cloud)
+                            cloudinary_url = upload_file_to_cloudinary(
+                                io.BytesIO(archivo_bytes),
+                                public_id=nombre_archivo,  # solo el nombre del archivo
+                                folder="PRESUPUESTOS"  # 👈 ahora Cloudinary lo organiza correctamente
+                            )
+
                             if not cloudinary_url:
                                 st.error("❌ Error al subir el archivo a Cloudinary. No se puede continuar.")
                                 st.stop()
@@ -2983,8 +3010,11 @@ def admin_dashboard():
 
                     df_final["Categoría Observación"] = df_final["observaciones"].apply(clasificar_observacion)
 
-                    st.info("ℹ️ Se muestran automaticamente clasificadas por categorias, todas las observaciones realizadas por los comerciales. Aquellas que no logran corresponder a una categoria "
-                            "concreta, aparecen sin clasificar.")
+                    with st.expander("🗂️ Información sobre las observaciones", expanded=False):
+                        st.info("""
+                        ℹ️ Se muestran automáticamente clasificadas por **categorías**, todas las observaciones realizadas por los comerciales.  
+                        Aquellas que no logran corresponder a una categoría concreta aparecen **sin clasificar**.
+                        """)
                     # ——————————————————————————————
 
                     st.session_state["df"] = df_final
@@ -3033,21 +3063,44 @@ def admin_dashboard():
 
     elif opcion == "Viabilidades":
         st.header("Viabilidades")
-        st.info(
-            "ℹ️ En esta sección puedes consultar y completar los tickets de viabilidades según el comercial, filtrar los datos por etiquetas, columnas, buscar (lupa de la tabla)"
-            "elementos concretos de la tabla y descargar los datos filtrados en formato excel o csv. Organiza y elige las etiquetas rojas en función de "
-            "como prefieras visualizar el contenido de la tabla. Elige la viabilidad que quieras estudiar en el plano y completa los datos necesarios en el formulario"
-            " que se despliega en la partes inferior. Una vez guardadas tus modificaciones, podrás refrescar la tabla de la derecha para que veas los nuevos datos. Si pinchas en"
-            " Crear Viabilidades: Haz click en el mapa para agregar un marcador que represente el punto de viabilidad. Además, puedes actualizar las tablas internas y "
-            "el excel externo pinchando en la opción Actualizar tablas. En el caso de necesitar crear o modificar una viabilidad, cuyos datos requieran añadir mas de una CTO y varios Apartment ID "
-            "por cada CTO, deberás crear una viabilidad nueva por cada CTO, para que queden bien asignados todos ellos a cada caja en específico, generando de esta forma, 2 o mas tickets separados.")
+        with st.expander("🧭 Guía de uso del panel de viabilidades", expanded=False):
+            st.info("""
+            ℹ️ En esta sección puedes **consultar y completar los tickets de viabilidades** según el comercial, filtrar los datos por etiquetas o columnas, buscar elementos concretos (lupa de la tabla)  
+            y **descargar los resultados filtrados en Excel o CSV**.
+
+            🔹 **Organización:**  
+            Usa las etiquetas rojas para personalizar cómo deseas visualizar la información en la tabla.  
+
+            🔹 **Edición:**  
+            Selecciona la viabilidad que quieras estudiar en el plano y completa los datos en el formulario que se despliega en la parte inferior.  
+            Una vez guardadas tus modificaciones, podrás refrescar la tabla para ver los cambios reflejados.  
+
+            🔹 **Creación:**  
+            Al pulsar **“Crear Viabilidades”**, haz clic en el mapa para agregar un marcador que represente el punto de viabilidad.  
+            También puedes actualizar las tablas internas y el Excel externo desde **“Actualizar tablas”**.  
+            
+            🔹 **Presupuestos:**  
+            Al subir un presupuesto, no te olvides de elegir un remitente y darle a **"Enviar"**. Si no quieres que lo reciba nadie, usa el correo de prueba. 
+
+            🔹 **Importante:**  
+            Si una viabilidad requiere **más de una CTO o varios Apartment ID por CTO**, debes crear una viabilidad nueva por cada una.  
+            Esto asegura que todos los elementos queden correctamente asignados a su caja específica, generando así dos o más tickets separados.
+            """)
         viabilidades_seccion()
 
     elif opcion == "Mapa UUIIs":
-        st.info(
-            "ℹ️ En esta sección puedes ver todos los datos cruzados entre ams y las ofertas de los comerciales, así como su estado actual. Ten en cuenta que tienes dos tipos de filtros "
-            "diferentes. Puedes buscar por Aparment ID y de forma independiente puedes buscar por Provincia, Municipio y Población. En el caso de haber utilizado el Apartment ID y querer usar "
-            "luego la otra opción de filtro, no te olvides de borrar el contenido de Aparrment ID del campo correspondiente para que se reactiven el resto de filtros.")
+        with st.expander("📊 Guía de uso del panel de datos cruzados AMS / Ofertas", expanded=False):
+            st.info("""
+            ℹ️ En esta sección puedes **visualizar todos los datos cruzados entre AMS y las ofertas de los comerciales**, junto con su estado actual.  
+
+            🔍 **Filtros disponibles:**  
+            - **Búsqueda por Apartment ID:** filtra directamente por un identificador concreto.  
+            - **Búsqueda por ubicación:** permite filtrar por **Provincia, Municipio y Población**.  
+
+            ⚠️ **Importante:**  
+            Si usas el filtro por *Apartment ID* y después deseas aplicar los filtros por ubicación, **asegúrate de borrar primero el campo de Apartment ID**.  
+            De lo contrario, los demás filtros permanecerán inactivos.
+            """)
         mapa_seccion()
 
     # Opción: Generar Informes
@@ -3166,12 +3219,20 @@ def admin_dashboard():
 
     elif opcion == "Cargar Nuevos Datos":
         st.header("Cargar Nuevos Datos")
-        st.info(
-            "ℹ️ Aquí puedes cargar un archivo Excel o CSV para reemplazar los datos existentes en la base de datos a una versión más moderna. "
-            "¡ATENCIÓN! ¡Se eliminarán todos los datos actuales! Ten en cuenta que si realizas esta acción cualquier actualización realizada en la aplicación sobre "
-            "la tabla de datos también quedará eliminada. Se recomienda recargar el excel de seguimiento de contratos en el caso de que esta carga de datos no tenga "
-            "todas las columnas actualizadas. ES POSIBLE CARGAR TANTO NUEVOS PUNTOS COMO NUEVAS TIRC."
-        )
+        with st.expander("⚠️ Carga y reemplazo de base de datos", expanded=False):
+            st.info("""
+            ℹ️ Aquí puedes **cargar un archivo Excel o CSV** para reemplazar los datos existentes en la base de datos por una versión más reciente.  
+
+            ⚠️ **ATENCIÓN:**  
+            - Esta acción **eliminará todos los datos actuales** de la base de datos.  
+            - Cualquier actualización realizada dentro de la aplicación también se perderá.  
+            - Antes de continuar, asegúrate de que el nuevo archivo contenga **todas las columnas actualizadas** necesarias.  
+
+            🗂️ **Recomendación:**  
+            Si el archivo que cargas no tiene la información completa, **recarga el Excel de seguimiento de contratos** para mantener la integridad de los datos.  
+
+            📥 **Nota:** Es posible cargar tanto **nuevos puntos** como **nuevas TIRC**.
+            """)
 
         log_trazabilidad(
             st.session_state["username"],

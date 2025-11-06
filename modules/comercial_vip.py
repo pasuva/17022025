@@ -683,12 +683,13 @@ def comercial_dashboard_vip():
                                 {row.get('comentarios_internos', '—')}
                             """)
 
-                            st.info("""
-                                    ℹ️ **Por favor, completa este campo indicando:**  
-                                            - Si estás de acuerdo o no con la resolución.  
-                                            - Información adicional de tu visita (cliente, obra, accesos, etc.), detalles que ayuden a la oficina a cerrar la viabilidad.  
-                                            - Si el cliente acepta o no el presupuesto.
-                                    """)
+                            with st.expander("📝 Instrucciones para completar este campo", expanded=False):
+                                st.info("""
+                                ℹ️ **Por favor, completa este campo indicando:**  
+                                - Si estás de acuerdo o no con la resolución.  
+                                - Información adicional de tu visita (cliente, obra, accesos, etc.), detalles que ayuden a la oficina a cerrar la viabilidad.  
+                                - Si el cliente acepta o no el presupuesto.
+                                """)
                             nuevo_comentario = st.text_area(
                                 f"✏️ Comentario para ticket {row['ticket']}",
                                 value="",
