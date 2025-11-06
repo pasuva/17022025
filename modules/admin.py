@@ -1037,19 +1037,31 @@ def viabilidades_seccion():
 
         with col1:
 
-            def draw_map(df, center, zoom):
+            # ==============================
+            # Función para dibujar el mapa
+            # ==============================
+            def draw_map(df, center, zoom, selected_ticket=None):
                 m = folium.Map(location=center, zoom_start=zoom,
                                tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
                                attr="Google", min_zoom=4, max_zoom=20)
                 marker_cluster = MarkerCluster().add_to(m)
 
                 for _, row in df.iterrows():
-                    popup = f"🏠 {row['ticket']} - 📍 {row['latitud']}, {row['longitud']}"
+                    ticket = str(row['ticket']).strip()
+                    lat, lon = row['latitud'], row['longitud']
+
+                    popup = f"""
+                        <b>🏠 Ticket:</b> {ticket}<br>
+                        📍 {lat:.6f}, {lon:.6f}<br>
+                        <b>Cliente:</b> {row.get('nombre_cliente', 'N/D')}<br>
+                        <b>Serviciable:</b> {row.get('serviciable', 'N/D')}<br>
+                    """
 
                     serviciable = str(row.get('serviciable', '')).strip()
                     apartment_id = str(row.get('apartment_id', '')).strip()
                     tiene_presupuesto = row.get('tiene_presupuesto', False)
 
+                    # Color por estado
                     if tiene_presupuesto:
                         marker_color = 'orange'
                     elif row.get('estado') == "No interesado":
@@ -1063,64 +1075,126 @@ def viabilidades_seccion():
                     else:
                         marker_color = 'blue'
 
-                    folium.Marker(
-                        location=[row['latitud'], row['longitud']],
-                        popup=popup,
-                        icon=folium.Icon(color=marker_color, icon='info-sign')
-                    ).add_to(marker_cluster)
+                    # Si es el ticket seleccionado, resaltamos en dorado
+                    if selected_ticket and ticket == str(selected_ticket).strip():
+                        folium.Marker(
+                            location=[lat, lon],
+                            popup=popup + "<b>🎯 Ticket seleccionado</b>",
+                            icon=folium.Icon(icon='star')
+                        ).add_to(m)
+                    else:
+                        folium.Marker(
+                            location=[lat, lon],
+                            popup=popup,
+                            tooltip=f"{ticket}",
+                            icon=folium.Icon(color=marker_color, icon='info-sign')
+                        ).add_to(marker_cluster)
 
                 return m
 
-            m_to_show = draw_map(viabilidades_df, st.session_state["map_center"], st.session_state["map_zoom"])
-            legend = """
-                                {% macro html(this, kwargs) %}
-                                <div style="
-                                    position: fixed; 
-                                    bottom: 0px; left: 0px; width: 150px; 
-                                    z-index:9999; 
-                                    font-size:14px;
-                                    background-color: white;
-                                    color: black;
-                                    border:2px solid grey;
-                                    border-radius:8px;
-                                    padding: 10px;
-                                    box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-                                ">
-                                <b>Leyenda</b><br>
-                                <i style="color:green;">●</i> Serviciado<br>
-                                <i style="color:red;">●</i> No serviciable<br>
-                                <i style="color:orange;">●</i> Presupuesto Sí<br>
-                                <i style="color:black;">●</i> No interesado<br>
-                                <i style="color:purple;">●</i> Incidencia<br>
-                                <i style="color:blue;">●</i> Sin estudio<br>
-                                </div>
-                                {% endmacro %}
-                                """
+            # ==============================
+            # Determinar centro y zoom
+            # ==============================
+            if st.session_state.get("selected_ticket"):
+                ticket_str = str(st.session_state["selected_ticket"]).strip()
+                df_sel = viabilidades_df.loc[viabilidades_df["ticket"].astype(str).str.strip() == ticket_str]
+                if not df_sel.empty:
+                    center = [df_sel.iloc[0]["latitud"], df_sel.iloc[0]["longitud"]]
+                    zoom = 16
+                else:
+                    center = st.session_state.get("map_center", [40.0, -3.7])
+                    zoom = st.session_state.get("map_zoom", 6)
+            else:
+                center = st.session_state.get("map_center", [40.0, -3.7])
+                zoom = st.session_state.get("map_zoom", 6)
 
+            # ==============================
+            # Dibujar mapa
+            # ==============================
+            m_to_show = draw_map(
+                viabilidades_df,
+                center=center,
+                zoom=zoom,
+                selected_ticket=st.session_state.get("selected_ticket")
+            )
+
+            # ==============================
+            # Leyenda
+            # ==============================
+            legend = """
+            {% macro html(this, kwargs) %}
+            <div style="
+                position: fixed; 
+                bottom: 0px; left: 0px; width: 170px; 
+                z-index:9999; 
+                font-size:14px;
+                background-color: white;
+                color: black;
+                border:2px solid grey;
+                border-radius:8px;
+                padding: 10px;
+                box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+            ">
+            <b>Leyenda</b><br>
+            <i style="color:green;">●</i> Serviciado<br>
+            <i style="color:red;">●</i> No serviciable<br>
+            <i style="color:orange;">●</i> Presupuesto Sí<br>
+            <i style="color:black;">●</i> No interesado<br>
+            <i style="color:purple;">●</i> Incidencia<br>
+            <i style="color:blue;">●</i> Sin estudio<br>
+            <i style="color:gold;">★</i> Ticket seleccionado<br>
+            </div>
+            {% endmacro %}
+            """
             macro = MacroElement()
             macro._template = Template(legend)
             m_to_show.get_root().add_child(macro)
             Geocoder().add_to(m_to_show)
-            map_output = st_folium(m_to_show, height=500, width=700, key="main_map",
-                                   returned_objects=["last_object_clicked"])
 
-            # ⬇️ NUEVO BLOQUE: detectar clic en el mapa
+            # ==============================
+            # Mostrar mapa y detectar clic
+            # ==============================
+            map_output = st_folium(
+                m_to_show,
+                height=500,
+                width=700,
+                key="main_map",
+                returned_objects=["last_object_clicked"]
+            )
+
+            # ==============================
+            # Detectar clic del mapa
+            # ==============================
             if map_output and map_output.get("last_object_clicked"):
                 clicked_lat = map_output["last_object_clicked"]["lat"]
                 clicked_lng = map_output["last_object_clicked"]["lng"]
 
-                # Buscar el punto más cercano en el DataFrame (tolerancia ajustable)
-                tolerance = 0.0001  # aproximadamente 11m
+                tolerance = 0.0001  # ~11 m
                 match = viabilidades_df[
                     (viabilidades_df["latitud"].between(clicked_lat - tolerance, clicked_lat + tolerance)) &
                     (viabilidades_df["longitud"].between(clicked_lng - tolerance, clicked_lng + tolerance))
                     ]
 
                 if not match.empty:
-                    clicked_ticket = match.iloc[0]["ticket"]
+                    clicked_ticket = str(match.iloc[0]["ticket"]).strip()
+
                     if clicked_ticket != st.session_state.get("selected_ticket"):
                         st.session_state["selected_ticket"] = clicked_ticket
+                        st.session_state["map_center"] = [clicked_lat, clicked_lng]
+                        st.session_state["map_zoom"] = 16
+                        st.session_state["selection_source"] = "map"
+
+                        st.toast(f"📍 Ticket {clicked_ticket} seleccionado desde el mapa")
+
+                        # Forzar recarga
                         st.rerun()
+
+            # ==============================
+            # Si venimos del mapa, limpiamos selección de tabla
+            # ==============================
+            if st.session_state.get("selection_source") == "map":
+                st.session_state["selection_source"] = None
+                st.session_state["last_table_selection"] = None
 
         # Mostrar formulario debajo
         if st.session_state["selected_ticket"]:
