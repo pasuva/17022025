@@ -19,7 +19,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 cookie_name = "my_app"
 
-
 # Función para obtener conexión a la base de datos (SQLite Cloud)
 def get_db_connection():
     return sqlitecloud.connect(
@@ -730,7 +729,6 @@ def mostrar_mapa_de_asignaciones():
                     if username == "juan":
                         comerciales_asignados = comerciales_asignados[
                             comerciales_asignados['comercial'] == "comercial_juan_1"]
-                    # else: otros usuarios ven todos comerciales asignados
 
                     if comerciales_asignados.empty:
                         st.warning("No hay comerciales asignados a esta zona.")
@@ -822,7 +820,6 @@ def mostrar_mapa_de_asignaciones():
                                 )
 
         # --- REASIGNAR PUNTOS ---
-        # FORMULARIO DE REASIGNACIÓN (FUERA DEL BLOQUE DE DESASIGNACIÓN)
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM puntos_liberados_temp")
@@ -870,7 +867,6 @@ def mostrar_mapa_de_asignaciones():
                                 for i, p in enumerate(puntos_liberados):
                                     reparto[nuevos_comerciales[i % n_comerciales]].append(p)
 
-                                # 3. Insertar en la tabla principal
                                 # 3. Insertar en la tabla principal con control de duplicados y trazabilidad
                                 for comercial, puntos in reparto.items():
                                     for p in puntos:
@@ -1026,7 +1022,14 @@ def mostrar_mapa_de_asignaciones():
                         elif contrato == "no interesado":
                             color = 'black'
 
-                icon_name = 'home' if str(row.get('tipo_olt_rental', '')).strip().lower() == 'si' else 'info-sign'
+                #icon_name = 'home' if str(row.get('tipo_olt_rental', '')).strip().lower() == 'si' else 'info-sign'
+                tipo_olt = str(row.get('tipo_olt_rental', '')).strip().lower()
+
+                # Selección de icono según tipo OLT
+                if "CTO VERDE" in tipo_olt:
+                    icon_name = "cloud"
+                else:
+                    icon_name = "info-circle"
                 popup_text = f"""
                     <b>Apartment ID:</b> {apartment_id}<br>
                     <b>Vial:</b> {vial}<br>
@@ -1035,7 +1038,7 @@ def mostrar_mapa_de_asignaciones():
                 """
                 folium.Marker(
                     [lat, lon],
-                    icon=folium.Icon(icon=icon_name, color=color),
+                    icon=folium.Icon(icon=icon_name, color=color, prefix="fa"),
                     popup=folium.Popup(popup_text, max_width=300)
                 ).add_to(marker_cluster)
             legend = """
@@ -1059,8 +1062,8 @@ def mostrar_mapa_de_asignaciones():
             <i style="color:black;">●</i> No interesado<br>
             <i style="color:purple;">●</i> Incidencia<br>
             <i style="color:blue;">●</i> No Visitado<br>
-            <i>🏠</i> Con proyecto<br>
-            <i>ℹ️</i> Sin proyecto
+            <i class="fa fa-cloud" style="color:#2C5A2E;"></i> CTO VERDE<br>
+            <i class="fa fa-info-circle" style="color:#2C5A2E;"></i> CTO COMPARTIDA
             </div>
             {% endmacro %}
             """
@@ -1175,7 +1178,6 @@ def mostrar_descarga_datos():
             comerciales_mios = ["roberto", "nestor", "jose ramon"]
             zonas_filtradas = assigned_zones[assigned_zones["comercial"].str.lower().isin(comerciales_mios)]
         else:
-            comerciales_mios = []
             zonas_filtradas = assigned_zones.copy()
 
         # 🔹 Mostrar resumen visual por comercial
@@ -1195,13 +1197,10 @@ def mostrar_descarga_datos():
                 # Color dinámico según volumen de zonas
                 if total > 30:
                     bg_color = "#C8E6C9"  # verde claro
-                    border_color = "#66BB6A"
                 elif total > 15:
                     bg_color = "#FFF9C4"  # amarillo claro
-                    border_color = "#FDD835"
                 else:
                     bg_color = "#FFEBEE"  # rojo claro
-                    border_color = "#E57373"
 
                 with cols[i]:
                     st.markdown(f"""
@@ -1764,7 +1763,6 @@ def mostrar_viabilidades():
                         ticket,
                         nombre_cliente,
                         telefono,
-                        # st.session_state["username"],
                         comercial,
                         olt,  # nuevo campo
                         apartment_id  # nuevo campo
@@ -1838,7 +1836,6 @@ def guardar_viabilidad(datos):
 
     # Información de la viabilidad
     ticket_id = datos[10]  # 'ticket'
-    #nombre_comercial = st.session_state.get("username")
     nombre_comercial = datos[13]  # 👈 el comercial elegido en el formulario
     descripcion_viabilidad = (
         f"📝 Viabilidad para el ticket {ticket_id}:<br><br>"
@@ -1986,7 +1983,8 @@ def download_datos(datos_uis, total_ofertas, viabilidades):
         # ✅ Consulta directa a la base de datos para traer 'cto'
         try:
             conn = get_db_connection()
-            query = "SELECT * FROM datos_uis;"
+            query = ("SELECT apartment_id, address_id, provincia, municipio, poblacion, vial, numero, parcela_catastral, letra, cp, cto_id, olt, latitud, longitud"
+                     ", tipo_olt_rental   FROM datos_uis;")
             df_db = pd.read_sql_query(query, conn)
             conn.close()
 

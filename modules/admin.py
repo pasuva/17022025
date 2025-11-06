@@ -1077,6 +1077,7 @@ def viabilidades_seccion():
             macro = MacroElement()
             macro._template = Template(legend)
             m_to_show.get_root().add_child(macro)
+            Geocoder().add_to(m_to_show)
             map_output = st_folium(m_to_show, height=500, width=700, key="main_map",
                                    returned_objects=["last_object_clicked"])
 
@@ -1874,7 +1875,7 @@ def mostrar_formulario(click_data):
                 update_form_data("resultado", resultado)
         with col25:
             opciones_justificacion = ["SIN JUSTIFICACIÓN", "ZONA SUBVENCIONADA", "INVIABLE", "MAS PREVENTA",
-                                      "RESERVADA WHL", "PDTE. RAFA FIN DE OBRA", "NO ES UNA VIABILIDAD"]
+                                      "RESERVADA WHL", "PDTE. FIN DE OBRA", "NO ES UNA VIABILIDAD"]
             justificacion_index = opciones_justificacion.index(form_data["justificacion"]) if form_data[
                                                                                                   "justificacion"] in opciones_justificacion else 0
             justificacion = st.selectbox("📌 Justificación", opciones_justificacion,

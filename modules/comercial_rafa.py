@@ -327,6 +327,15 @@ def comercial_dashboard():
             serviciable_set = set(ams_df["apartment_id"])
             contrato_dict = dict(zip(ofertas_df["apartment_id"], ofertas_df["Contrato"]))
 
+            def get_icon_for_olt(tipo_olt):
+                if pd.isna(tipo_olt):
+                    return "info-sign"  # icono por defecto
+                tipo = str(tipo_olt).strip().lower()
+                if "CTO VERDE" in tipo:
+                    return "cloud"
+                else:
+                    return "info-sign"
+
             # Función para determinar color del marcador
             def get_marker_color(row, contrato_dict, serviciable_set):
                 apartment_id = row['apartment_id']
@@ -377,10 +386,16 @@ def comercial_dashboard():
                 lat_offset = row['offset_index'] * 0.00003
                 lon_offset = row['offset_index'] * -0.00003
 
+                icon_type = get_icon_for_olt(row.get("tipo_olt_rental", None))
+
                 folium.Marker(
                     location=[row['latitud'] + lat_offset, row['longitud'] + lon_offset],
-                    popup=f"🏠 {row['apartment_id']} - 📍 {row['latitud']}, {row['longitud']}",
-                    icon=folium.Icon(color=row['marker_color'])
+                    popup=(
+                        f"<b>🏠 {row['apartment_id']}</b><br>"
+                        f"📍 {row['latitud']}, {row['longitud']}<br>"
+                        f"🛰️ OLT: {row.get('tipo_olt_rental', '—')}"
+                    ),
+                    icon=folium.Icon(color=row['marker_color'], icon=icon_type)
                 ).add_to(cluster_layer)
 
             # Leyenda optimizada
@@ -406,6 +421,8 @@ def comercial_dashboard():
             <i style="color:black;">●</i> No interesado<br>
             <i style="color:purple;">●</i> Incidencia<br>
             <i style="color:blue;">●</i> No Visitado<br>
+            <i class="fa fa-cloud"></i> CTO VERDE<br>
+            <i class="fa fa-info-circle"></i> CTO COMPARTIDA<br>
             </div>
             '''
 
@@ -430,6 +447,17 @@ def comercial_dashboard():
 
                 # Cargar datos con caché
                 df, ofertas_df, ams_df = load_comercial_data(comercial)
+                # 🔹 Cargar datos de OLT (si existe la tabla datos_uis)
+                try:
+                    conn = get_db_connection()
+                    datos_uis_df = pd.read_sql("SELECT apartment_id, tipo_olt_rental FROM datos_uis", conn)
+                    conn.close()
+
+                    # Merge con df principal
+                    df = df.merge(datos_uis_df, on="apartment_id", how="left")
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudo cargar 'datos_uis': {e}")
+                    df["tipo_olt_rental"] = None
 
                 if df.empty:
                     st.warning("⚠️ No hay datos asignados a este comercial.")
