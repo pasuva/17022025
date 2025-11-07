@@ -419,8 +419,6 @@ def eliminar_usuario(id):
         cursor.execute("DELETE FROM usuarios WHERE id = ?", (id,))
         conn.commit()
         conn.close()
-
-        st.toast(f"Usuario con ID {id} eliminado correctamente.")
         log_trazabilidad(st.session_state["username"], "Eliminar Usuario", f"El admin eliminó al usuario con ID {id}.")
 
         # Enviar correo de baja al usuario
@@ -3135,6 +3133,7 @@ def admin_dashboard():
 
     elif opcion == "Viabilidades":
         st.header("Viabilidades")
+
         with st.expander("🧭 Guía de uso del panel de viabilidades", expanded=False):
             st.info("""
             ℹ️ En esta sección puedes **consultar y completar los tickets de viabilidades** según el comercial, filtrar los datos por etiquetas o columnas, buscar elementos concretos (lupa de la tabla)  
@@ -3270,9 +3269,9 @@ def admin_dashboard():
                 if usuario:
                     nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
                     nuevo_rol = st.selectbox("Nuevo Rol",
-                                             ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa"],
+                                             ["admin", "supervisor", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip"],
                                              index=["admin", "supervisor", "comercial", "comercial_jefe",
-                                                    "comercial_rafa"].index(usuario[1]))
+                                                    "comercial_rafa","comercial_vip"].index(usuario[1]))
                     nuevo_email = st.text_input("Nuevo Email", value=usuario[2])
                     nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
 

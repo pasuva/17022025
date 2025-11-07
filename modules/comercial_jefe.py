@@ -1051,7 +1051,7 @@ def mostrar_mapa_de_asignaciones():
                             color = 'black'
 
                 #icon_name = 'home' if str(row.get('tipo_olt_rental', '')).strip().lower() == 'si' else 'info-sign'
-                tipo_olt = str(row.get('tipo_olt_rental', '')).strip().lower()
+                tipo_olt = str(row.get('tipo_olt_rental', '')).strip()
 
                 # Selección de icono según tipo OLT
                 if "CTO VERDE" in tipo_olt:

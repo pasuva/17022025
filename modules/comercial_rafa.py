@@ -328,7 +328,7 @@ def comercial_dashboard():
             def get_icon_for_olt(tipo_olt):
                 if pd.isna(tipo_olt):
                     return "info-sign"  # icono por defecto
-                tipo = str(tipo_olt).strip().lower()
+                tipo = str(tipo_olt).strip()
                 if "CTO VERDE" in tipo:
                     return "cloud"
                 else:
@@ -536,10 +536,10 @@ def comercial_dashboard():
             )
 
             if opcion_cto == "CTO VERDE":
-                df_filtrado = df_filtrado[df_filtrado["tipo_olt_rental"].str.contains("VERDE", case=False, na=False)]
+                df_filtrado = df_filtrado[df_filtrado["tipo_olt_rental"].str.contains("CTO VERDE", case=False, na=False)]
             elif opcion_cto == "CTO COMPARTIDA":
                 df_filtrado = df_filtrado[
-                    df_filtrado["tipo_olt_rental"].str.contains("COMPARTIDA", case=False, na=False)]
+                    df_filtrado["tipo_olt_rental"].str.contains("CTO COMPARTIDA", case=False, na=False)]
 
             # 🔹 Fin nuevo filtro CTO
 
@@ -1168,8 +1168,14 @@ def mostrar_formulario(click_data):
     numero = row["numero"]
     letra = row["letra"]
     cp = row["cp"]
+    cto = row["cto"]
+    tipo_olt_rental = row.get("tipo_olt_rental", "")
 
     # Mostrar datos no editables
+    if str(tipo_olt_rental).strip().upper() == "CTO VERDE":
+        st.badge("CTO VERDE", color="green")
+    else:
+        st.badge("CTO COMPARTIDA")
     st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -1178,7 +1184,7 @@ def mostrar_formulario(click_data):
         st.text_input("🏙️ Municipio", value=municipio, disabled=True)
     with col3:
         st.text_input("👥 Población", value=poblacion, disabled=True)
-    col4, col5, col6, col7 = st.columns([2, 1, 1, 1])
+    col4, col5, col6, col7 = st.columns([2, 1, 2, 1])
     with col4:
         st.text_input("🚦 Vial", value=vial, disabled=True)
     with col5:
@@ -1187,11 +1193,13 @@ def mostrar_formulario(click_data):
         st.text_input("🔠 Letra", value=letra, disabled=True)
     with col7:
         st.text_input("📮 Código Postal", value=cp, disabled=True)
-    col8, col9 = st.columns(2)
+    col8, col9, col10 = st.columns(3)
     with col8:
         st.text_input("📌 Latitud", value=lat_value, disabled=True)
     with col9:
         st.text_input("📌 Longitud", value=lng_value, disabled=True)
+    with col10:
+        st.text_input("📌 CTO", value=cto, disabled=True)
 
     # Selector reactivo para "¿Es serviciable?" (por defecto lo deja en "Sí")
     es_serviciable = st.radio(
@@ -1307,6 +1315,7 @@ def mostrar_formulario(click_data):
             "Código Postal": cp,
             "Latitud": lat_value,
             "Longitud": lng_value,
+            "cto": cto,
             "Nombre Cliente": client_name,
             "Teléfono": phone,
             "Dirección Alternativa": alt_address,
