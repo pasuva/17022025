@@ -7,6 +7,7 @@ from email.header import Header
 from modules import plantilla_email
 from datetime import datetime
 
+
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 

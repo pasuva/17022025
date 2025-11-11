@@ -650,10 +650,18 @@ def mostrar_mapa_de_asignaciones():
                                     break
                                 punto = puntos[indice]
                                 cursor.execute("""
-                                    INSERT INTO comercial_rafa 
+                                    INSERT OR IGNORE INTO comercial_rafa 
                                     (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')
-                                """, (*punto, comercial))
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (*punto, comercial, 'Pendiente'))
+
+                                # 2️⃣ Reasignar el comercial si ya existía
+                                cursor.execute("""
+                                            UPDATE comercial_rafa
+                                            SET comercial = ?
+                                            WHERE apartment_id = ?
+                                        """, (comercial, punto[0]))  # punto[0] = apartment_id
+
                                 indice += 1
                                 total_asignados += 1
                                 progress_bar.progress(total_asignados / total_puntos)
@@ -753,7 +761,7 @@ def mostrar_mapa_de_asignaciones():
                     # Filtrar comerciales asignados según usuario
                     if username == "juan":
                         comerciales_asignados = comerciales_asignados[
-                            comerciales_asignados['comercial'] == "comercial_juan_1"]
+                            comerciales_asignados['comercial'].isin(["Comercial2", "Comercial3"])]
 
                     if comerciales_asignados.empty:
                         st.warning("No hay comerciales asignados a esta zona.")
