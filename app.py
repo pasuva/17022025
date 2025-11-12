@@ -14,7 +14,7 @@ def get_url_params():
     params = st.query_params
 
     # Debug: mostrar todos los parámetros
-    st.write(f"🔍 DEBUG - Todos los parámetros: {dict(params)}")
+    #st.write(f"🔍 DEBUG - Todos los parámetros: {dict(params)}")
 
     # Obtener precontrato_id
     precontrato_id = None

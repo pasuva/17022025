@@ -1,3 +1,5 @@
+import re
+
 import streamlit as st
 import sqlitecloud
 from datetime import datetime
@@ -26,7 +28,7 @@ def get_db_connection():
 
 # -------------------- VALIDAR TOKEN (CON DEPURACIÓN) --------------------
 def validar_token(precontrato_id, token):
-    st.write(f"🔍 Depuración: Validando token - precontrato_id: {precontrato_id}, token: {token}")
+    #st.write(f"🔍 Depuración: Validando token - precontrato_id: {precontrato_id}, token: {token}")
 
     conn = get_db_connection()
     if not conn:
@@ -40,7 +42,7 @@ def validar_token(precontrato_id, token):
         """, (precontrato_id, token))
         link = cursor.fetchone()
 
-        st.write(f"🔍 Resultado de la consulta: {link}")
+        #st.write(f"🔍 Resultado de la consulta: {link}")
 
         if not link:
             return False, "❌ Enlace no válido o ya utilizado."
@@ -50,9 +52,9 @@ def validar_token(precontrato_id, token):
         expiracion = datetime.fromisoformat(link[3])
         usado = link[4]
 
-        st.write(f"🔍 Fecha de expiración: {expiracion}")
-        st.write(f"🔍 Usado: {usado}")
-        st.write(f"🔍 Fecha actual: {datetime.now()}")
+        #st.write(f"🔍 Fecha de expiración: {expiracion}")
+        #st.write(f"🔍 Usado: {usado}")
+        #st.write(f"🔍 Fecha actual: {datetime.now()}")
 
         if usado:
             return False, "❌ Este enlace ya ha sido utilizado."
@@ -267,7 +269,7 @@ def formulario_cliente(precontrato_id=None, token=None):
     st.title("Formulario de Cliente - Precontrato")
 
     # Mostrar parámetros recibidos para depuración
-    st.write(f"🔍 Parámetros recibidos - precontrato_id: {precontrato_id}, token: {token}")
+    st.toast(f"🔍 Parámetros recibidos - precontrato_id: {precontrato_id}, token: {token}")
 
     # Inicializar estado de sesión
     if 'validado' not in st.session_state:
@@ -281,7 +283,7 @@ def formulario_cliente(precontrato_id=None, token=None):
 
     # Si se pasan parámetros desde app.py, usarlos para validación automática
     if precontrato_id and token and not st.session_state.validado:
-        st.write("🔍 Realizando validación automática con parámetros de URL...")
+        st.toast("🔍 Realizando validación automática con parámetros de URL...")
         valido, mensaje = validar_token(precontrato_id, token)
         if not valido:
             st.error(mensaje)
@@ -352,7 +354,7 @@ def formulario_cliente(precontrato_id=None, token=None):
                 conn.close()
 
                 if not precontrato:
-                    st.error("❌ No se encontró el precontrato asociado a este enlace.")
+                    st.toast("❌ No se encontró el precontrato asociado a este enlace.")
                     return
 
                 # Guardar en estado de sesión
@@ -365,7 +367,7 @@ def formulario_cliente(precontrato_id=None, token=None):
     else:
         # Mostrar formulario principal
         precontrato = st.session_state.precontrato_data
-        st.success("✅ Enlace válido. Completa el formulario a continuación.")
+        st.toast("✅ Enlace válido. Completa el formulario a continuación.")
 
         with st.form(key="formulario_cliente"):
             st.subheader("Datos Personales")
@@ -617,5 +619,5 @@ def formulario_cliente(precontrato_id=None, token=None):
                         st.error(message)
 
                 except Exception as e:
-                    st.error(f"❌ Error al guardar tus datos: {str(e)}")
-                    st.write("Detalles del error:", str(e))
+                    st.toast(f"❌ Error al guardar tus datos: {str(e)}")
+                    st.toast("Detalles del error:", str(e))
