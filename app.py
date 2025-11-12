@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from modules import login, admin, supervisor, comercial_jefe, comercial_rafa, comercial_vip
+from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip
 from modules.formulario_cliente import formulario_cliente
 
 st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
@@ -78,8 +78,6 @@ else:
 
     if rol == "admin":
         admin.admin_dashboard()
-    elif rol == "supervisor":
-        supervisor.supervisor_dashboard()
     elif rol == "comercial_jefe":
         comercial_jefe.mapa_dashboard()
     elif rol == "comercial_rafa":
