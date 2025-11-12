@@ -269,7 +269,7 @@ def formulario_cliente(precontrato_id=None, token=None):
     st.title("Formulario de Cliente - Precontrato")
 
     # Mostrar parámetros recibidos para depuración
-    st.toast(f"🔍 Parámetros recibidos - precontrato_id: {precontrato_id}, token: {token}")
+    #st.toast(f"🔍 Parámetros recibidos - precontrato_id: {precontrato_id}, token: {token}")
 
     # Inicializar estado de sesión
     if 'validado' not in st.session_state:
@@ -283,7 +283,7 @@ def formulario_cliente(precontrato_id=None, token=None):
 
     # Si se pasan parámetros desde app.py, usarlos para validación automática
     if precontrato_id and token and not st.session_state.validado:
-        st.toast("🔍 Realizando validación automática con parámetros de URL...")
+        #st.toast("🔍 Realizando validación automática con parámetros de URL...")
         valido, mensaje = validar_token(precontrato_id, token)
         if not valido:
             st.error(mensaje)

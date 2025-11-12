@@ -51,13 +51,13 @@ def get_url_params():
 # Obtener parámetros
 precontrato_id, token = get_url_params()
 
-st.write(f"🔍 DEBUG - precontrato_id: {precontrato_id}")
-st.write(f"🔍 DEBUG - token: {token}")
+#st.write(f"🔍 DEBUG - precontrato_id: {precontrato_id}")
+#st.write(f"🔍 DEBUG - token: {token}")
 
 if token and precontrato_id:
     # Verificar si el token parece válido (debería tener al menos 10 caracteres)
     if len(str(token)) >= 10:
-        st.write("🔍 Token parece válido, cargando formulario...")
+        #st.write("🔍 Token parece válido, cargando formulario...")
         formulario_cliente(precontrato_id, token)
         st.stop()
     else:

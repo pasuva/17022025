@@ -243,8 +243,8 @@ def comercial_dashboard_vip():
 
         menu_opcion = option_menu(
             menu_title=None,
-            options=["Ofertas Comerciales", "Viabilidades", "Visualización de Datos"],
-            icons=["bar-chart", "check-circle", "graph-up"],
+            options=["Ofertas Comerciales", "Viabilidades", "Visualización de Datos","Precontratos"],
+            icons=["bar-chart", "check-circle", "graph-up","file-text"],
             menu_icon="list",
             default_index=0,
             styles={
@@ -735,6 +735,276 @@ def comercial_dashboard_vip():
         except Exception as e:
             st.toast(f"❌ Error al cargar los datos: {e}")
 
+    elif menu_opcion == "Precontratos":
+        st.title("📑 Gestión de Precontratos")
+        # Pestañas para diferentes funcionalidades
+        tab1, tab2 = st.tabs(["🆕 Crear Nuevo Precontrato", "📋 Precontratos Existentes"])
+
+        with tab1:
+            st.subheader("Crear Nuevo Precontrato")
+            st.info("""
+            💡 **Información:**
+            - En esta sección puedes crear precontratos sin necesidad de tener un Apartment ID asociado
+            - El cliente completará los datos faltantes a través del enlace que se generará
+            - Solo los campos de tarifa, precio y permanencia son obligatorios
+            """)
+
+            # FORMULARIO INDEPENDIENTE PARA PRECONTRATOS
+            with st.expander("📑 Formulario de Precontrato", expanded=True):
+                with st.form(key="form_precontrato_standalone"):
+                    st.markdown("Completa los datos básicos del precontrato")
+                    st.info(
+                        "💡 **Nota:** Solo los campos de tarifa, precio y permanencia son obligatorios. El cliente completará el resto en el formulario.")
+
+                    # Cargar tarifas
+                    @st.cache_data(ttl=300)
+                    def cargar_tarifas():
+                        conn = get_db_connection()
+                        df = pd.read_sql("SELECT id, nombre, descripcion, precio FROM tarifas", conn)
+                        conn.close()
+                        return df
+                    try:
+                        tarifas_df = cargar_tarifas()
+
+                    except Exception as e:
+                        st.toast(f"⚠️ No se pudieron cargar las tarifas: {e}")
+                        tarifas_df = pd.DataFrame()
+
+                    # Selección de tarifa - OBLIGATORIO
+                    if not tarifas_df.empty:
+                        opciones_tarifas = [
+                            f"{row['nombre']} – {row['descripcion']} ({row['precio']}€)"
+                            for _, row in tarifas_df.iterrows()
+                        ]
+                        tarifa_seleccionada = st.selectbox(
+                            "💰 Selecciona una tarifa disponible:*",
+                            options=opciones_tarifas,
+                            key="tarifa_precontrato_standalone"
+                        )
+                        tarifa_nombre = tarifa_seleccionada.split(" – ")[0] if tarifa_seleccionada else None
+                    else:
+                        st.toast("⚠️ No hay tarifas registradas en la base de datos.")
+                        tarifa_nombre = None
+
+                    # Campo Apartment ID - opcional
+                    apartment_id = st.text_input("🏢 Apartment ID (opcional)",
+                                                 key="apartment_id_standalone",
+                                                 placeholder="Dejar vacío si no hay Apartment ID asociado")
+
+                    # PRECIO - OBLIGATORIO (puede ser 0)
+                    precio = st.text_input(
+                        "💵 Precio Total (€)*",
+                        key="precio_standalone",
+                        placeholder="Ej: 1200,50 o 0"
+                    )
+
+                    # PERMANENCIA - OBLIGATORIO
+                    permanencia = st.radio(
+                        "📆 Permanencia (meses)*",
+                        options=[12, 24],
+                        key="permanencia_standalone",
+                        horizontal=True
+                    )
+
+                    # Campos opcionales adicionales
+                    observaciones = st.text_area("📝 Observaciones (opcional)",
+                                                 key="observaciones_standalone",
+                                                 placeholder="Observaciones adicionales sobre el contrato...")
+
+                    servicio_adicional = st.text_area(
+                        "➕ Servicio Adicional (opcional)",
+                        key="servicio_adicional_standalone",
+                        placeholder="Servicios adicionales contratados..."
+                    )
+
+                    # Comercial automático
+                    comercial = st.session_state.get("username", "")
+                    submit_precontrato = st.form_submit_button("💾 Guardar precontrato")
+
+                    if submit_precontrato:
+                        # Validaciones antes de guardar - SOLO LOS 3 CAMPOS OBLIGATORIOS
+                        errores = []
+
+                        # 1. Validar tarifa - OBLIGATORIO
+                        if not tarifa_nombre:
+                            st.toast("❌ Debes seleccionar una tarifa")
+
+                        # 2. Validar precio - OBLIGATORIO (puede ser 0)
+                        if not precio:
+                            st.toast("❌ El campo 'Precio' es obligatorio")
+                        else:
+                            try:
+                                precio_limpio = precio.replace(",", ".").replace(" ", "")
+                                precio_float = float(precio_limpio)
+                            except ValueError:
+                                st.toast("❌ El precio debe ser un número válido")
+
+                        # Mostrar errores si los hay
+                        if errores:
+                            for error in errores:
+                                st.error(error)
+                            return
+
+                        # Si todas las validaciones pasan, proceder con el guardado
+                        try:
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            # 1️⃣ Insertar precontrato
+                            cursor.execute("""
+                                INSERT INTO precontratos (
+                                    apartment_id, tarifas, observaciones, precio, comercial,
+                                    nombre, cif, nombre_legal, nif, telefono1, telefono2, mail, direccion,
+                                    cp, poblacion, provincia, iban, bic, fecha, firma, permanencia,
+                                    servicio_adicional, precontrato_id
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                apartment_id if apartment_id else None,
+                                tarifa_nombre,
+                                observaciones or "",
+                                precio,
+                                comercial,
+                                "",  # nombre
+                                "",  # cif
+                                "",  # nombre_legal
+                                "",  # nif
+                                "",  # telefono1
+                                "",  # telefono2
+                                "",  # mail
+                                "",  # direccion
+                                "",  # cp
+                                "",  # poblacion
+                                "",  # provincia
+                                "",  # iban
+                                "",  # bic
+                                str(datetime.now().date()),
+                                "",  # firma
+                                permanencia,
+                                servicio_adicional or "",
+                                f"PRE-{int(datetime.now().timestamp())}"  # identificador público
+                            ))
+
+                            precontrato_pk = cursor.lastrowid
+                            # 2️⃣ Generar token de acceso temporal
+                            token_valido = False
+                            max_intentos = 5
+                            intentos = 0
+
+                            while not token_valido and intentos < max_intentos:
+                                token = secrets.token_urlsafe(16)
+                                cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
+                                if cursor.fetchone() is None:
+                                    token_valido = True
+                                intentos += 1
+
+                            if not token_valido:
+                                st.toast("❌ No se pudo generar un token único, intenta nuevamente.")
+
+                            else:
+                                expiracion = datetime.now() + timedelta(hours=24)
+                                cursor.execute("""
+                                    INSERT INTO precontrato_links (precontrato_id, token, expiracion, usado)
+                                    VALUES (?, ?, ?, 0)
+                                """, (precontrato_pk, token, expiracion))
+                                conn.commit()
+                                conn.close()
+                                base_url = "https://one7022025.onrender.com"
+                                link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
+                                st.success("✅ Precontrato guardado correctamente.")
+                                st.markdown(f"📎 **Enlace para el cliente (válido 24 h):**")
+                                st.code(link_cliente, language="text")
+                                st.info(
+                                    "💡 Copia este enlace y envíalo al cliente por WhatsApp. Solo podrá usarse una vez.")
+                                # Guardar en session_state para mostrar el botón de copiar
+                                st.session_state.precontrato_guardado = True
+                                st.session_state.ultimo_enlace = link_cliente
+
+                        except Exception as e:
+                            st.toast(f"❌ Error al guardar el precontrato: {e}. Detalles del error: {str(e)}")
+
+                # Botón para copiar enlace (fuera del formulario)
+                if st.session_state.get('precontrato_guardado', False) and 'ultimo_enlace' in st.session_state:
+                        st.toast("🔗 Enlace copiado al portapapeles")
+
+        with tab2:
+            st.subheader("Precontratos Existentes")
+
+            # Conexión a la base de datos para mostrar precontratos existentes
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Obtener precontratos (los más recientes primero)
+            cursor.execute("""
+                SELECT p.id, p.precontrato_id, p.apartment_id, p.nombre, p.tarifas, p.precio, 
+                       p.fecha, p.comercial, pl.usado, p.mail
+                FROM precontratos p
+                LEFT JOIN precontrato_links pl ON p.id = pl.precontrato_id
+                ORDER BY p.fecha DESC
+                LIMIT 50
+            """)
+            precontratos = cursor.fetchall()
+            conn.close()
+            if precontratos:
+                st.write(f"**Últimos {len(precontratos)} precontratos:**")
+                for precontrato in precontratos:
+                    with st.expander(f"📄 {precontrato[1]} - {precontrato[3] or 'Sin nombre'} - {precontrato[4]}",
+                                     expanded=False):
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write(f"**ID:** {precontrato[1]}")
+                            st.write(f"**Apartment ID:** {precontrato[2] or 'No asignado'}")
+                            st.write(f"**Tarifa:** {precontrato[4]}")
+                        with col2:
+                            st.write(f"**Precio:** {precontrato[5]}€")
+                            st.write(f"**Fecha:** {precontrato[6]}")
+                            st.write(f"**Comercial:** {precontrato[7]}")
+                        with col3:
+                            estado = "✅ Usado" if precontrato[8] else "🟢 Activo"
+                            st.write(f"**Estado:** {estado}")
+                            st.write(f"**Email:** {precontrato[9] or 'No especificado'}")
+
+                        # Botón para regenerar enlace si está usado o expirado
+                        if precontrato[8]:  # Si está usado
+                            if st.button(f"🔄 Regenerar enlace para {precontrato[1]}", key=f"regen_{precontrato[0]}"):
+                                try:
+                                    conn = get_db_connection()
+                                    cursor = conn.cursor()
+                                    # Generar nuevo token
+                                    token_valido = False
+                                    max_intentos = 5
+                                    intentos = 0
+
+                                    while not token_valido and intentos < max_intentos:
+                                        token = secrets.token_urlsafe(16)
+                                        cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
+                                        if cursor.fetchone() is None:
+                                            token_valido = True
+                                        intentos += 1
+
+                                    if token_valido:
+                                        expiracion = datetime.now() + timedelta(hours=24)
+
+                                        # Actualizar el token existente
+                                        cursor.execute("""
+                                            UPDATE precontrato_links 
+                                            SET token = ?, expiracion = ?, usado = 0
+                                            WHERE precontrato_id = ?
+                                        """, (token, expiracion, precontrato[0]))
+                                        conn.commit()
+                                        conn.close()
+                                        base_url = "https://one7022025.onrender.com"
+                                        link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
+                                        st.success("✅ Nuevo enlace generado correctamente.")
+                                        st.code(link_cliente, language="text")
+                                        st.info("💡 Copia este nuevo enlace y envíalo al cliente.")
+                                except Exception as e:
+                                    st.toast(f"❌ Error al regenerar enlace: {e}")
+
+            else:
+                st.toast(
+                    "📝 No hay precontratos registrados aún. Crea el primero en la pestaña 'Crear Nuevo Precontrato'.")
+
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
     conn = get_db_connection()
@@ -861,6 +1131,397 @@ def obtener_viabilidades():
     conn.close()
     return viabilidades
 
+
+def formulario_precontrato_section(apartment_id=None):
+    """Formulario de precontrato que requiere un Apartment ID válido"""
+
+    # Validar que tenemos un apartment_id
+    if not apartment_id or apartment_id in ["", "N/D"]:
+        st.toast("""**❌ No se puede generar un precontrato sin un Apartment ID válido.**
+        💡 **Solución:**
+        - Asegúrate de que la viabilidad tenga un Apartment ID asignado
+        - La viabilidad debe estar marcada como "Sí" en serviciable
+        """)
+        return
+
+    with st.expander("📑 Formulario de Precontrato", expanded=True):
+        st.toast(f"🏢 **Generando precontrato para Apartment ID:** `{apartment_id}`")
+
+        @st.cache_data(ttl=300)
+        def cargar_tarifas():
+            conn = get_db_connection()
+            df = pd.read_sql("SELECT id, nombre, descripcion, precio FROM tarifas", conn)
+            conn.close()
+            return df
+
+        with st.form(key="form_precontrato"):
+            st.markdown(f"Completa los datos del precontrato asociados al **Apartment ID: {apartment_id}**")
+
+            st.info(
+                "💡 **Nota:** Solo los campos de tarifa, precio y permanencia son obligatorios. El cliente completará el resto en el formulario.")
+
+            # Cargar tarifas
+            try:
+                tarifas_df = cargar_tarifas()
+            except Exception as e:
+                st.toast(f"⚠️ No se pudieron cargar las tarifas: {e}")
+                tarifas_df = pd.DataFrame()
+
+            # Selección de tarifa - OBLIGATORIO
+            if not tarifas_df.empty:
+                opciones_tarifas = [
+                    f"{row['nombre']} – {row['descripcion']} ({row['precio']}€)"
+                    for _, row in tarifas_df.iterrows()
+                ]
+                tarifa_seleccionada = st.selectbox(
+                    "💰 Selecciona una tarifa disponible:*",
+                    options=opciones_tarifas,
+                    key="tarifa_precontrato"
+                )
+                tarifa_nombre = tarifa_seleccionada.split(" – ")[0] if tarifa_seleccionada else None
+            else:
+                st.toast("⚠️ No hay tarifas registradas en la base de datos.")
+                tarifa_nombre = None
+
+            # Mostrar Apartment ID bloqueado (no editable)
+            st.text_input("🏢 Apartment ID", value=str(apartment_id), disabled=True, key="apartment_id_precontrato")
+
+            # Campos principales del precontrato - OPCIONALES para comercial
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                nombre = st.text_input("👤 Nombre / Razón social", key="nombre_precontrato")
+                cif = st.text_input("🏢 CIF", key="cif_precontrato")
+
+                def es_cif_valido(cif):
+                    if not cif:  # CIF es opcional
+                        return True
+                    cif = cif.upper()
+                    patron_cif = r'^[ABCDEFGHJNPQRSUVW]\d{7}[0-9A-J]$'
+                    return re.match(patron_cif, cif) is not None
+
+                if cif and not es_cif_valido(cif):
+                    st.toast("⚠️ Introduce un CIF válido.")
+
+                nombre_legal = st.text_input("👥 Nombre Legal (si aplica)", key="nombre_legal_precontrato")
+
+            with col2:
+                nif = st.text_input("🪪 NIF / DNI", key="nif_precontrato")
+
+                def es_nif_valido(nif):
+                    if not nif:  # NIF es opcional para comercial
+                        return True
+                    nif = nif.upper()
+                    patron_nif = r'^\d{8}[A-Z]$'
+                    patron_nie = r'^[XYZ]\d{7}[A-Z]$'
+                    return re.match(patron_nif, nif) or re.match(patron_nie, nif)
+
+                if nif and not es_nif_valido(nif):
+                    st.toast("⚠️ Introduce un NIF o NIE válido.")
+
+                telefono1 = st.text_input("📞 Teléfono 1", key="telefono1_precontrato")
+                telefono2 = st.text_input("📞 Teléfono 2", key="telefono2_precontrato")
+
+            with col3:
+                mail = st.text_input("✉️ Email", key="mail_precontrato", placeholder="usuario@dominio.com")
+
+                def es_email_valido(email):
+                    if not email:  # Email es opcional para comercial
+                        return True
+                    patron = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+                    return re.match(patron, email) is not None
+
+                if mail and not es_email_valido(mail):
+                    st.toast("⚠️ Introduce un correo electrónico válido.")
+
+                comercial = st.text_input("🧑‍💼 Comercial", value=st.session_state.get("username", ""),
+                                          key="comercial_precontrato")
+                fecha = st.date_input("📅 Fecha", pd.Timestamp.now(tz="Europe/Madrid"), key="fecha_precontrato")
+
+            # Campos de dirección - OPCIONALES para comercial
+            direccion = st.text_input("🏠 Dirección", key="direccion_precontrato")
+
+            col4, col5, col6 = st.columns(3)
+            with col4:
+                cp = st.text_input("📮 Código Postal", key="cp_precontrato")
+            with col5:
+                poblacion = st.text_input("🏘️ Población", key="poblacion_precontrato")
+            with col6:
+                provincia = st.text_input("🌍 Provincia", key="provincia_precontrato")
+
+            # Campos bancarios - OPCIONALES para comercial
+            col7, col8 = st.columns(2)
+            with col7:
+                iban = st.text_input(
+                    "🏦 IBAN",
+                    key="iban_precontrato",
+                    placeholder="ES00 0000 0000 0000 0000 0000"
+                )
+
+                # Validación IBAN (solo si se completa)
+                if iban:
+                    iban_sin_espacios = iban.replace(" ", "").upper()
+                    if not iban_sin_espacios.startswith("ES") or len(iban_sin_espacios) != 24:
+                        st.warning("El IBAN debe empezar por ES y tener 24 caracteres (sin espacios).")
+            with col8:
+                bic = st.text_input(
+                    "🏦 BIC",
+                    key="bic_precontrato",
+                    placeholder="AAAAESMMXXX"
+                )
+
+                # Validación BIC (solo si se completa)
+                if bic:
+                    bic_sin_espacios = bic.replace(" ", "").upper()
+                    if len(bic_sin_espacios) not in (8, 11):
+                        st.warning("El BIC debe tener 8 u 11 caracteres.")
+
+            # Campos adicionales del precontrato
+            observaciones = st.text_area("📝 Observaciones", key="observaciones_precontrato",
+                                         placeholder="Observaciones adicionales sobre el contrato...")
+
+            # PRECIO - OBLIGATORIO (puede ser 0)
+            precio = st.text_input(
+                "💵 Precio Total (€)*",
+                key="precio_precontrato",
+                placeholder="Ej: 1200,50 o 0"
+            )
+
+            # Validación de precio - OBLIGATORIO pero puede ser 0
+            if precio:
+                try:
+                    precio_limpio = precio.replace(",", ".").replace(" ", "")
+                    precio_float = float(precio_limpio)
+                    # Permitimos que el precio sea 0 o cualquier número
+                except ValueError:
+                    st.toast("⚠️ El precio debe ser un número válido.")
+
+            # PERMANENCIA - OBLIGATORIO
+            permanencia = st.radio(
+                "📆 Permanencia (meses)*",
+                options=[12, 24],
+                key="permanencia_precontrato",
+                horizontal=True
+            )
+
+            servicio_adicional = st.text_area(
+                "➕ Servicio Adicional",
+                key="servicio_adicional_precontrato",
+                placeholder="Servicios adicionales contratados..."
+            )
+
+            # Línea fija - OPCIONAL
+            st.markdown("#### 📞 Línea Fija")
+            colf1, colf2, colf3 = st.columns(3)
+            with colf1:
+                fija_tipo = st.selectbox("Tipo", ["nuevo", "portabilidad"], key="fija_tipo_precontrato")
+                fija_numero = st.text_input("Número a portar / nuevo", key="fija_numero_precontrato",
+                                            placeholder="Número de línea fija")
+            with colf2:
+                fija_titular = st.text_input("Titular", key="fija_titular_precontrato")
+                fija_dni = st.text_input("DNI Titular", key="fija_dni_precontrato")
+            with colf3:
+                fija_operador = st.text_input("Operador Donante", key="fija_operador_precontrato",
+                                              placeholder="Operador actual")
+                fija_icc = st.text_input("ICC (prepago, si aplica)", key="fija_icc_precontrato")
+
+            # Línea móvil principal - OPCIONAL
+            st.markdown("#### 📱 Línea Móvil Principal")
+            colm1, colm2, colm3 = st.columns(3)
+            with colm1:
+                movil_tipo = st.selectbox("Tipo", ["nuevo", "portabilidad"], key="movil_tipo_precontrato")
+                movil_numero = st.text_input("Número a portar / nuevo", key="movil_numero_precontrato",
+                                             placeholder="Número móvil")
+            with colm2:
+                movil_titular = st.text_input("Titular", key="movil_titular_precontrato")
+                movil_dni = st.text_input("DNI Titular", key="movil_dni_precontrato")
+            with colm3:
+                movil_operador = st.text_input("Operador Donante", key="movil_operador_precontrato",
+                                               placeholder="Operador actual")
+                movil_icc = st.text_input("ICC (prepago, si aplica)", key="movil_icc_precontrato")
+
+            # Líneas móviles adicionales - OPCIONALES
+            st.markdown("#### 📶 Líneas Móviles Adicionales")
+            lineas_adicionales = []
+            for i in range(1, 6):
+                with st.expander(f"Línea móvil adicional #{i}", expanded=False):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        tipo = st.selectbox("Tipo", ["nuevo", "portabilidad"], key=f"adicional_tipo_{i}_precontrato")
+                        numero = st.text_input("Número a portar / nuevo", key=f"adicional_numero_{i}_precontrato")
+                    with col2:
+                        titular = st.text_input("Titular", key=f"adicional_titular_{i}_precontrato")
+                        dni = st.text_input("DNI Titular", key=f"adicional_dni_{i}_precontrato")
+                    with col3:
+                        operador = st.text_input("Operador Donante", key=f"adicional_operador_{i}_precontrato")
+                        icc = st.text_input("ICC (prepago, si aplica)", key=f"adicional_icc_{i}_precontrato")
+
+                    # Solo agregar si hay algún dato completado
+                    if numero or titular or dni or operador or icc:
+                        lineas_adicionales.append({
+                            "tipo": "movil_adicional",
+                            "numero_nuevo_portabilidad": tipo,
+                            "numero_a_portar": numero,
+                            "titular": titular,
+                            "dni": dni,
+                            "operador_donante": operador,
+                            "icc": icc
+                        })
+
+            submit_precontrato = st.form_submit_button("💾 Guardar precontrato")
+
+            if submit_precontrato:
+                # Validaciones antes de guardar - SOLO LOS 3 CAMPOS OBLIGATORIOS
+                errores = []
+
+                # 1. Validar tarifa - OBLIGATORIO
+                if not tarifa_nombre:
+                    st.toast("❌ Debes seleccionar una tarifa")
+
+                # 2. Validar precio - OBLIGATORIO (puede ser 0)
+                if not precio:
+                    st.toast("❌ El campo 'Precio' es obligatorio")
+                else:
+                    try:
+                        precio_limpio = precio.replace(",", ".").replace(" ", "")
+                        precio_float = float(precio_limpio)
+                        # Permitimos que el precio sea 0 o cualquier número
+                    except ValueError:
+                        st.toast("❌ El precio debe ser un número válido")
+
+                # 3. Permanencia siempre tiene valor (12 o 24 por defecto), no necesita validación
+
+                # Mostrar errores si los hay
+                if errores:
+                    for error in errores:
+                        st.error(error)
+                    return
+
+                # Si todas las validaciones pasan, proceder con el guardado
+                try:
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+
+                    # 1️⃣ Insertar precontrato
+                    cursor.execute("""
+                        INSERT INTO precontratos (
+                            apartment_id, tarifas, observaciones, precio, comercial,
+                            nombre, cif, nombre_legal, nif, telefono1, telefono2, mail, direccion,
+                            cp, poblacion, provincia, iban, bic, fecha, firma, permanencia,
+                            servicio_adicional, precontrato_id
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        apartment_id,
+                        tarifa_nombre,
+                        observaciones or "",
+                        precio,
+                        comercial or st.session_state.get("username", ""),
+                        nombre or "",
+                        cif or "",
+                        nombre_legal or "",
+                        nif or "",
+                        telefono1 or "",
+                        telefono2 or "",
+                        mail or "",
+                        direccion or "",
+                        cp or "",
+                        poblacion or "",
+                        provincia or "",
+                        iban or "",
+                        bic or "",
+                        str(fecha),
+                        "",  # firma (se completará en el formulario del cliente)
+                        permanencia,
+                        servicio_adicional or "",
+                        f"PRE-{int(pd.Timestamp.now().timestamp())}"  # identificador público
+                    ))
+
+                    precontrato_pk = cursor.lastrowid
+
+                    # 2️⃣ Insertar líneas asociadas (solo si tienen datos)
+                    lineas = [
+                                 {
+                                     "tipo": "fija",
+                                     "numero_nuevo_portabilidad": fija_tipo,
+                                     "numero_a_portar": fija_numero,
+                                     "titular": fija_titular,
+                                     "dni": fija_dni,
+                                     "operador_donante": fija_operador,
+                                     "icc": fija_icc
+                                 },
+                                 {
+                                     "tipo": "movil",
+                                     "numero_nuevo_portabilidad": movil_tipo,
+                                     "numero_a_portar": movil_numero,
+                                     "titular": movil_titular,
+                                     "dni": movil_dni,
+                                     "operador_donante": movil_operador,
+                                     "icc": movil_icc
+                                 }
+                             ] + lineas_adicionales
+
+                    for linea in lineas:
+                        # Solo insertar líneas que tengan al menos el número
+                        if linea["numero_a_portar"]:
+                            cursor.execute("""
+                                INSERT INTO lineas (
+                                    precontrato_id, tipo, numero_nuevo_portabilidad, numero_a_portar,
+                                    titular, dni, operador_donante, icc
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                precontrato_pk,
+                                linea["tipo"],
+                                linea["numero_nuevo_portabilidad"],
+                                linea["numero_a_portar"],
+                                linea["titular"] or "",
+                                linea["dni"] or "",
+                                linea["operador_donante"] or "",
+                                linea["icc"] or ""
+                            ))
+
+                    # 3️⃣ Generar token de acceso temporal
+                    token_valido = False
+                    max_intentos = 5
+                    intentos = 0
+                    while not token_valido and intentos < max_intentos:
+                        token = secrets.token_urlsafe(16)
+                        cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
+                        if cursor.fetchone() is None:
+                            token_valido = True
+                        intentos += 1
+
+                    if not token_valido:
+                        st.toast("❌ No se pudo generar un token único, intenta nuevamente.")
+                    else:
+                        expiracion = datetime.now() + timedelta(hours=24)
+                        cursor.execute("""
+                            INSERT INTO precontrato_links (precontrato_id, token, expiracion, usado)
+                            VALUES (?, ?, ?, 0)
+                        """, (precontrato_pk, token, expiracion))
+
+                        conn.commit()
+                        conn.close()
+
+                        base_url = "https://one7022025.onrender.com"
+                        link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
+
+                        st.toast("✅ Precontrato guardado correctamente.")
+                        st.markdown(f"📎 **Enlace para el cliente (válido 24 h):**")
+                        st.code(link_cliente, language="text")
+                        st.info("💡 Copia este enlace y envíalo al cliente por WhatsApp. Solo podrá usarse una vez.")
+
+                except Exception as e:
+                    st.toast(f"❌ Error al guardar el precontrato: {e}. Detalles del error: {str(e)}")
+
+        # ✅ MOVER EL BOTÓN DE COPIAR FUERA DEL FORMULARIO
+        # Usamos session_state para mostrar el botón solo después de guardar
+        if 'precontrato_guardado' not in st.session_state:
+            st.session_state.precontrato_guardado = False
+
+        # Este botón está fuera del formulario, por lo que no causa error
+        if st.session_state.precontrato_guardado and 'ultimo_enlace' in st.session_state:
+            if st.button("📋 Copiar enlace al portapapeles", key="copiar_enlace"):
+                st.toast("🔗 Enlace copiado al portapapeles")
 
 def viabilidades_section():
     st.title("Viabilidades")
@@ -1060,7 +1721,124 @@ def viabilidades_section():
                 st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
                 st.rerun()
 
+    # ✅ NUEVA SECCIÓN: Mostrar formulario de precontrato SOLO para viabilidades con Apartment ID
+    st.markdown("---")
+    st.subheader("📑 Generar Precontrato para Viabilidad con Apartment ID")
 
+    # Obtener viabilidades que tienen Apartment ID (no vacío y no "N/D")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # En la sección donde obtienes las viabilidades para precontrato:
+    cursor.execute("""
+        SELECT ticket, apartment_id, provincia, municipio, poblacion, vial, numero, letra, nombre_cliente
+        FROM viabilidades 
+        WHERE apartment_id IS NOT NULL
+    """)
+    viabilidades_con_apartment = cursor.fetchall()
+    conn.close()
+
+    if viabilidades_con_apartment:
+        # Crear opciones para el selectbox
+        opciones_viabilidades = []
+        for v in viabilidades_con_apartment:
+            ticket = v[0]
+            apartment_ids = v[1]
+            provincia = v[2]
+            municipio = v[3]
+            nombre_cliente = v[8] or "Sin nombre"
+
+            # Verificar si hay múltiples apartment_ids separados por comas
+            if ',' in apartment_ids:
+                # Contar cuántos apartment_ids hay
+                num_apartments = len(apartment_ids.split(','))
+                opciones_viabilidades.append(
+                    f"{ticket} - {apartment_ids} ({provincia}, {municipio}) - Cliente: {nombre_cliente} [{num_apartments} APTs]"
+                )
+            else:
+                opciones_viabilidades.append(
+                    f"{ticket} - {apartment_ids} ({provincia}, {municipio}) - Cliente: {nombre_cliente}"
+                )
+
+        viabilidad_seleccionada = st.selectbox(
+            "Selecciona una viabilidad con Apartment ID para generar precontrato:",
+            options=opciones_viabilidades,
+            key="select_viabilidad_precontrato"
+        )
+
+        if viabilidad_seleccionada:
+            # Extraer el ticket de la selección
+            ticket_seleccionado = viabilidad_seleccionada.split(" - ")[0]
+
+            # Encontrar los datos completos de la viabilidad seleccionada
+            viabilidad_data = [
+                v for v in viabilidades_con_apartment
+                if v[0] == ticket_seleccionado
+            ][0]
+
+            ticket = viabilidad_data[0]
+            apartment_ids_completo = viabilidad_data[1]  # Puede contener múltiples IDs separados por comas
+            provincia = viabilidad_data[2]
+            municipio = viabilidad_data[3]
+            poblacion = viabilidad_data[4]
+            vial = viabilidad_data[5]
+            numero = viabilidad_data[6]
+            letra = viabilidad_data[7]
+            nombre_cliente = viabilidad_data[8]
+
+            # Formatear la dirección
+            direccion_completa = f"{vial} {numero}{f' {letra}' if letra else ''}, {poblacion}"
+
+            # Verificar si hay múltiples apartment_ids
+            if ',' in apartment_ids_completo:
+                # Separar los apartment_ids y limpiar espacios
+                apartment_ids_lista = [apt.strip() for apt in apartment_ids_completo.split(',')]
+
+                st.info(f"""
+                **Viabilidad seleccionada:**
+                - **Ticket:** {ticket}
+                - **Apartment IDs disponibles:** {apartment_ids_completo}
+                - **Cliente:** {nombre_cliente if nombre_cliente else 'No especificado'}
+                - **Dirección:** {direccion_completa}
+                - **Municipio:** {municipio}
+                - **Provincia:** {provincia}
+                """)
+
+                # Mostrar selector para elegir un apartment_id específico
+                apartment_id_seleccionado = st.selectbox(
+                    "Selecciona el Apartment ID específico para el precontrato:",
+                    options=apartment_ids_lista,
+                    key=f"select_apartment_{ticket}"
+                )
+
+                st.toast(f"🏢 **Generando precontrato para:** `{apartment_id_seleccionado}`")
+
+            else:
+                # Solo hay un apartment_id
+                apartment_id_seleccionado = apartment_ids_completo
+
+                # Mostrar información de la viabilidad seleccionada
+                st.info(f"""
+                **Viabilidad seleccionada:**
+                - **Ticket:** {ticket}
+                - **Apartment ID:** {apartment_id_seleccionado}
+                - **Cliente:** {nombre_cliente if nombre_cliente else 'No especificado'}
+                - **Dirección:** {direccion_completa}
+                - **Municipio:** {municipio}
+                - **Provincia:** {provincia}
+                """)
+
+            # Llamar al formulario de precontrato con el apartment_id seleccionado
+            formulario_precontrato_section(apartment_id_seleccionado)
+    else:
+        st.toast("""
+        ℹ️ **No hay viabilidades disponibles para generar precontratos**
+
+        Para generar un precontrato necesitas:
+        1. Una viabilidad marcada como **"Sí"** en serviciable
+        2. Un **Apartment ID** asignado (no vacío y no "N/D")
+
+        Crea una viabilidad primero y asegúrate de completar estos campos.
+        """)
 
 
 def get_user_location():
@@ -1521,23 +2299,19 @@ def mostrar_formulario(click_data):
 
             # Validación y formateo
             if precio:
-                # Reemplaza punto por coma si el usuario escribe punto
-                precio_formateado = precio.replace(".", ",")
                 try:
-                    # Intentamos convertir a float usando coma como decimal
-                    precio_float = float(precio_formateado.replace(",", "."))
-                    # Lo mostramos con coma siempre
-                    precio_formateado = f"{precio_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    precio_limpio = precio.replace(",", ".").replace(" ", "")
+                    precio_float = float(precio_limpio)
+                    # Quitamos la validación de que sea mayor que 0, permitimos cualquier número
                 except ValueError:
-                    st.warning("Introduce un precio válido, usando coma para los decimales.")
+                    st.toast("❌ El precio debe ser un número válido")
+
             permanencia = st.radio(
                 "📆 Permanencia (meses)",
                 options=[12, 24],
                 key=f"permanencia_{form_key}"
             )
             servicio_adicional = st.text_area("➕ Servicio Adicional", key=f"servicio_adicional_{form_key}")
-
-            st.subheader("📡 Líneas Asociadas al Precontrato")
 
             # Línea fija
             st.markdown("#### 📞 Línea Fija")
