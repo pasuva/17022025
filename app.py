@@ -1,8 +1,72 @@
 import streamlit as st
-st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
+from datetime import datetime
 from modules import login, admin, supervisor, comercial_jefe, comercial_rafa, comercial_vip
+from modules.formulario_cliente import formulario_cliente
 
-# Inicializar el estado de sesión si no existe
+st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
+
+
+# ==========================================================
+# 🔸 Detectar si hay token en la URL (para formulario cliente)
+# ==========================================================
+def get_url_params():
+    """Función robusta para obtener parámetros de URL"""
+    params = st.query_params
+
+    # Debug: mostrar todos los parámetros
+    st.write(f"🔍 DEBUG - Todos los parámetros: {dict(params)}")
+
+    # Obtener precontrato_id
+    precontrato_id = None
+    if "precontrato_id" in params:
+        precontrato_val = params["precontrato_id"]
+        if isinstance(precontrato_val, list):
+            precontrato_id = precontrato_val[0] if precontrato_val else None
+        else:
+            precontrato_id = precontrato_val
+
+    # Obtener token - MANERA ESPECIAL para evitar truncamiento
+    token = None
+    if "token" in params:
+        token_val = params["token"]
+        if isinstance(token_val, list):
+            token = token_val[0] if token_val else None
+        else:
+            token = token_val
+
+    # Si el token parece truncado, intentar reconstruirlo desde la URL completa
+    if token and len(token) < 10:  # Los tokens deberían ser más largos
+        st.warning(f"⚠️ Token parece truncado: '{token}'")
+        # Intentar obtener el token de manera alternativa
+        try:
+            import urllib.parse
+            current_url = st.query_params.to_dict()
+            st.write(f"🔍 URL completa parseada: {current_url}")
+        except Exception as e:
+            st.write(f"🔍 Error al parsear URL: {e}")
+
+    return precontrato_id, token
+
+
+# Obtener parámetros
+precontrato_id, token = get_url_params()
+
+st.write(f"🔍 DEBUG - precontrato_id: {precontrato_id}")
+st.write(f"🔍 DEBUG - token: {token}")
+
+if token and precontrato_id:
+    # Verificar si el token parece válido (debería tener al menos 10 caracteres)
+    if len(str(token)) >= 10:
+        st.write("🔍 Token parece válido, cargando formulario...")
+        formulario_cliente(precontrato_id, token)
+        st.stop()
+    else:
+        st.error(f"❌ Token inválido o truncado: '{token}'")
+        st.info("💡 El token parece estar incompleto. Por favor, verifica el enlace o contacta con el comercial.")
+
+# ==========================================================
+# 🔸 Si no hay token, sigue el flujo normal del login
+# ==========================================================
 if "login_ok" not in st.session_state:
     st.session_state["login_ok"] = False
 
@@ -24,3 +88,4 @@ else:
         comercial_vip.comercial_dashboard_vip()
     else:
         st.error("Rol no reconocido")
+
