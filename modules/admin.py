@@ -296,7 +296,6 @@ def cargar_contratos_google():
         print(f"❌ Error cargando contratos desde Google Sheets: {e}")
         return pd.DataFrame()
 
-
 def cargar_usuarios():
     """Carga los usuarios desde la base de datos."""
     conn = obtener_conexion()
