@@ -2008,6 +2008,7 @@ def get_user_location():
 def validar_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
 
+
 def mostrar_formulario(click_data):
     """Muestra un formulario con los datos correspondientes a las coordenadas seleccionadas."""
     st.subheader("📄 Enviar Oferta")
@@ -2015,6 +2016,7 @@ def mostrar_formulario(click_data):
     # Extraer datos del click
     popup_text = click_data.get("popup", "")
     apartment_id_from_popup = popup_text.split(" - ")[0] if " - " in popup_text else "N/D"
+
     # Extraer coordenadas y convertir a float
     try:
         lat_value = float(click_data.get("lat"))
@@ -2055,9 +2057,7 @@ def mostrar_formulario(click_data):
             options=opciones,
             key=f"select_apartment_{form_key}"
         )
-        # Extraemos solo el apartment_id de la opción seleccionada
         apartment_id = seleccion.split()[0]
-        # Filtramos el DataFrame por ese apartment_id
         df = df[df["apartment_id"] == apartment_id]
     else:
         apartment_id = df.iloc[0]["apartment_id"]
@@ -2072,123 +2072,177 @@ def mostrar_formulario(click_data):
     letra = row["letra"]
     cp = row["cp"]
 
-    # Mostrar datos no editables
-    st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.text_input("📍 Provincia", value=provincia, disabled=True)
-    with col2:
-        st.text_input("🏙️ Municipio", value=municipio, disabled=True)
-    with col3:
-        st.text_input("👥 Población", value=poblacion, disabled=True)
-    col4, col5, col6, col7 = st.columns([2, 1, 1, 1])
-    with col4:
-        st.text_input("🚦 Vial", value=vial, disabled=True)
-    with col5:
-        st.text_input("🔢 Número", value=numero, disabled=True)
-    with col6:
-        st.text_input("🔠 Letra", value=letra, disabled=True)
-    with col7:
-        st.text_input("📮 Código Postal", value=cp, disabled=True)
-    col8, col9 = st.columns(2)
-    with col8:
-        st.text_input("📌 Latitud", value=lat_value, disabled=True)
-    with col9:
-        st.text_input("📌 Longitud", value=lng_value, disabled=True)
-
-    # Selector reactivo para "¿Es serviciable?" (por defecto lo deja en "Sí")
-    es_serviciable = st.radio(
-        "🛠️ ¿Es serviciable?",
-        ["Sí", "No"],
-        index=0,
-        horizontal=True,
-        key=f"es_serviciable_{form_key}"
-    )
-
-    # Variables comunes
-    tipo_vivienda = tipo_vivienda_otro = contrato = client_name = phone = alt_address = observations = ""
-    contiene_incidencias = motivo_incidencia = motivo_serviciable = ""
-    imagen_incidencia = None
-
-    # Campos si es serviciable
-    if es_serviciable == "Sí":
-        col1, col2 = st.columns(2)
+    # Crear formulario para agrupar todos los campos
+    with st.form(key=f"oferta_form_{form_key}"):
+        # Mostrar datos no editables
+        st.text_input("🏢 Apartment ID", value=apartment_id, disabled=True)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            tipo_vivienda = st.selectbox(
-                "🏠 Tipo de Ui",
-                ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
-                index=0,
-                key=f"tipo_vivienda_{form_key}"
-            )
-            contrato = st.radio(
-                "📑 Tipo de Contrato",
-                ["Sí", "No Interesado"],
-                index=0,
-                horizontal=True,
-                key=f"contrato_{form_key}"
-            )
-            client_name = st.text_input(
-                "👤 Nombre del Cliente",
-                max_chars=100,
-                key=f"client_name_{form_key}"
-            )
-            phone = st.text_input(
-                "📞 Teléfono",
-                max_chars=15,
-                key=f"phone_{form_key}"
-            )
+            st.text_input("📍 Provincia", value=provincia, disabled=True)
         with col2:
-            tipo_vivienda_otro = (
-                st.text_input("📝 Especificar Tipo de Ui", key=f"tipo_vivienda_otro_{form_key}")
-                if tipo_vivienda == "Otro" else ""
+            st.text_input("🏙️ Municipio", value=municipio, disabled=True)
+        with col3:
+            st.text_input("👥 Población", value=poblacion, disabled=True)
+
+        col4, col5, col6, col7 = st.columns([2, 1, 1, 1])
+        with col4:
+            st.text_input("🚦 Vial", value=vial, disabled=True)
+        with col5:
+            st.text_input("🔢 Número", value=numero, disabled=True)
+        with col6:
+            st.text_input("🔠 Letra", value=letra, disabled=True)
+        with col7:
+            st.text_input("📮 Código Postal", value=cp, disabled=True)
+
+        col8, col9 = st.columns(2)
+        with col8:
+            st.text_input("📌 Latitud", value=lat_value, disabled=True)
+        with col9:
+            st.text_input("📌 Longitud", value=lng_value, disabled=True)
+
+        # Selección de tipo de oferta
+        es_serviciable = st.radio(
+            "🛠️ ¿Es serviciable?",
+            ["Sí", "No"],
+            index=0,
+            horizontal=True,
+            key=f"es_serviciable_{form_key}"
+        )
+
+        # Campo de motivo de no servicio justo después del radio
+        if es_serviciable == "No":
+            motivo_serviciable = st.text_area(
+                "❌ Motivo de No Servicio",
+                key=f"motivo_serviciable_{form_key}",
+                placeholder="Explicar por qué no es serviciable...",
+                help="Este campo es obligatorio cuando la oferta no es serviciable"
             )
+        else:
+            motivo_serviciable = ""
+
+        # ACORDEÓN para Datos de la Vivienda y Cliente (solo relevante si es serviciable)
+        with st.expander("🏠 Datos de la Vivienda y Cliente", expanded=es_serviciable == "Sí"):
+            if es_serviciable == "Sí":
+                col1, col2 = st.columns(2)
+                with col1:
+                    tipo_vivienda = st.selectbox(
+                        "🏠 Tipo de Ui",
+                        ["Piso", "Casa", "Dúplex", "Negocio", "Ático", "Otro"],
+                        index=0,
+                        key=f"tipo_vivienda_{form_key}"
+                    )
+
+                    # Campo para especificar si se selecciona "Otro"
+                    if tipo_vivienda == "Otro":
+                        tipo_vivienda_otro = st.text_input(
+                            "📝 Especificar Tipo de Ui",
+                            key=f"tipo_vivienda_otro_{form_key}",
+                            placeholder="Describe el tipo de vivienda"
+                        )
+                    else:
+                        tipo_vivienda_otro = ""
+
+                    contrato = st.radio(
+                        "📑 Tipo de Contrato",
+                        ["Sí", "No Interesado"],
+                        index=0,
+                        horizontal=True,
+                        key=f"contrato_{form_key}"
+                    )
+
+                with col2:
+                    client_name = st.text_input(
+                        "👤 Nombre del Cliente",
+                        max_chars=100,
+                        key=f"client_name_{form_key}",
+                        placeholder="Nombre completo del cliente"
+                    )
+                    phone = st.text_input(
+                        "📞 Teléfono",
+                        max_chars=15,
+                        key=f"phone_{form_key}",
+                        placeholder="Número de teléfono"
+                    )
+            else:
+                st.info("ℹ️ Esta sección solo es relevante para ofertas serviciables")
+                tipo_vivienda = ""
+                tipo_vivienda_otro = ""
+                contrato = ""
+                client_name = ""
+                phone = ""
+
+        # ACORDEÓN para Información Adicional
+        with st.expander("📍 Información Adicional", expanded=False):
             alt_address = st.text_input(
                 "📌 Dirección Alternativa (Rellenar si difiere de la original)",
-                key=f"alt_address_{form_key}"
+                key=f"alt_address_{form_key}",
+                placeholder="Dejar vacío si coincide con la dirección principal"
             )
+
             observations = st.text_area(
                 "📝 Observaciones",
-                key=f"observations_{form_key}"
+                key=f"observations_{form_key}",
+                placeholder="Cualquier observación adicional relevante..."
             )
-        contiene_incidencias = st.radio(
-            "⚠️ ¿Contiene incidencias?",
-            ["Sí", "No"],
-            index=1,
-            horizontal=True,
-            key=f"contiene_incidencias_{form_key}"
-        )
-        if contiene_incidencias == "Sí":
-            motivo_incidencia = st.text_area(
-                "📄 Motivo de la Incidencia",
-                key=f"motivo_incidencia_{form_key}"
-            )
-            imagen_incidencia = st.file_uploader(
-                "📷 Adjuntar Imagen (PNG, JPG, JPEG)",
-                type=["png", "jpg", "jpeg"],
-                key=f"imagen_incidencia_{form_key}"
-            )
-    else:
-        motivo_serviciable = st.text_area(
-            "❌ Motivo de No Servicio",
-            key=f"motivo_serviciable_{form_key}"
-        )
 
-    # ---------------- SUBIR PDF PRECONTRATO ----------------
-    pdf_precontrato = st.file_uploader(
-        "📄 Adjuntar PDF del precontrato (opcional, se enviará a bo@verdetuoperador.com)",
-        type=["pdf"],
-        key=f"pdf_precontrato_{form_key}"
-    )
+        # ACORDEÓN para Gestión de Incidencias (solo relevante si es serviciable)
+        with st.expander("⚠️ Gestión de Incidencias", expanded=False):
+            if es_serviciable == "Sí":
+                contiene_incidencias = st.radio(
+                    "⚠️ ¿Contiene incidencias?",
+                    ["Sí", "No"],
+                    index=1,
+                    horizontal=True,
+                    key=f"contiene_incidencias_{form_key}"
+                )
 
-    # Botón de envío
-    submit = st.button("🚀 Enviar Oferta", key=f"submit_oferta_{form_key}")
+                # Estos campos están siempre habilitados
+                motivo_incidencia = st.text_area(
+                    "📄 Motivo de la Incidencia",
+                    key=f"motivo_incidencia_{form_key}",
+                    placeholder="Describir la incidencia encontrada..."
+                )
 
-    # Procesar envío
+                imagen_incidencia = st.file_uploader(
+                    "📷 Adjuntar Imagen (PNG, JPG, JPEG)",
+                    type=["png", "jpg", "jpeg"],
+                    key=f"imagen_incidencia_{form_key}",
+                    help="Opcional: adjuntar imagen relacionada con la incidencia"
+                )
+            else:
+                st.info("ℹ️ Esta sección solo es relevante para ofertas serviciables")
+                contiene_incidencias = ""
+                motivo_incidencia = ""
+                imagen_incidencia = None
+
+        # Información para el usuario
+        st.info(
+            "💡 **Nota:** Complete todos los campos relevantes según el tipo de oferta. Los campos se procesarán según su selección en '¿Es serviciable?'")
+
+        # Botón de envío dentro del formulario
+        submit = st.form_submit_button("🚀 Enviar Oferta")
+
+    # Procesar envío (fuera del formulario)
     if submit:
+        # Validaciones
+        if es_serviciable == "No" and not motivo_serviciable:
+            st.toast("❌ Debe proporcionar el motivo de no servicio cuando la oferta no es serviciable.")
+            return
+
         if es_serviciable == "Sí" and phone and not phone.isdigit():
             st.toast("❌ El teléfono debe contener solo números.")
             return
 
+        if es_serviciable == "Sí" and (not client_name or not phone):
+            st.toast("❌ El nombre y teléfono del cliente son obligatorios para ofertas serviciables.")
+            return
+
+        # Determinar el tipo de vivienda final
+        tipo_vivienda_final = ""
+        if es_serviciable == "Sí":
+            tipo_vivienda_final = tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda
+
+        # Construir el diccionario de datos de la oferta
         oferta_data = {
             "Provincia": provincia,
             "Municipio": municipio,
@@ -2199,16 +2253,16 @@ def mostrar_formulario(click_data):
             "Código Postal": cp,
             "Latitud": lat_value,
             "Longitud": lng_value,
-            "Nombre Cliente": client_name,
-            "Teléfono": phone,
+            "Nombre Cliente": client_name if es_serviciable == "Sí" else "",
+            "Teléfono": phone if es_serviciable == "Sí" else "",
             "Dirección Alternativa": alt_address,
             "Observaciones": observations,
             "serviciable": es_serviciable,
-            "motivo_serviciable": motivo_serviciable,
+            "motivo_serviciable": motivo_serviciable if es_serviciable == "No" else "",
             "incidencia": contiene_incidencias if es_serviciable == "Sí" else "",
-            "motivo_incidencia": motivo_incidencia if es_serviciable == "Sí" else "",
-            "Tipo_Vivienda": tipo_vivienda_otro if tipo_vivienda == "Otro" else tipo_vivienda,
-            "Contrato": contrato,
+            "motivo_incidencia": motivo_incidencia if (es_serviciable == "Sí" and contiene_incidencias == "Sí") else "",
+            "Tipo_Vivienda": tipo_vivienda_final if es_serviciable == "Sí" else "",
+            "Contrato": contrato if es_serviciable == "Sí" else "",
             "fecha": pd.Timestamp.now(tz="Europe/Madrid")
         }
 
@@ -2224,7 +2278,7 @@ def mostrar_formulario(click_data):
 
             # Obtener email del comercial desde sesión o base de datos
             nombre_comercial = st.session_state.get("username", "N/D")
-            email_comercial = st.session_state.get("email", None)  # <- Asegúrate que esto esté definido al hacer login
+            email_comercial = st.session_state.get("email", None)
 
             conn.close()
 
@@ -2239,14 +2293,29 @@ def mostrar_formulario(click_data):
                 f"🔠 <strong>Letra:</strong> {letra}<br>"
                 f"📮 <strong>Código Postal:</strong> {cp}<br>"
                 f"📅 <strong>Fecha:</strong> {oferta_data['fecha']}<br>"
-                f"📱 <strong>Teléfono:</strong> {phone}<br>"
-                f"🏘️ <strong>Tipo Vivienda:</strong> {oferta_data['Tipo_Vivienda']}<br>"
-                f"✅ <strong>Contratado:</strong> {contrato}<br>"
-                f"🔧 <strong>Servicio:</strong> {es_serviciable}<br>"
-                f"⚠️ <strong>Incidencia:</strong> {contiene_incidencias}<br>"
-                f"💬 <strong>Observaciones:</strong> {observations}<br><br>"
-                f"ℹ️ Por favor, revise los detalles de la oferta y asegúrese de que toda la información sea correcta."
+                f"🔧 <strong>Serviciable:</strong> {es_serviciable}<br>"
             )
+
+            # Agregar campos condicionales al email
+            if es_serviciable == "Sí":
+                descripcion_oferta += (
+                    f"📱 <strong>Teléfono:</strong> {phone}<br>"
+                    f"👤 <strong>Nombre Cliente:</strong> {client_name}<br>"
+                    f"🏘️ <strong>Tipo Vivienda:</strong> {tipo_vivienda_final}<br>"
+                    f"✅ <strong>Contratado:</strong> {contrato}<br>"
+                    f"⚠️ <strong>Incidencia:</strong> {contiene_incidencias}<br>"
+                )
+                if contiene_incidencias == "Sí":
+                    descripcion_oferta += f"📄 <strong>Motivo Incidencia:</strong> {motivo_incidencia}<br>"
+            else:
+                descripcion_oferta += f"❌ <strong>Motivo No Servicio:</strong> {motivo_serviciable}<br>"
+
+            if alt_address:
+                descripcion_oferta += f"📍 <strong>Dirección Alternativa:</strong> {alt_address}<br>"
+            if observations:
+                descripcion_oferta += f"💬 <strong>Observaciones:</strong> {observations}<br>"
+
+            descripcion_oferta += "<br>ℹ️ Por favor, revise los detalles de la oferta y asegúrese de que toda la información sea correcta."
 
             if emails_admin:
                 for email in emails_admin:
@@ -2261,30 +2330,6 @@ def mostrar_formulario(click_data):
                     f"📧 Se ha enviado una notificación a: {', '.join(emails_admin + ([email_comercial] if email_comercial else []))}")
             else:
                 st.warning("⚠️ No se encontró ningún email de administrador/gestor, no se pudo enviar la notificación.")
-
-                # ---------------- ENVÍO DEL PDF PRECONTRATO ----------------
-                if pdf_precontrato:
-                    try:
-                        archivo_bytes = pdf_precontrato.getvalue()
-                        nombre_archivo = pdf_precontrato.name
-                        destinatario_bo = "bo@verdetuoperador.com"
-                        mensaje_bo = (
-                            f"Se ha generado un precontrato para el Apartment ID {apartment_id}.\n\n"
-                            f"Enviado automáticamente desde el gestor de ofertas."
-                        )
-
-                        # Función para enviar correo con archivo (reutilizar la que ya tengas)
-                        correo_envio_presupuesto_manual(
-                            destinatario=destinatario_bo,
-                            proyecto=f"Precontrato - Apartment {apartment_id}",
-                            mensaje_usuario=mensaje_bo,
-                            archivo_bytes=archivo_bytes,
-                            nombre_archivo=nombre_archivo
-                        )
-
-                        st.toast(f"✅ PDF precontrato enviado correctamente a {destinatario_bo}.")
-                    except Exception as e:
-                        st.toast(f"❌ Error al enviar PDF precontrato: {e}")
 
     # ---------------------- FORMULARIO DE PRECONTRATO ----------------------
     with st.expander("📑 Formulario de Precontrato", expanded=False):
