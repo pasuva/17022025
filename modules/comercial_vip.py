@@ -797,7 +797,7 @@ def comercial_dashboard_vip():
 
                     # PRECIO - OBLIGATORIO (puede ser 0)
                     precio = st.text_input(
-                        "💵 Precio Total (€)*",
+                        "💵 Precio Total (€ I.V.A Incluido)*",
                         key="precio_standalone",
                         placeholder="Ej: 1200,50 o 0"
                     )
@@ -1422,7 +1422,7 @@ def formulario_precontrato_section(apartment_id=None):
 
             # PRECIO - OBLIGATORIO (puede ser 0)
             precio = st.text_input(
-                "💵 Precio Total (€)*",
+                "💵 Precio Total (€ I.V.A Incluido)*",
                 key="precio_precontrato",
                 placeholder="Ej: 1200,50 o 0"
             )
@@ -2466,7 +2466,7 @@ def mostrar_formulario(click_data):
 
             observaciones = st.text_area("📝 Observaciones", key=f"observaciones_precontrato_{form_key}")
             precio = st.text_input(
-                "💵 Precio Total (€)*",
+                "💵 Precio Total (€ I.V.A Incluido)*",
                 key=f"precio_{form_key}",
                 placeholder="Ej: 1200,50"
             )

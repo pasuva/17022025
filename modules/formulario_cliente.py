@@ -245,7 +245,7 @@ def generar_pdf(precontrato_datos, lineas=[]):
         "Tarifa": precontrato_datos["tarifa"],
         "Comercial": precontrato_datos["comercial"],
         "Observaciones": precontrato_datos["observaciones"],
-        "Precio (€)": precontrato_datos["precio"],
+        "Precio (€ I.V.A Incluido)": precontrato_datos["precio"],
         "Fecha": precontrato_datos["fecha"],
         "Permanencia": precontrato_datos["permanencia"],
         "Servicio Adicional": precontrato_datos["servicio_adicional"]
