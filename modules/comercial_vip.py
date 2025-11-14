@@ -2648,6 +2648,7 @@ def mostrar_formulario(click_data):
                         conn.close()
 
                         base_url = "https://one7022025.onrender.com"  # puerto de Streamlit
+                        #base_url = "http://localhost:8501"
                         link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
 
                         st.toast("✅ Precontrato guardado correctamente.")

@@ -1,16 +1,28 @@
 import re
-
 import streamlit as st
 import sqlitecloud
 from datetime import datetime
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from modules.plantilla_email import generar_html
 import smtplib
 from email.message import EmailMessage
+import base64
+from PIL import Image as PILImage
+import numpy as np
+
+# Añadir el import para el canvas de firma
+try:
+    from streamlit_drawable_canvas import st_canvas
+
+    CANVAS_AVAILABLE = True
+except ImportError:
+    st.error(
+        "❌ El componente streamlit-drawable-canvas no está instalado. Ejecuta: pip install streamlit-drawable-canvas")
+    CANVAS_AVAILABLE = False
 
 DB_PATH = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
 
@@ -28,7 +40,7 @@ def get_db_connection():
 
 # -------------------- VALIDAR TOKEN (CON DEPURACIÓN) --------------------
 def validar_token(precontrato_id, token):
-    #st.write(f"🔍 Depuración: Validando token - precontrato_id: {precontrato_id}, token: {token}")
+    # st.write(f"🔍 Depuración: Validando token - precontrato_id: {precontrato_id}, token: {token}")
 
     conn = get_db_connection()
     if not conn:
@@ -42,7 +54,7 @@ def validar_token(precontrato_id, token):
         """, (precontrato_id, token))
         link = cursor.fetchone()
 
-        #st.write(f"🔍 Resultado de la consulta: {link}")
+        # st.write(f"🔍 Resultado de la consulta: {link}")
 
         if not link:
             return False, "❌ Enlace no válido o ya utilizado."
@@ -52,9 +64,9 @@ def validar_token(precontrato_id, token):
         expiracion = datetime.fromisoformat(link[3])
         usado = link[4]
 
-        #st.write(f"🔍 Fecha de expiración: {expiracion}")
-        #st.write(f"🔍 Usado: {usado}")
-        #st.write(f"🔍 Fecha actual: {datetime.now()}")
+        # st.write(f"🔍 Fecha de expiración: {expiracion}")
+        # st.write(f"🔍 Usado: {usado}")
+        # st.write(f"🔍 Fecha actual: {datetime.now()}")
 
         if usado:
             return False, "❌ Este enlace ya ha sido utilizado."
@@ -70,7 +82,8 @@ def validar_token(precontrato_id, token):
     finally:
         conn.close()
 
-#------FUNCIONES DE VALIDACION------#
+
+# ------FUNCIONES DE VALIDACION------#
 # Funciones de validación
 def validar_dni(dni):
     """Validar DNI/NIF español"""
@@ -146,7 +159,53 @@ def validar_telefono(telefono):
         return False, "Teléfono inválido. Debe tener 9 dígitos y empezar por 6,7,8,9"
 
     return True, "Teléfono válido"
-#-----------------------------------#
+
+
+# -----------------------------------#
+
+# -------------------- FUNCIONES DE FIRMA --------------------
+def procesar_firma(canvas_result):
+    """Convierte el canvas de firma a base64 para almacenamiento"""
+    if canvas_result is not None and canvas_result.image_data is not None:
+        try:
+            # Convertir a imagen PIL
+            img_array = np.array(canvas_result.image_data)
+
+            # Verificar si hay algún trazo no transparente
+            if np.any(img_array[:, :, 3] > 0):  # Verificar canal alpha
+                img_pil = PILImage.fromarray(img_array.astype('uint8'), 'RGBA')
+
+                # Crear fondo blanco para la firma
+                background = PILImage.new('RGBA', img_pil.size, (255, 255, 255, 255))
+                # Combinar la firma con fondo blanco
+                firma_con_fondo = PILImage.alpha_composite(background, img_pil)
+
+                # Convertir a RGB para mejor compatibilidad
+                firma_rgb = firma_con_fondo.convert('RGB')
+
+                # Convertir a base64
+                buffered = BytesIO()
+                firma_rgb.save(buffered, format="PNG", optimize=True)
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                return img_str
+        except Exception as e:
+            st.error(f"Error procesando firma: {e}")
+            return None
+    return None
+
+
+def firma_para_pdf(firma_base64):
+    """Convierte la firma base64 a imagen para PDF"""
+    if not firma_base64:
+        return None
+
+    try:
+        firma_data = base64.b64decode(firma_base64)
+        return BytesIO(firma_data)
+    except Exception as e:
+        st.error(f"Error procesando firma para PDF: {e}")
+        return None
+
 
 # -------------------- GENERAR PDF --------------------
 def generar_pdf(precontrato_datos, lineas=[]):
@@ -180,6 +239,7 @@ def generar_pdf(precontrato_datos, lineas=[]):
         elements.append(table)
         elements.append(Spacer(1, 12))
 
+    # Datos del Precontrato
     tabla_seccion("Datos del Precontrato", {
         "Apartment ID": precontrato_datos["apartment_id"],
         "Tarifa": precontrato_datos["tarifa"],
@@ -191,7 +251,8 @@ def generar_pdf(precontrato_datos, lineas=[]):
         "Servicio Adicional": precontrato_datos["servicio_adicional"]
     })
 
-    tabla_seccion("Datos del Cliente", {
+    # Datos del Cliente
+    datos_cliente = {
         "Nombre": precontrato_datos["nombre"],
         "Nombre legal / Razón social": precontrato_datos["nombre_legal"],
         "NIF": precontrato_datos["nif"],
@@ -204,10 +265,29 @@ def generar_pdf(precontrato_datos, lineas=[]):
         "Población": precontrato_datos["poblacion"],
         "Provincia": precontrato_datos["provincia"],
         "IBAN": precontrato_datos["iban"],
-        "BIC": precontrato_datos["bic"],
-        "Firma": precontrato_datos["firma"]
-    })
+        "BIC": precontrato_datos["bic"]
+    }
 
+    # Añadir sección de firma si existe
+    if precontrato_datos.get("firma_base64"):
+        datos_cliente["Firma"] = "✓ FIRMA ADJUNTADA (Ver imagen abajo)"
+
+    tabla_seccion("Datos del Cliente", datos_cliente)
+
+    # Añadir imagen de la firma si existe
+    if precontrato_datos.get("firma_base64"):
+        elements.append(Spacer(1, 12))
+        elements.append(Paragraph("Firma del Cliente", styles['CustomHeading']))
+        try:
+            firma_buffer = firma_para_pdf(precontrato_datos["firma_base64"])
+            if firma_buffer:
+                firma_img = Image(firma_buffer, width=200, height=80)
+                elements.append(firma_img)
+                elements.append(Spacer(1, 12))
+        except Exception as e:
+            elements.append(Paragraph(f"Error cargando firma: {e}", styles['Normal']))
+
+    # Líneas adicionales
     if lineas:
         for i, l in enumerate(lineas, start=1):
             tabla_seccion(f"Línea adicional {i}", {
@@ -268,8 +348,19 @@ def enviar_correo_pdf(precontrato_datos, archivos=[], lineas=[]):
 def formulario_cliente(precontrato_id=None, token=None):
     st.title("Formulario de Cliente - Precontrato")
 
+    # Verificar disponibilidad del canvas
+    if not CANVAS_AVAILABLE:
+        st.error("""
+        ❌ El componente de firma no está disponible. 
+        Por favor, instala el paquete requerido:
+        ```bash
+        pip install streamlit-drawable-canvas
+        ```
+        """)
+        return
+
     # Mostrar parámetros recibidos para depuración
-    #st.toast(f"🔍 Parámetros recibidos - precontrato_id: {precontrato_id}, token: {token}")
+    # st.toast(f"🔍 Parámetros recibidos - precontrato_id: {precontrato_id}, token: {token}")
 
     # Inicializar estado de sesión
     if 'validado' not in st.session_state:
@@ -280,10 +371,12 @@ def formulario_cliente(precontrato_id=None, token=None):
         st.session_state.token = ""
     if 'precontrato_data' not in st.session_state:
         st.session_state.precontrato_data = None
+    if 'firma_base64' not in st.session_state:
+        st.session_state.firma_base64 = None
 
     # Si se pasan parámetros desde app.py, usarlos para validación automática
     if precontrato_id and token and not st.session_state.validado:
-        #st.toast("🔍 Realizando validación automática con parámetros de URL...")
+        # st.toast("🔍 Realizando validación automática con parámetros de URL...")
         valido, mensaje = validar_token(precontrato_id, token)
         if not valido:
             st.error(mensaje)
@@ -367,8 +460,73 @@ def formulario_cliente(precontrato_id=None, token=None):
     else:
         # Mostrar formulario principal
         precontrato = st.session_state.precontrato_data
-        st.toast("✅ Enlace válido. Completa el formulario a continuación.")
+        st.toast("✅ Enlace válido. Completado el formulario correctamente.")
 
+        # SECCIÓN DE FIRMA FUERA DEL FORMULARIO
+        st.subheader("Firma del Cliente*")
+        st.info("Por favor, dibuje su firma en el recuadro inferior y a continuación pulse guardar firma, luego rellene los campos requeridos y pulse Enviar:")
+
+        # Canvas para la firma - CON COLORES MEJORADOS
+        canvas_result = st_canvas(
+            fill_color="rgba(255, 255, 255, 0)",  # Fondo transparente
+            stroke_width=3,
+            stroke_color="#000000",  # Negro para mejor visibilidad
+            background_color="#FFFFFF",  # Fondo blanco
+            background_image=None,
+            update_streamlit=True,  # Actualizar en tiempo real para ver el dibujo
+            height=150,
+            width=400,
+            drawing_mode="freedraw",
+            point_display_radius=0,
+            key="signature_canvas",
+        )
+
+        # Mostrar vista previa del canvas en tiempo real
+        #if canvas_result.image_data is not None:
+        #    st.caption("Vista previa de tu firma:")
+            # Convertir a imagen con fondo blanco para mejor visualización
+        #    try:
+        #        img_array = np.array(canvas_result.image_data)
+        #        if np.any(img_array[:, :, 3] > 0):  # Si hay trazos
+                    # Crear fondo blanco
+        #            background = np.ones((img_array.shape[0], img_array.shape[1], 3), dtype=np.uint8) * 255
+                    # Aplicar el trazo negro sobre fondo blanco
+        #            mask = img_array[:, :, 3] > 0
+        #            background[mask] = [0, 0, 0]  # Negro
+        #            st.image(background, width=200, caption="Así se verá tu firma")
+        #    except Exception as e:
+        #        st.error(f"Error mostrando vista previa: {e}")
+
+        # Botones para gestionar la firma
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Limpiar Firma", use_container_width=True):
+                st.session_state.firma_base64 = None
+                st.rerun()
+
+        with col2:
+            if st.button("💾 Guardar Firma", use_container_width=True):
+                firma_base64 = procesar_firma(canvas_result)
+                if firma_base64:
+                    st.session_state.firma_base64 = firma_base64
+                    st.toast("✅ Firma guardada correctamente")
+                    st.rerun()
+                else:
+                    st.toast("❌ Por favor, dibuje una firma antes de guardar")
+
+        # Mostrar vista previa de la firma guardada
+        if st.session_state.firma_base64:
+            st.success("✅ Firma guardada - Vista previa:")
+            try:
+                firma_data = base64.b64decode(st.session_state.firma_base64)
+                st.image(firma_data, width=200, caption="Firma guardada")
+            except Exception as e:
+                st.error(f"Error mostrando firma: {e}")
+        else:
+            st.warning(
+                "⚠️ Aún no has guardado tu firma. Por favor, dibuja y guarda tu firma antes de enviar el formulario.")
+
+        # FORMULARIO PRINCIPAL
         with st.form(key="formulario_cliente"):
             st.subheader("Datos Personales")
 
@@ -388,7 +546,6 @@ def formulario_cliente(precontrato_id=None, token=None):
             provincia = st.text_input("Provincia*", precontrato[16] or "")
             iban = st.text_input("IBAN*", precontrato[17] or "")
             bic = st.text_input("BIC", precontrato[18] or "")
-            firma = st.text_input("Firma*", "")
 
             # Mostrar ejemplos de formato válido
             with st.expander("ℹ️ Formatos válidos esperados"):
@@ -423,12 +580,11 @@ def formulario_cliente(precontrato_id=None, token=None):
             st.subheader("Líneas adicionales")
             lineas_adicionales = []
             for i in range(1, 6):
-                with st.expander(f"Línea adicional {i}",
-                                 expanded=False):  # expanded=True si quieres que estén abiertos por defecto
+                with st.expander(f"Línea adicional {i}", expanded=False):
                     tipo = st.selectbox("Tipo de línea", ["", "movil_adicional", "fijo_adicional"],
                                         key=f"tipo_{i}")
 
-                    # Mostrar todos los campos siempre, sin depender de la selección del tipo
+                    # Mostrar todos los campos siempre
                     numero_nuevo = st.text_input("Número nuevo / portabilidad", key=f"numero_nuevo_{i}")
                     numero_a_portar = st.text_input("Número a portar", key=f"numero_a_portar_{i}")
                     titular = st.text_input("Titular", key=f"titular_{i}")
@@ -448,14 +604,15 @@ def formulario_cliente(precontrato_id=None, token=None):
                             "icc": icc_l
                         })
 
+            # Botón de envío dentro del formulario
             submitted = st.form_submit_button("📤 Enviar formulario")
 
             if submitted:
-                # Validaciones básicas de campos obligatorios
+                # Validaciones básicas de campos obligatorios (actualizada para firma)
                 campos_obligatorios = [
                     (nombre, "Nombre completo"),
                     (nif, "NIF/DNI"),
-                    (firma, "Firma"),
+                    (st.session_state.firma_base64, "Firma"),  # Ahora validamos la firma dibujada
                     (telefono1, "Teléfono principal"),
                     (mail, "Email"),
                     (direccion, "Dirección"),
@@ -547,14 +704,15 @@ def formulario_cliente(precontrato_id=None, token=None):
 
                     cursor = conn.cursor()
 
-                    # Actualizar precontrato
+                    # Actualizar precontrato (AHORA CON FIRMA BASE64)
                     cursor.execute("""
                         UPDATE precontratos
                         SET nombre=?, nombre_legal=?, cif=?, nif=?, telefono1=?, telefono2=?, mail=?, direccion=?,
                             cp=?, poblacion=?, provincia=?, iban=?, bic=?, firma=?
                         WHERE id=?
                     """, (nombre, nombre_legal, cif, nif, telefono1, telefono2, mail, direccion,
-                          cp, poblacion, provincia, iban, bic, firma, int(st.session_state.precontrato_id)))
+                          cp, poblacion, provincia, iban, bic, st.session_state.firma_base64,
+                          int(st.session_state.precontrato_id)))
 
                     # Marcar link como usado
                     cursor.execute("""
@@ -577,7 +735,7 @@ def formulario_cliente(precontrato_id=None, token=None):
                     conn.commit()
                     conn.close()
 
-                    # Preparar datos para PDF y correo
+                    # Preparar datos para PDF y correo (AHORA CON FIRMA_BASE64)
                     datos_pdf = {
                         "precontrato_id": precontrato[23],
                         "apartment_id": precontrato[1],
@@ -601,7 +759,7 @@ def formulario_cliente(precontrato_id=None, token=None):
                         "provincia": provincia,
                         "iban": iban,
                         "bic": bic,
-                        "firma": firma
+                        "firma_base64": st.session_state.firma_base64  # Nueva clave para la firma
                     }
 
                     # Enviar correo
@@ -615,6 +773,7 @@ def formulario_cliente(precontrato_id=None, token=None):
                         st.session_state.precontrato_id = ""
                         st.session_state.token = ""
                         st.session_state.precontrato_data = None
+                        st.session_state.firma_base64 = None
                     else:
                         st.error(message)
 
