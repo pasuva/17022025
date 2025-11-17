@@ -1291,8 +1291,7 @@ def mostrar_descarga_datos():
             comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz", "marian", "juan pablo"]
             viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
         elif username.lower() == "rafa sanz":
-            # Rafa Sanz no ve a Juan Pablo
-            viabilidades = viabilidades[~viabilidades['usuario'].isin(["juan pablo", "roberto", "nestor", "Comercial2", "Comercial3"])]
+            viabilidades = viabilidades[~viabilidades['usuario'].isin(["juan pablo", "roberto", "nestor", "Comercial2", "Comercial3","juan","marian"])]
 
         st.info(
             "ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")

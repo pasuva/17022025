@@ -4181,6 +4181,230 @@ def generar_informe(fecha_inicio, fecha_fin):
     """
     st.markdown(resumen_viabilidades, unsafe_allow_html=True)
 
+    # ─────────────────────────────────────────────
+    # 🔹 INFORME DE PRECONTRATOS
+    # ─────────────────────────────────────────────
+    st.write("----------------------")
+    st.subheader("📄 Informe de Precontratos")
+
+    conn = obtener_conexion()
+
+    # 1️⃣ Total de precontratos en el periodo
+    query_total_precontratos = """
+           SELECT COUNT(*) 
+           FROM precontratos 
+           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
+       """
+    total_precontratos = ejecutar_consulta(query_total_precontratos, (fecha_inicio, fecha_fin))
+
+    # 2️⃣ Precontratos por comercial
+    query_precontratos_comercial = """
+           SELECT comercial, COUNT(*) as total
+           FROM precontratos
+           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
+           GROUP BY comercial
+           ORDER BY total DESC
+       """
+    df_precontratos_comercial = pd.read_sql_query(query_precontratos_comercial, conn, params=(fecha_inicio, fecha_fin))
+
+    # 3️⃣ Precontratos por tarifa
+    query_precontratos_tarifa = """
+           SELECT tarifas, COUNT(*) as total
+           FROM precontratos
+           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
+           GROUP BY tarifas
+           ORDER BY total DESC
+       """
+    df_precontratos_tarifa = pd.read_sql_query(query_precontratos_tarifa, conn, params=(fecha_inicio, fecha_fin))
+
+    # 4️⃣ Precontratos completados (con firma)
+    query_precontratos_completados = """
+           SELECT COUNT(*) 
+           FROM precontratos 
+           WHERE firma IS NOT NULL 
+             AND TRIM(firma) <> ''
+             AND STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
+       """
+    total_precontratos_completados = ejecutar_consulta(query_precontratos_completados, (fecha_inicio, fecha_fin))
+    porcentaje_completados = (
+                total_precontratos_completados / total_precontratos * 100) if total_precontratos > 0 else 0
+
+    conn.close()
+
+    # Visualizaciones Precontratos
+    colp1, colp2 = st.columns(2)
+    with colp1:
+        if not df_precontratos_comercial.empty:
+            fig_prec_comercial = go.Figure(data=[go.Bar(
+                x=df_precontratos_comercial['comercial'],
+                y=df_precontratos_comercial['total'],
+                text=df_precontratos_comercial['total'],
+                textposition='outside',
+                marker_color='#4CAF50'
+            )])
+            fig_prec_comercial.update_layout(
+                title="Precontratos por Comercial",
+                xaxis_title="Comercial",
+                yaxis_title="Número de Precontratos",
+                height=400
+            )
+            st.plotly_chart(fig_prec_comercial, use_container_width=True)
+
+    with colp2:
+        if not df_precontratos_tarifa.empty:
+            fig_prec_tarifa = go.Figure(data=[go.Pie(
+                labels=df_precontratos_tarifa['tarifas'],
+                values=df_precontratos_tarifa['total'],
+                textinfo='percent+label',
+                hole=0.4,
+                marker=dict(colors=['#FF9800', '#2196F3', '#9C27B0', '#E91E63'])
+            )])
+            fig_prec_tarifa.update_layout(
+                title="Distribución por Tarifa",
+                showlegend=True
+            )
+            st.plotly_chart(fig_prec_tarifa, use_container_width=True)
+
+    # Métricas Precontratos
+    col_met1, col_met2, col_met3 = st.columns(3)
+    with col_met1:
+        st.metric("Total Precontratos", total_precontratos)
+    with col_met2:
+        st.metric("Precontratos Completados", total_precontratos_completados)
+    with col_met3:
+        st.metric("Tasa de Completado", f"{porcentaje_completados:.1f}%")
+
+    # Resumen Precontratos
+    resumen_precontratos = f"""
+       <div style="text-align: justify;">
+       En el periodo analizado, se han generado <strong>{total_precontratos}</strong> precontratos. 
+       De estos, <strong>{total_precontratos_completados}</strong> han sido completados por los clientes, 
+       lo que representa una tasa de completado del <strong>{porcentaje_completados:.1f}%</strong>.
+       {" El comercial con mayor número de precontratos es " + df_precontratos_comercial.iloc[0]['comercial'] + " con " + str(df_precontratos_comercial.iloc[0]['total']) + " precontratos." if not df_precontratos_comercial.empty else ""}
+       {" La tarifa más utilizada es " + df_precontratos_tarifa.iloc[0]['tarifas'] + " con " + str(df_precontratos_tarifa.iloc[0]['total']) + " precontratos." if not df_precontratos_tarifa.empty else ""}
+       </div>
+       <br>
+       """
+    st.markdown(resumen_precontratos, unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────
+    # 🔹 INFORME DE CONTRATOS
+    # ─────────────────────────────────────────────
+    st.write("----------------------")
+    st.subheader("📊 Informe de Contratos")
+
+    conn = obtener_conexion()
+
+    # 1️⃣ Total de contratos en el periodo
+    query_total_contratos = """
+           SELECT COUNT(*) 
+           FROM seguimiento_contratos 
+           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
+       """
+    total_contratos = ejecutar_consulta(query_total_contratos, (fecha_inicio, fecha_fin))
+
+    # 2️⃣ Contratos por estado
+    query_contratos_estado = """
+           SELECT estado, COUNT(*) as total
+           FROM seguimiento_contratos
+           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
+           GROUP BY estado
+           ORDER BY total DESC
+       """
+    df_contratos_estado = pd.read_sql_query(query_contratos_estado, conn, params=(fecha_inicio, fecha_fin))
+
+    # 3️⃣ Contratos por comercial
+    query_contratos_comercial = """
+           SELECT comercial, COUNT(*) as total
+           FROM seguimiento_contratos
+           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
+           GROUP BY comercial
+           ORDER BY total DESC
+       """
+    df_contratos_comercial = pd.read_sql_query(query_contratos_comercial, conn, params=(fecha_inicio, fecha_fin))
+
+    # 4️⃣ Contratos activos vs finalizados
+    query_contratos_activos = """
+           SELECT COUNT(*) 
+           FROM seguimiento_contratos 
+           WHERE estado IN ('Activo', 'En proceso', 'Pendiente')
+             AND STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
+       """
+    total_contratos_activos = ejecutar_consulta(query_contratos_activos, (fecha_inicio, fecha_fin))
+    porcentaje_activos = (total_contratos_activos / total_contratos * 100) if total_contratos > 0 else 0
+
+    # 5️⃣ Contratos con fecha de instalación
+    query_contratos_instalados = """
+           SELECT COUNT(*) 
+           FROM seguimiento_contratos 
+           WHERE fecha_instalacion IS NOT NULL 
+             AND TRIM(fecha_instalacion) <> ''
+             AND STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
+       """
+    total_contratos_instalados = ejecutar_consulta(query_contratos_instalados, (fecha_inicio, fecha_fin))
+    porcentaje_instalados = (total_contratos_instalados / total_contratos * 100) if total_contratos > 0 else 0
+
+    conn.close()
+
+    # Visualizaciones Contratos
+    colc1, colc2 = st.columns(2)
+    with colc1:
+        if not df_contratos_estado.empty:
+            fig_cont_estado = go.Figure(data=[go.Bar(
+                x=df_contratos_estado['estado'],
+                y=df_contratos_estado['total'],
+                text=df_contratos_estado['total'],
+                textposition='outside',
+                marker_color='#2196F3'
+            )])
+            fig_cont_estado.update_layout(
+                title="Contratos por Estado",
+                xaxis_title="Estado",
+                yaxis_title="Número de Contratos",
+                height=400
+            )
+            st.plotly_chart(fig_cont_estado, use_container_width=True)
+
+    with colc2:
+        if not df_contratos_comercial.empty:
+            fig_cont_comercial = go.Figure(data=[go.Pie(
+                labels=df_contratos_comercial['comercial'],
+                values=df_contratos_comercial['total'],
+                textinfo='percent+label',
+                hole=0.4,
+                marker=dict(colors=['#FF5722', '#795548', '#607D8B', '#009688'])
+            )])
+            fig_cont_comercial.update_layout(
+                title="Distribución por Comercial",
+                showlegend=True
+            )
+            st.plotly_chart(fig_cont_comercial, use_container_width=True)
+
+    # Métricas Contratos
+    col_metc1, col_metc2, col_metc3, col_metc4 = st.columns(4)
+    with col_metc1:
+        st.metric("Total Contratos", total_contratos)
+    with col_metc2:
+        st.metric("Contratos Activos", total_contratos_activos)
+    with col_metc3:
+        st.metric("Tasa de Activos", f"{porcentaje_activos:.1f}%")
+    with col_metc4:
+        st.metric("Contratos Instalados", total_contratos_instalados)
+
+    # Resumen Contratos
+    resumen_contratos = f"""
+       <div style="text-align: justify;">
+       En el periodo analizado, se han registrado <strong>{total_contratos}</strong> contratos en el sistema. 
+       De estos, <strong>{total_contratos_activos}</strong> se encuentran activos o en proceso 
+       (<strong>{porcentaje_activos:.1f}%</strong> del total), y <strong>{total_contratos_instalados}</strong> 
+       ya cuentan con fecha de instalación confirmada.
+       {" El estado más común es " + df_contratos_estado.iloc[0]['estado'] + " con " + str(df_contratos_estado.iloc[0]['total']) + " contratos." if not df_contratos_estado.empty else ""}
+       {" El comercial con mayor número de contratos es " + df_contratos_comercial.iloc[0]['comercial'] + " con " + str(df_contratos_comercial.iloc[0]['total']) + " contratos." if not df_contratos_comercial.empty else ""}
+       </div>
+       <br>
+       """
+    st.markdown(resumen_contratos, unsafe_allow_html=True)
+
     return informe
 
 # Función para leer y mostrar el control de versiones

@@ -460,7 +460,31 @@ def formulario_cliente(precontrato_id=None, token=None):
     else:
         # Mostrar formulario principal
         precontrato = st.session_state.precontrato_data
-        st.toast("✅ Enlace válido. Completado el formulario correctamente.")
+        st.toast("✅ Enlace válido. Completa el formulario correctamente.")
+
+        # SECCIÓN DE DATOS DEL CONTRATO (versión simple)
+        st.subheader("📋 Detalles del Contrato - VERSIÓN FINAL")
+
+        # Crear una tabla visual con los datos
+        with st.container():
+            st.markdown("### Condiciones del Servicio")
+
+            # Usar columnas para mejor organización
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.info(f"**🗳️ Tarifa:** {precontrato[2] or 'No especificada'}")
+                st.info(f"**💰 Precio:** {precontrato[4] or 'No especificado'}")
+
+            with col2:
+                st.info(f"**⏱️ Permanencia:** {precontrato[21] or 'No especificada'}")
+                st.info(f"**🛠️ Servicios Adicionales:** {precontrato[22] or 'Ninguno'}")
+
+            if precontrato[3]:  # Observaciones
+                st.markdown("---")
+                st.warning(f"**📝 Observaciones:** {precontrato[3]}")
+
+        st.divider()
 
         # SECCIÓN DE FIRMA FUERA DEL FORMULARIO
         st.subheader("Firma del Cliente*")
@@ -480,22 +504,6 @@ def formulario_cliente(precontrato_id=None, token=None):
             point_display_radius=0,
             key="signature_canvas",
         )
-
-        # Mostrar vista previa del canvas en tiempo real
-        #if canvas_result.image_data is not None:
-        #    st.caption("Vista previa de tu firma:")
-            # Convertir a imagen con fondo blanco para mejor visualización
-        #    try:
-        #        img_array = np.array(canvas_result.image_data)
-        #        if np.any(img_array[:, :, 3] > 0):  # Si hay trazos
-                    # Crear fondo blanco
-        #            background = np.ones((img_array.shape[0], img_array.shape[1], 3), dtype=np.uint8) * 255
-                    # Aplicar el trazo negro sobre fondo blanco
-        #            mask = img_array[:, :, 3] > 0
-        #            background[mask] = [0, 0, 0]  # Negro
-        #            st.image(background, width=200, caption="Así se verá tu firma")
-        #    except Exception as e:
-        #        st.error(f"Error mostrando vista previa: {e}")
 
         # Botones para gestionar la firma
         col1, col2 = st.columns(2)
@@ -528,6 +536,7 @@ def formulario_cliente(precontrato_id=None, token=None):
 
         # FORMULARIO PRINCIPAL
         with st.form(key="formulario_cliente"):
+
             st.subheader("Datos Personales")
 
             # Mostrar información del precontrato para referencia
