@@ -1076,10 +1076,10 @@ def comercial_dashboard_vip():
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            # Obtener precontratos (los más recientes primero)
+            # Obtener precontratos (los más recientes primero) - CON NUEVOS CAMPOS
             cursor.execute("""
                 SELECT p.id, p.precontrato_id, p.apartment_id, p.nombre, p.tarifas, p.precio, 
-                       p.fecha, p.comercial, pl.usado, p.mail
+                       p.fecha, p.comercial, pl.usado, p.mail, p.permanencia, p.telefono1, p.telefono2
                 FROM precontratos p
                 LEFT JOIN precontrato_links pl ON p.id = pl.precontrato_id
                 ORDER BY p.fecha DESC
@@ -1087,6 +1087,7 @@ def comercial_dashboard_vip():
             """)
             precontratos = cursor.fetchall()
             conn.close()
+
             if precontratos:
                 st.write(f"**Últimos {len(precontratos)} precontratos:**")
                 for precontrato in precontratos:
@@ -1098,14 +1099,20 @@ def comercial_dashboard_vip():
                             st.write(f"**ID:** {precontrato[1]}")
                             st.write(f"**Apartment ID:** {precontrato[2] or 'No asignado'}")
                             st.write(f"**Tarifa:** {precontrato[4]}")
-                        with col2:
                             st.write(f"**Precio:** {precontrato[5]}€")
+
+                        with col2:
                             st.write(f"**Fecha:** {precontrato[6]}")
                             st.write(f"**Comercial:** {precontrato[7]}")
+                            st.write(f"**Permanencia:** {precontrato[10] or 'No especificada'}")
+
                         with col3:
                             estado = "✅ Usado" if precontrato[8] else "🟢 Activo"
                             st.write(f"**Estado:** {estado}")
                             st.write(f"**Email:** {precontrato[9] or 'No especificado'}")
+                            st.write(f"**Teléfono 1:** {precontrato[11] or 'No especificado'}")
+                            if precontrato[12]:  # Si hay teléfono 2
+                                st.write(f"**Teléfono 2:** {precontrato[12]}")
 
                         # Botón para regenerar enlace si está usado o expirado
                         if precontrato[8]:  # Si está usado

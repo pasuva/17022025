@@ -64,10 +64,6 @@ def validar_token(precontrato_id, token):
         expiracion = datetime.fromisoformat(link[3])
         usado = link[4]
 
-        # st.write(f"🔍 Fecha de expiración: {expiracion}")
-        # st.write(f"🔍 Usado: {usado}")
-        # st.write(f"🔍 Fecha actual: {datetime.now()}")
-
         if usado:
             return False, "❌ Este enlace ya ha sido utilizado."
 
