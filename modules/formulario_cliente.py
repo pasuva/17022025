@@ -82,20 +82,40 @@ def validar_token(precontrato_id, token):
 # ------FUNCIONES DE VALIDACION------#
 # Funciones de validación
 def validar_dni(dni):
-    """Validar DNI/NIF español"""
+    """Validar DNI/NIF español incluyendo la letra de control"""
     if not dni:
         return False, "El DNI no puede estar vacío"
 
-    # Patrón para DNI (8 números + letra) o NIE (X/Y/Z + 7 números + letra)
-    patron_dni = r'^[0-9]{8}[A-Za-z]$'
-    patron_nie = r'^[XYZxyz][0-9]{7}[A-Za-z]$'
-
+    # Limpiar y normalizar el DNI
     dni_upper = dni.upper().replace(' ', '').replace('-', '')
+
+    # Patrón para DNI (8 números + letra) o NIE (X/Y/Z + 7 números + letra)
+    patron_dni = r'^[0-9]{8}[A-Z]$'
+    patron_nie = r'^[XYZ][0-9]{7}[A-Z]$'
 
     if not (re.match(patron_dni, dni_upper) or re.match(patron_nie, dni_upper)):
         return False, "Formato de DNI/NIE inválido. Use: 12345678A o X1234567A"
 
-    return True, "DNI válido"
+    # Validar la letra de control
+    letras_validas = "TRWAGMYFPDXBNJZSQVHLCKE"
+
+    if re.match(patron_dni, dni_upper):
+        # Validar DNI español
+        numero = int(dni_upper[:8])
+        letra_correcta = letras_validas[numero % 23]
+        if dni_upper[8] != letra_correcta:
+            return False, f"Letra del DNI incorrecta. Debería ser: {letra_correcta}"
+    else:
+        # Validar NIE (Número de Identificación de Extranjero)
+        # Mapear letra inicial a número: X=0, Y=1, Z=2
+        mapa_nie = {'X': '0', 'Y': '1', 'Z': '2'}
+        numero_str = mapa_nie[dni_upper[0]] + dni_upper[1:8]
+        numero = int(numero_str)
+        letra_correcta = letras_validas[numero % 23]
+        if dni_upper[8] != letra_correcta:
+            return False, f"Letra del NIE incorrecta. Debería ser: {letra_correcta}"
+
+    return True, "DNI/NIE válido"
 
 
 def validar_email(email):
@@ -112,25 +132,81 @@ def validar_email(email):
 
 
 def validar_codigo_postal(cp):
-    """Validar código postal español (5 dígitos)"""
+    """Validar código postal español con verificaciones específicas"""
     if not cp:
         return False, "El código postal no puede estar vacío"
 
-    cp_limpio = cp.replace(' ', '')
+    cp_limpio = cp.replace(' ', '').replace('-', '')
 
+    # Verificar formato básico (5 dígitos)
     if not re.match(r'^[0-9]{5}$', cp_limpio):
-        return False, "Código postal inválido. Debe tener 5 dígitos"
+        return False, "Código postal inválido. Debe tener exactamente 5 dígitos"
 
-    # Validar que el primer dígito esté entre 0-5 (España)
     primer_digito = cp_limpio[0]
-    if primer_digito not in '012345':
-        return False, "Código postal español inválido. El primer dígito debe ser 0-5"
+    codigo_provincia = cp_limpio[:2]
 
-    return True, "Código postal válido"
+    # Validar que el primer dígito esté entre 0-5 (España peninsular + Baleares)
+    if primer_digito not in '012345':
+        return False, "Código postal inválido. El primer dígito debe estar entre 0-5"
+
+    # Validar códigos de provincia específicos
+    provincias_validas = {
+        '01': 'Álava', '02': 'Albacete', '03': 'Alicante', '04': 'Almería', '05': 'Ávila',
+        '06': 'Badajoz', '07': 'Baleares', '08': 'Barcelona', '09': 'Burgos', '10': 'Cáceres',
+        '11': 'Cádiz', '12': 'Castellón', '13': 'Ciudad Real', '14': 'Córdoba', '15': 'Coruña',
+        '16': 'Cuenca', '17': 'Girona', '18': 'Granada', '19': 'Guadalajara', '20': 'Guipúzcoa',
+        '21': 'Huelva', '22': 'Huesca', '23': 'Jaén', '24': 'León', '25': 'Lleida',
+        '26': 'La Rioja', '27': 'Lugo', '28': 'Madrid', '29': 'Málaga', '30': 'Murcia',
+        '31': 'Navarra', '32': 'Ourense', '33': 'Asturias', '34': 'Palencia', '35': 'Las Palmas',
+        '36': 'Pontevedra', '37': 'Salamanca', '38': 'Santa Cruz de Tenerife', '39': 'Cantabria',
+        '40': 'Segovia', '41': 'Sevilla', '42': 'Soria', '43': 'Tarragona', '44': 'Teruel',
+        '45': 'Toledo', '46': 'Valencia', '47': 'Valladolid', '48': 'Vizcaya', '49': 'Zamora',
+        '50': 'Zaragoza', '51': 'Ceuta', '52': 'Melilla'
+    }
+
+    if codigo_provincia not in provincias_validas:
+        return False, f"Código postal inválido. '{codigo_provincia}' no corresponde a ninguna provincia española"
+
+    # Validaciones específicas por rangos
+    primer_digito_int = int(primer_digito)
+
+    if primer_digito_int == 0:
+        # Códigos que empiezan por 0 (Álava, Albacete, etc.)
+        if not ('01' <= codigo_provincia <= '03'):
+            return False, "Código postal con formato inválido para el rango 01-03"
+
+    elif primer_digito_int == 1:
+        # Códigos que empiezan por 1 (Madrid principalmente)
+        if not ('28' <= codigo_provincia <= '29'):
+            return False, "Código postal con formato inválido para el rango 28-29"
+
+    elif primer_digito_int == 2:
+        # Códigos que empiezan por 2 (Barcelona, etc.)
+        if not ('08' <= codigo_provincia <= '09'):
+            return False, "Código postal con formato inválido para el rango 08-09"
+
+    elif primer_digito_int == 3:
+        # Códigos que empiezan por 3 (Islas Baleares, Valencia, etc.)
+        if not ('07' <= codigo_provincia <= '46'):
+            return False, "Código postal con formato inválido para el rango 07-46"
+
+    elif primer_digito_int == 4:
+        # Códigos que empiezan por 4 (Sevilla, Málaga, etc.)
+        if not ('41' <= codigo_provincia <= '41'):
+            return False, "Código postal con formato inválido para el rango 41"
+
+    elif primer_digito_int == 5:
+        # Códigos que empiezan por 5 (Canarias, Ceuta, Melilla)
+        if not ('35' <= codigo_provincia <= '52'):
+            return False, "Código postal con formato inválido para el rango 35-52"
+
+    # Información adicional útil
+    provincia = provincias_validas[codigo_provincia]
+    return True, f"Código postal válido - Provincia: {provincia}"
 
 
 def validar_iban(iban):
-    """Validar formato IBAN español"""
+    """Validar IBAN español incluyendo verificación de dígitos de control"""
     if not iban:
         return False, "El IBAN no puede estar vacío"
 
@@ -139,6 +215,28 @@ def validar_iban(iban):
     # Formato IBAN español: ES + 22 dígitos
     if not re.match(r'^ES[0-9]{22}$', iban_limpio):
         return False, "Formato IBAN inválido. Use: ES + 22 dígitos (Ej: ES9121000418450200051332)"
+
+    # Validar dígitos de control usando el algoritmo oficial
+    # Reordenar: mover los 4 primeros caracteres al final
+    iban_reordenado = iban_limpio[4:] + iban_limpio[:4]
+
+    # Convertir letras a números (A=10, B=11, ..., Z=35)
+    iban_numerico = ''
+    for caracter in iban_reordenado:
+        if caracter.isdigit():
+            iban_numerico += caracter
+        else:
+            iban_numerico += str(10 + ord(caracter) - ord('A'))
+
+    # Calcular módulo 97 (debe ser 1 para ser válido)
+    # Usamos cálculo modular para números grandes
+    resto = 0
+    for i in range(0, len(iban_numerico), 7):
+        segmento = str(resto) + iban_numerico[i:i + 7]
+        resto = int(segmento) % 97
+
+    if resto != 1:
+        return False, "IBAN inválido: dígitos de control incorrectos"
 
     return True, "IBAN válido"
 
