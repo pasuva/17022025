@@ -1047,6 +1047,8 @@ def comercial_dashboard_vip():
                                     conn.commit()
                                     conn.close()
 
+                                    #base_url="http://localhost:8501"
+
                                     base_url = "https://one7022025.onrender.com"
                                     link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
                                     st.success("✅ Precontrato guardado correctamente.")

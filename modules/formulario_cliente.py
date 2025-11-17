@@ -297,7 +297,6 @@ def generar_pdf(precontrato_datos, lineas=[]):
                 "Titular": l.get('titular', ''),
                 "DNI": l.get('dni', ''),
                 "Operador donante": l.get('operador_donante', ''),
-                "ICC": l.get('icc', '')
             })
 
     elements.append(Spacer(1, 24))
@@ -359,9 +358,6 @@ def formulario_cliente(precontrato_id=None, token=None):
         """)
         return
 
-    # Mostrar parámetros recibidos para depuración
-    # st.toast(f"🔍 Parámetros recibidos - precontrato_id: {precontrato_id}, token: {token}")
-
     # Inicializar estado de sesión
     if 'validado' not in st.session_state:
         st.session_state.validado = False
@@ -373,10 +369,11 @@ def formulario_cliente(precontrato_id=None, token=None):
         st.session_state.precontrato_data = None
     if 'firma_base64' not in st.session_state:
         st.session_state.firma_base64 = None
+    if 'formulario_completado' not in st.session_state:
+        st.session_state.formulario_completado = False
 
     # Si se pasan parámetros desde app.py, usarlos para validación automática
     if precontrato_id and token and not st.session_state.validado:
-        # st.toast("🔍 Realizando validación automática con parámetros de URL...")
         valido, mensaje = validar_token(precontrato_id, token)
         if not valido:
             st.error(mensaje)
@@ -462,9 +459,6 @@ def formulario_cliente(precontrato_id=None, token=None):
         precontrato = st.session_state.precontrato_data
         st.toast("✅ Enlace válido. Completa el formulario correctamente.")
 
-        # SECCIÓN DE DATOS DEL CONTRATO (versión simple)
-        st.subheader("📋 Detalles del Contrato - VERSIÓN FINAL")
-
         # Crear una tabla visual con los datos
         with st.container():
             st.markdown("### Condiciones del Servicio")
@@ -481,80 +475,50 @@ def formulario_cliente(precontrato_id=None, token=None):
                 st.info(f"**🛠️ Servicios Adicionales:** {precontrato[22] or 'Ninguno'}")
 
             if precontrato[3]:  # Observaciones
-                st.markdown("---")
                 st.warning(f"**📝 Observaciones:** {precontrato[3]}")
-
-        st.divider()
-
-        # SECCIÓN DE FIRMA FUERA DEL FORMULARIO
-        st.subheader("Firma del Cliente*")
-        st.info("Por favor, dibuje su firma en el recuadro inferior y a continuación pulse guardar firma, luego rellene los campos requeridos y pulse Enviar:")
-
-        # Canvas para la firma - CON COLORES MEJORADOS
-        canvas_result = st_canvas(
-            fill_color="rgba(255, 255, 255, 0)",  # Fondo transparente
-            stroke_width=3,
-            stroke_color="#000000",  # Negro para mejor visibilidad
-            background_color="#FFFFFF",  # Fondo blanco
-            background_image=None,
-            update_streamlit=True,  # Actualizar en tiempo real para ver el dibujo
-            height=150,
-            width=400,
-            drawing_mode="freedraw",
-            point_display_radius=0,
-            key="signature_canvas",
-        )
-
-        # Botones para gestionar la firma
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔄 Limpiar Firma", use_container_width=True):
-                st.session_state.firma_base64 = None
-                st.rerun()
-
-        with col2:
-            if st.button("💾 Guardar Firma", use_container_width=True):
-                firma_base64 = procesar_firma(canvas_result)
-                if firma_base64:
-                    st.session_state.firma_base64 = firma_base64
-                    st.toast("✅ Firma guardada correctamente")
-                    st.rerun()
-                else:
-                    st.toast("❌ Por favor, dibuje una firma antes de guardar")
-
-        # Mostrar vista previa de la firma guardada
-        if st.session_state.firma_base64:
-            st.success("✅ Firma guardada - Vista previa:")
-            try:
-                firma_data = base64.b64decode(st.session_state.firma_base64)
-                st.image(firma_data, width=200, caption="Firma guardada")
-            except Exception as e:
-                st.error(f"Error mostrando firma: {e}")
-        else:
-            st.warning(
-                "⚠️ Aún no has guardado tu firma. Por favor, dibuja y guarda tu firma antes de enviar el formulario.")
 
         # FORMULARIO PRINCIPAL
         with st.form(key="formulario_cliente"):
-
-            st.subheader("Datos Personales")
+            st.subheader("👤 Datos Personales")
 
             # Mostrar información del precontrato para referencia
             st.info(f"**Precontrato ID:** {st.session_state.precontrato_id}")
 
-            nombre = st.text_input("Nombre completo*", precontrato[6] or "")
-            nif = st.text_input("NIF / DNI*", precontrato[9] or "")
-            nombre_legal = st.text_input("Nombre legal / Razón social", precontrato[7] or "")
-            cif = st.text_input("CIF", precontrato[8] or "")
-            telefono1 = st.text_input("Teléfono principal*", precontrato[10] or "")
-            telefono2 = st.text_input("Teléfono alternativo", precontrato[11] or "")
-            mail = st.text_input("Email*", precontrato[12] or "")
-            direccion = st.text_input("Dirección*", precontrato[13] or "")
-            cp = st.text_input("Código Postal*", precontrato[14] or "")
-            poblacion = st.text_input("Población*", precontrato[15] or "")
-            provincia = st.text_input("Provincia*", precontrato[16] or "")
-            iban = st.text_input("IBAN*", precontrato[17] or "")
-            bic = st.text_input("BIC", precontrato[18] or "")
+            # PRIMERA FILA: Datos básicos
+            col1, col2 = st.columns(2)
+
+            with col1:
+                nombre = st.text_input("Nombre completo*", precontrato[6] or "")
+                nif = st.text_input("NIF / DNI*", precontrato[9] or "")
+                telefono1 = st.text_input("Teléfono principal*", precontrato[10] or "")
+                telefono2 = st.text_input("Teléfono alternativo", precontrato[11] or "")
+                mail = st.text_input("Email*", precontrato[12] or "")
+
+            with col2:
+                nombre_legal = st.text_input("Nombre legal / Razón social", precontrato[7] or "")
+                cif = st.text_input("CIF", precontrato[8] or "")
+                iban = st.text_input("IBAN*", precontrato[17] or "")
+                bic = st.text_input("BIC", precontrato[18] or "")
+
+            # SEGUNDA FILA: Dirección
+            col3, col4, col5 = st.columns([3, 1, 2])
+
+            with col3:
+                direccion = st.text_input("Dirección*", precontrato[13] or "")
+            with col4:
+                cp = st.text_input("CP*", precontrato[14] or "")
+            with col5:
+                poblacion = st.text_input("Población*", precontrato[15] or "")
+
+            # TERCERA FILA: Provincia y documentos
+            col6, col7 = st.columns([2, 3])
+
+            with col6:
+                provincia = st.text_input("Provincia*", precontrato[16] or "")
+
+            with col7:
+                archivos = st.file_uploader("📎 Adjuntar documentos*", accept_multiple_files=True,
+                                            type=['pdf', 'png', 'jpg', 'jpeg'])
 
             # Mostrar ejemplos de formato válido
             with st.expander("ℹ️ Formatos válidos esperados"):
@@ -566,43 +530,49 @@ def formulario_cliente(precontrato_id=None, token=None):
                     - **Teléfono**: 9 dígitos empezando por 6,7,8,9 (612345678)
                     """)
 
-            archivos = st.file_uploader("Adjuntar documentos*", accept_multiple_files=True,
-                                        type=['pdf', 'png', 'jpg', 'jpeg'])
+            # LÍNEAS DE SERVICIO
+            st.subheader("📞 Líneas de Servicio")
 
-            st.subheader("Línea Móvil principal")
-            movil_numero_nuevo_portabilidad = st.text_input("Número nuevo / portabilidad", key="movil_numero")
-            movil_numero_a_portar = st.text_input("Número a portar", key="movil_portar")
-            movil_titular = st.text_input("Titular", key="movil_titular")
-            movil_dni = st.text_input("DNI", key="movil_dni")
-            movil_operador_donante = st.text_input("Operador donante", key="movil_operador")
-            movil_icc = st.text_input("ICC", key="movil_icc")
+            # Línea Móvil y Fija en columnas
+            col_movil, col_fija = st.columns(2)
 
-            st.subheader("Línea Fija principal")
-            fija_numero_nuevo_portabilidad = st.text_input("Número nuevo / portabilidad", key="fija_numero")
-            fija_numero_a_portar = st.text_input("Número a portar", key="fija_portar")
-            fija_titular = st.text_input("Titular", key="fija_titular")
-            fija_dni = st.text_input("DNI", key="fija_dni")
-            fija_operador_donante = st.text_input("Operador donante", key="fija_operador")
-            fija_icc = st.text_input("ICC", key="fija_icc")
+            with col_movil:
+                st.markdown("**📱 Línea Móvil principal**")
+                movil_numero_nuevo_portabilidad = st.text_input("Número nuevo / portabilidad", key="movil_numero")
+                movil_numero_a_portar = st.text_input("Número a portar", key="movil_portar")
+                movil_titular = st.text_input("Titular", key="movil_titular")
+                movil_dni = st.text_input("DNI", key="movil_dni")
+                movil_operador_donante = st.text_input("Operador donante", key="movil_operador")
+
+            with col_fija:
+                st.markdown("**🏠 Línea Fija principal**")
+                fija_numero_nuevo_portabilidad = st.text_input("Número nuevo / portabilidad", key="fija_numero")
+                fija_numero_a_portar = st.text_input("Número a portar", key="fija_portar")
+                fija_titular = st.text_input("Titular", key="fija_titular")
+                fija_dni = st.text_input("DNI", key="fija_dni")
+                fija_operador_donante = st.text_input("Operador donante", key="fija_operador")
 
             # Líneas adicionales
-            st.subheader("Líneas adicionales")
+            st.subheader("📲 Líneas adicionales")
             lineas_adicionales = []
             for i in range(1, 6):
                 with st.expander(f"Línea adicional {i}", expanded=False):
-                    tipo = st.selectbox("Tipo de línea", ["", "movil_adicional", "fijo_adicional"],
-                                        key=f"tipo_{i}")
+                    # Organizar cada línea adicional en columnas
+                    col_linea1, col_linea2 = st.columns(2)
 
-                    # Mostrar todos los campos siempre
-                    numero_nuevo = st.text_input("Número nuevo / portabilidad", key=f"numero_nuevo_{i}")
-                    numero_a_portar = st.text_input("Número a portar", key=f"numero_a_portar_{i}")
-                    titular = st.text_input("Titular", key=f"titular_{i}")
-                    dni_l = st.text_input("DNI", key=f"dni_{i}")
-                    operador = st.text_input("Operador donante", key=f"operador_donante_{i}")
-                    icc_l = st.text_input("ICC", key=f"icc_{i}")
+                    with col_linea1:
+                        tipo = st.selectbox("Tipo de línea", ["", "movil_adicional", "fijo_adicional"],
+                                            key=f"tipo_{i}")
+                        numero_nuevo = st.text_input("Número nuevo / portabilidad", key=f"numero_nuevo_{i}")
+                        numero_a_portar = st.text_input("Número a portar", key=f"numero_a_portar_{i}")
+                        titular = st.text_input("Titular", key=f"titular_{i}")
+
+                    with col_linea2:
+                        dni_l = st.text_input("DNI", key=f"dni_{i}")
+                        operador = st.text_input("Operador donante", key=f"operador_donante_{i}")
 
                     # Solo agregar a la lista si hay algún dato completado
-                    if tipo or numero_nuevo or numero_a_portar or titular or dni_l or operador or icc_l:
+                    if tipo or numero_nuevo or numero_a_portar or titular or dni_l or operador:
                         lineas_adicionales.append({
                             "tipo": tipo,
                             "numero_nuevo_portabilidad": numero_nuevo,
@@ -610,18 +580,18 @@ def formulario_cliente(precontrato_id=None, token=None):
                             "titular": titular,
                             "dni": dni_l,
                             "operador_donante": operador,
-                            "icc": icc_l
                         })
 
-            # Botón de envío dentro del formulario
-            submitted = st.form_submit_button("📤 Enviar formulario")
+            # Botón para completar formulario (sin firma aún)
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+            with col_btn2:
+                submitted = st.form_submit_button("✅ Completar formulario y proceder a firma", use_container_width=True)
 
             if submitted:
-                # Validaciones básicas de campos obligatorios (actualizada para firma)
+                # Validaciones básicas de campos obligatorios (sin firma por ahora)
                 campos_obligatorios = [
                     (nombre, "Nombre completo"),
                     (nif, "NIF/DNI"),
-                    (st.session_state.firma_base64, "Firma"),  # Ahora validamos la firma dibujada
                     (telefono1, "Teléfono principal"),
                     (mail, "Email"),
                     (direccion, "Dirección"),
@@ -633,7 +603,7 @@ def formulario_cliente(precontrato_id=None, token=None):
 
                 campos_faltantes = [campo[1] for campo in campos_obligatorios if not campo[0]]
                 if campos_faltantes:
-                    st.toast(f"⚠️ Campos obligatorios faltantes: {', '.join(campos_faltantes)}")
+                    st.toast(f"❌ **Campos obligatorios faltantes:** {', '.join(campos_faltantes)}")
                     st.stop()
 
                 # Validaciones de formato
@@ -672,120 +642,183 @@ def formulario_cliente(precontrato_id=None, token=None):
 
                 # Mostrar errores de validación
                 if errores_validacion:
-                    st.error("❌ **Errores de validación:**")
+                    st.toast("❌ **Errores de validación:**")
                     for error in errores_validacion:
                         st.write(f"- {error}")
                     st.stop()
 
                 # Si llegamos aquí, todas las validaciones pasaron
-                st.toast("✅ Todos los campos tienen formatos válidos")
+                st.session_state.formulario_completado = True
+                st.success("✅ Formulario completado correctamente. Ahora procede a firmar.")
+                st.rerun()
 
-                # Preparar datos de líneas
-                movil = {
-                    "precontrato_id": int(st.session_state.precontrato_id),
-                    "tipo": "movil",
-                    "numero_nuevo_portabilidad": movil_numero_nuevo_portabilidad,
-                    "numero_a_portar": movil_numero_a_portar,
-                    "titular": movil_titular,
-                    "dni": movil_dni,
-                    "operador_donante": movil_operador_donante,
-                    "icc": movil_icc
-                }
+        # SECCIÓN DE FIRMA - SOLO SE MUESTRA SI EL FORMULARIO ESTÁ COMPLETADO
+        if st.session_state.formulario_completado:
+            st.subheader("✍️ Firma Digital Obligatoria")
 
-                fija = {
-                    "precontrato_id": int(st.session_state.precontrato_id),
-                    "tipo": "fija",
-                    "numero_nuevo_portabilidad": fija_numero_nuevo_portabilidad,
-                    "numero_a_portar": fija_numero_a_portar,
-                    "titular": fija_titular,
-                    "dni": fija_dni,
-                    "operador_donante": fija_operador_donante,
-                    "icc": fija_icc
-                }
+            # Mensaje importante
+            with st.container():
+                st.warning("""
+                **⚠️ ATENCIÓN: FIRMA REQUERIDA**
 
-                todas_lineas = [movil, fija] + lineas_adicionales
+                Para completar el proceso, debe proporcionar su firma digital. 
+                Sin la firma, el formulario no podrá ser enviado.
+                """)
 
-                try:
-                    conn = get_db_connection()
-                    if not conn:
-                        st.toast("❌ No se pudo conectar a la base de datos")
+            # Canvas para la firma
+            col_firma1, col_firma2, col_firma3 = st.columns([1, 2, 1])
+            with col_firma2:
+                canvas_result = st_canvas(
+                    fill_color="rgba(255, 255, 255, 0)",
+                    stroke_width=3,
+                    stroke_color="#000000",
+                    background_color="#FFFFFF",
+                    background_image=None,
+                    update_streamlit=True,
+                    height=200,
+                    width=500,
+                    drawing_mode="freedraw",
+                    point_display_radius=0,
+                    key="signature_canvas_final",
+                )
+
+            # Botones para gestionar la firma - AHORA SOLO 2 BOTONES
+            col_btns1, col_btns2 = st.columns([1, 2])
+
+            with col_btns1:
+                if st.button("🔄 Limpiar Firma", use_container_width=True, key="limpiar_firma_final"):
+                    st.session_state.firma_base64 = None
+                    st.rerun()
+
+            with col_btns2:
+                # BOTÓN ÚNICO QUE GUARDA LA FIRMA Y ENVÍA EL FORMULARIO
+                if st.button("💾 Guardar Firma y Enviar Formulario",
+                             use_container_width=True,
+                             type="primary",
+                             key="guardar_y_enviar"):
+
+                    # Primero: procesar y guardar la firma
+                    firma_base64 = procesar_firma(canvas_result)
+                    if not firma_base64:
+                        st.error("❌ Debe dibujar su firma antes de enviar el formulario.")
                         return
 
-                    cursor = conn.cursor()
+                    st.session_state.firma_base64 = firma_base64
+                    st.success("✅ Firma guardada correctamente")
 
-                    # Actualizar precontrato (AHORA CON FIRMA BASE64)
-                    cursor.execute("""
-                        UPDATE precontratos
-                        SET nombre=?, nombre_legal=?, cif=?, nif=?, telefono1=?, telefono2=?, mail=?, direccion=?,
-                            cp=?, poblacion=?, provincia=?, iban=?, bic=?, firma=?
-                        WHERE id=?
-                    """, (nombre, nombre_legal, cif, nif, telefono1, telefono2, mail, direccion,
-                          cp, poblacion, provincia, iban, bic, st.session_state.firma_base64,
-                          int(st.session_state.precontrato_id)))
+                    # Mostrar vista previa de la firma
+                    try:
+                        firma_data = base64.b64decode(firma_base64)
+                        st.image(firma_data, width=200, caption="Su firma guardada")
+                    except Exception as e:
+                        st.error(f"Error mostrando firma: {e}")
 
-                    # Marcar link como usado
-                    cursor.execute("""
-                        UPDATE precontrato_links
-                        SET usado = 1
-                        WHERE precontrato_id = ? AND token = ?
-                    """, (int(st.session_state.precontrato_id), st.session_state.token))
+                    # Segundo: proceder con el envío del formulario
+                    with st.spinner("📤 Enviando formulario..."):
+                        try:
+                            # Preparar datos de líneas
+                            movil = {
+                                "precontrato_id": int(st.session_state.precontrato_id),
+                                "tipo": "movil",
+                                "numero_nuevo_portabilidad": movil_numero_nuevo_portabilidad,
+                                "numero_a_portar": movil_numero_a_portar,
+                                "titular": movil_titular,
+                                "dni": movil_dni,
+                                "operador_donante": movil_operador_donante,
+                            }
 
-                    # Insertar líneas
-                    for linea in todas_lineas:
-                        if any(linea.values()):  # Solo insertar si hay datos
+                            fija = {
+                                "precontrato_id": int(st.session_state.precontrato_id),
+                                "tipo": "fija",
+                                "numero_nuevo_portabilidad": fija_numero_nuevo_portabilidad,
+                                "numero_a_portar": fija_numero_a_portar,
+                                "titular": fija_titular,
+                                "dni": fija_dni,
+                                "operador_donante": fija_operador_donante,
+                            }
+
+                            todas_lineas = [movil, fija] + lineas_adicionales
+
+                            conn = get_db_connection()
+                            if not conn:
+                                st.error("❌ No se pudo conectar a la base de datos")
+                                return
+
+                            cursor = conn.cursor()
+
+                            # Actualizar precontrato con firma
                             cursor.execute("""
-                                INSERT INTO lineas (precontrato_id, tipo, numero_nuevo_portabilidad, numero_a_portar,
-                                                    titular, dni, operador_donante, icc)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (linea["precontrato_id"], linea["tipo"], linea["numero_nuevo_portabilidad"],
-                                  linea["numero_a_portar"], linea["titular"], linea["dni"],
-                                  linea["operador_donante"], linea["icc"]))
+                                UPDATE precontratos
+                                SET nombre=?, nombre_legal=?, cif=?, nif=?, telefono1=?, telefono2=?, mail=?, direccion=?,
+                                    cp=?, poblacion=?, provincia=?, iban=?, bic=?, firma=?
+                                WHERE id=?
+                            """, (nombre, nombre_legal, cif, nif, telefono1, telefono2, mail, direccion,
+                                  cp, poblacion, provincia, iban, bic, firma_base64,
+                                  int(st.session_state.precontrato_id)))
 
-                    conn.commit()
-                    conn.close()
+                            # Marcar link como usado
+                            cursor.execute("""
+                                UPDATE precontrato_links
+                                SET usado = 1
+                                WHERE precontrato_id = ? AND token = ?
+                            """, (int(st.session_state.precontrato_id), st.session_state.token))
 
-                    # Preparar datos para PDF y correo (AHORA CON FIRMA_BASE64)
-                    datos_pdf = {
-                        "precontrato_id": precontrato[23],
-                        "apartment_id": precontrato[1],
-                        "tarifa": precontrato[2],
-                        "comercial": precontrato[5],
-                        "observaciones": precontrato[3],
-                        "precio": precontrato[4],
-                        "fecha": precontrato[19],
-                        "permanencia": precontrato[21],
-                        "servicio_adicional": precontrato[22],
-                        "nombre": nombre,
-                        "nombre_legal": nombre_legal,
-                        "cif": cif,
-                        "nif": nif,
-                        "telefono1": telefono1,
-                        "telefono2": telefono2,
-                        "mail": mail,
-                        "direccion": direccion,
-                        "cp": cp,
-                        "poblacion": poblacion,
-                        "provincia": provincia,
-                        "iban": iban,
-                        "bic": bic,
-                        "firma_base64": st.session_state.firma_base64  # Nueva clave para la firma
-                    }
+                            # Insertar líneas
+                            for linea in todas_lineas:
+                                if any(linea.values()):
+                                    cursor.execute("""
+                                        INSERT INTO lineas (precontrato_id, tipo, numero_nuevo_portabilidad, numero_a_portar,
+                                                            titular, dni, operador_donante)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    """, (linea["precontrato_id"], linea["tipo"], linea["numero_nuevo_portabilidad"],
+                                          linea["numero_a_portar"], linea["titular"], linea["dni"],
+                                          linea["operador_donante"]))
 
-                    # Enviar correo
-                    success, message = enviar_correo_pdf(datos_pdf, archivos=archivos, lineas=todas_lineas)
-                    if success:
-                        st.toast("✅ ¡Formulario completado correctamente! Gracias por enviar tus datos.")
-                        st.balloons()
+                            conn.commit()
+                            conn.close()
 
-                        # Limpiar estado para evitar reenvío
-                        st.session_state.validado = False
-                        st.session_state.precontrato_id = ""
-                        st.session_state.token = ""
-                        st.session_state.precontrato_data = None
-                        st.session_state.firma_base64 = None
-                    else:
-                        st.error(message)
+                            # Preparar datos para PDF
+                            datos_pdf = {
+                                "precontrato_id": precontrato[23],
+                                "apartment_id": precontrato[1],
+                                "tarifa": precontrato[2],
+                                "comercial": precontrato[5],
+                                "observaciones": precontrato[3],
+                                "precio": precontrato[4],
+                                "fecha": precontrato[19],
+                                "permanencia": precontrato[21],
+                                "servicio_adicional": precontrato[22],
+                                "nombre": nombre,
+                                "nombre_legal": nombre_legal,
+                                "cif": cif,
+                                "nif": nif,
+                                "telefono1": telefono1,
+                                "telefono2": telefono2,
+                                "mail": mail,
+                                "direccion": direccion,
+                                "cp": cp,
+                                "poblacion": poblacion,
+                                "provincia": provincia,
+                                "iban": iban,
+                                "bic": bic,
+                                "firma_base64": firma_base64
+                            }
 
-                except Exception as e:
-                    st.toast(f"❌ Error al guardar tus datos: {str(e)}")
-                    st.toast("Detalles del error:", str(e))
+                            # Enviar correo
+                            success, message = enviar_correo_pdf(datos_pdf, archivos=archivos, lineas=todas_lineas)
+                            if success:
+                                st.balloons()
+                                st.success("🎉 ¡Formulario enviado correctamente! Gracias por completar el proceso.")
+
+                                # Limpiar estado
+                                st.session_state.validado = False
+                                st.session_state.precontrato_id = ""
+                                st.session_state.token = ""
+                                st.session_state.precontrato_data = None
+                                st.session_state.firma_base64 = None
+                                st.session_state.formulario_completado = False
+                            else:
+                                st.error(f"❌ Error al enviar: {message}")
+
+                        except Exception as e:
+                            st.error(f"❌ Error al guardar los datos: {str(e)}")
