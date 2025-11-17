@@ -1,3 +1,5 @@
+import secrets
+import urllib
 import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import pandas as pd
 import plotly.express as px
@@ -2205,8 +2207,8 @@ def admin_dashboard():
 
         sub_seccion = option_menu(
             menu_title=None,  # Sin título encima del menú
-            options=["Visualizar Datos UIS", "Seguimiento de Contratos", "TIRC"],
-            icons=["table", "file-earmark-spreadsheet", "puzzle"],  # Puedes cambiar iconos
+            options=["Visualizar Datos UIS", "Seguimiento de Contratos", "Precontratos","TIRC"],
+            icons=["table", "file-earmark-spreadsheet", "file-text", "puzzle"],  # Puedes cambiar iconos
             default_index=0,
             orientation="horizontal",  # horizontal para que quede tipo pestañas arriba
             styles={
@@ -2688,6 +2690,91 @@ def admin_dashboard():
                             st.dataframe(existing[cols], use_container_width=True)
                     except Exception as e:
                         st.toast(f"❌ Error al cargar registros existentes: {e}")
+
+        if sub_seccion == "Precontratos":
+            # Conexión a la base de datos para mostrar precontratos existentes
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Obtener precontratos (los más recientes primero) - CON NUEVOS CAMPOS
+            cursor.execute("""
+                            SELECT p.id, p.precontrato_id, p.apartment_id, p.nombre, p.tarifas, p.precio, 
+                                   p.fecha, p.comercial, pl.usado, p.mail, p.permanencia, p.telefono1, p.telefono2
+                            FROM precontratos p
+                            LEFT JOIN precontrato_links pl ON p.id = pl.precontrato_id
+                            ORDER BY p.fecha DESC
+                            LIMIT 50
+                        """)
+            precontratos = cursor.fetchall()
+            conn.close()
+
+            if precontratos:
+                st.write(f"**Últimos {len(precontratos)} precontratos:**")
+                for precontrato in precontratos:
+                    with st.expander(f"📄 {precontrato[1]} - {precontrato[3] or 'Sin nombre'} - {precontrato[4]}",
+                                     expanded=False):
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write(f"**ID:** {precontrato[1]}")
+                            st.write(f"**Apartment ID:** {precontrato[2] or 'No asignado'}")
+                            st.write(f"**Tarifa:** {precontrato[4]}")
+                            st.write(f"**Precio:** {precontrato[5]}€")
+
+                        with col2:
+                            st.write(f"**Fecha:** {precontrato[6]}")
+                            st.write(f"**Comercial:** {precontrato[7]}")
+                            st.write(f"**Permanencia:** {precontrato[10] or 'No especificada'}")
+
+                        with col3:
+                            estado = "✅ Usado" if precontrato[8] else "🟢 Activo"
+                            st.write(f"**Estado:** {estado}")
+                            st.write(f"**Email:** {precontrato[9] or 'No especificado'}")
+                            st.write(f"**Teléfono 1:** {precontrato[11] or 'No especificado'}")
+                            if precontrato[12]:  # Si hay teléfono 2
+                                st.write(f"**Teléfono 2:** {precontrato[12]}")
+
+                        # Botón para regenerar enlace si está usado o expirado
+                        if precontrato[8]:  # Si está usado
+                            if st.button(f"🔄 Regenerar enlace para {precontrato[1]}", key=f"regen_{precontrato[0]}"):
+                                try:
+                                    conn = get_db_connection()
+                                    cursor = conn.cursor()
+                                    # Generar nuevo token
+                                    token_valido = False
+                                    max_intentos = 5
+                                    intentos = 0
+
+                                    while not token_valido and intentos < max_intentos:
+                                        token = secrets.token_urlsafe(16)
+                                        cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
+                                        if cursor.fetchone() is None:
+                                            token_valido = True
+                                        intentos += 1
+
+                                    if token_valido:
+                                        expiracion = datetime.now() + datetime.timedelta(hours=24)
+
+                                        # Actualizar el token existente
+                                        cursor.execute("""
+                                                        UPDATE precontrato_links 
+                                                        SET token = ?, expiracion = ?, usado = 0
+                                                        WHERE precontrato_id = ?
+                                                    """, (token, expiracion, precontrato[0]))
+                                        conn.commit()
+                                        conn.close()
+                                        base_url = "https://one7022025.onrender.com"
+                                        link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
+                                        st.success("✅ Nuevo enlace generado correctamente.")
+                                        st.code(link_cliente, language="text")
+                                        st.info("💡 Copia este nuevo enlace y envíalo al cliente.")
+                                except Exception as e:
+                                    st.toast(f"❌ Error al regenerar enlace: {e}")
+
+            else:
+                st.toast(
+                    "📝 No hay precontratos registrados aún. Crea el primero en la pestaña 'Crear Nuevo Precontrato'.")
+
         if sub_seccion == "TIRC":
             st.info(
                 "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos TIRC.")
