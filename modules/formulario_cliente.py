@@ -611,18 +611,21 @@ def formulario_cliente(precontrato_id=None, token=None):
                 provincia = st.text_input("Provincia*", precontrato[16] or "")
 
             with col7:
-                archivos = st.file_uploader("📎 Adjuntar documentos*", accept_multiple_files=True,
-                                            type=['pdf', 'png', 'jpg', 'jpeg'])
+                archivos = st.file_uploader("📎 Adjuntar documentos* (OBLIGATORIO)",
+                                            accept_multiple_files=True,
+                                            type=['pdf', 'png', 'jpg', 'jpeg'],
+                                            help="Debe adjuntar al menos un documento para continuar")
 
             # Mostrar ejemplos de formato válido
             with st.expander("ℹ️ Formatos válidos esperados"):
                 st.write("""
-                    - **DNI/NIF**: 12345678A o X1234567A
-                    - **Email**: ejemplo@dominio.com
-                    - **Código Postal**: 5 dígitos (28001)
-                    - **IBAN**: ES + 22 dígitos (ES9121000418450200051332)
-                    - **Teléfono**: 9 dígitos empezando por 6,7,8,9 (612345678)
-                    """)
+                        - **DNI/NIF**: 12345678A o X1234567A
+                        - **Email**: ejemplo@dominio.com
+                        - **Código Postal**: 5 dígitos (28001)
+                        - **IBAN**: ES + 22 dígitos (ES9121000418450200051332)
+                        - **Teléfono**: 9 dígitos empezando por 6,7,8,9 (612345678)
+                        - **Documentos**: Formatos aceptados: PDF, PNG, JPG, JPEG. Mínimo 1 archivo obligatorio.
+                        """)
 
             # LÍNEAS DE SERVICIO
             st.subheader("📞 Líneas de Servicio")
@@ -692,10 +695,19 @@ def formulario_cliente(precontrato_id=None, token=None):
                     (cp, "Código Postal"),
                     (poblacion, "Población"),
                     (provincia, "Provincia"),
-                    (iban, "IBAN")
+                    (iban, "IBAN"),
+                    (archivos, "Adjuntar documentos")
                 ]
 
-                campos_faltantes = [campo[1] for campo in campos_obligatorios if not campo[0]]
+                #campos_faltantes = [campo[1] for campo in campos_obligatorios if not campo[0]]
+                campos_faltantes = []
+                for campo, nombre_campo in campos_obligatorios:
+                    if not campo:
+                        campos_faltantes.append(nombre_campo)
+                    # Validación específica para archivos (debe ser una lista no vacía)
+                    elif nombre_campo == "Adjuntar documentos" and (not archivos or len(archivos) == 0):
+                        campos_faltantes.append(nombre_campo)
+
                 if campos_faltantes:
                     st.toast(f"❌ **Campos obligatorios faltantes:** {', '.join(campos_faltantes)}")
                     st.stop()
