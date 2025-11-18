@@ -2245,6 +2245,29 @@ def admin_dashboard():
             if "df" in st.session_state:
                 del st.session_state["df"]
 
+            # Función para normalizar apartment_id
+            def normalizar_apartment_id(apartment_id):
+                if pd.isna(apartment_id) or apartment_id is None:
+                    return apartment_id
+
+                str_id = str(apartment_id).strip()
+
+                # Si ya empieza con P00, dejarlo como está
+                if str_id.startswith('P00'):
+                    return str_id
+
+                # Si es solo numérico y tiene entre 1 y 10 dígitos, agregar P00
+                if str_id.isdigit() and 1 <= len(str_id) <= 10:
+                    return f"P00{str_id}"
+
+                # Si tiene otros formatos, intentar limpiar
+                cleaned = ''.join(filter(str.isdigit, str_id))
+                if cleaned.isdigit() and 1 <= len(cleaned) <= 10:
+                    return f"P00{cleaned}"
+
+                # Si no se puede normalizar, devolver el original
+                return str_id
+
             with st.spinner("Cargando datos..."):
                 try:
                     conn = obtener_conexion()
@@ -2260,6 +2283,8 @@ def admin_dashboard():
                         st.stop()
                     data_uis = pd.read_sql("SELECT * FROM datos_uis", conn)
                     data_uis["origen"] = "UIS"
+                    # Normalizar apartment_id en datos_uis
+                    data_uis["apartment_id_normalizado"] = data_uis["apartment_id"].apply(normalizar_apartment_id)
 
                     # --- Cargar viabilidades ---
                     if 'viabilidades' in tablas_disponibles:
@@ -2277,6 +2302,8 @@ def admin_dashboard():
                             apartment_id=data_via['apartment_id'].str.split(',')
                         ).explode('apartment_id')
                         data_via['apartment_id'] = data_via['apartment_id'].str.strip()
+                        # Normalizar apartment_id en viabilidades
+                        data_via["apartment_id_normalizado"] = data_via["apartment_id"].apply(normalizar_apartment_id)
 
                         # --- Cargar datos TIRC y hacer merge ---
                         if 'TIRC' in tablas_disponibles:
@@ -2285,10 +2312,13 @@ def admin_dashboard():
                                 "FROM TIRC",
                                 conn
                             )
+                            # Normalizar apartment_id en TIRC
+                            data_tirc["apartment_id_normalizado"] = data_tirc["apartment_id"].apply(
+                                normalizar_apartment_id)
                             data_via = pd.merge(
                                 data_via,
                                 data_tirc,
-                                on='apartment_id',
+                                on='apartment_id_normalizado',
                                 how='left'
                             )
 
@@ -2303,6 +2333,9 @@ def admin_dashboard():
                     # --- Cargar contratos ---
                     if 'seguimiento_contratos' in tablas_disponibles:
                         data_contratos = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
+                        # Normalizar apartment_id en contratos
+                        data_contratos["apartment_id_normalizado"] = data_contratos["apartment_id"].apply(
+                            normalizar_apartment_id)
                     else:
                         data_contratos = pd.DataFrame()
 
@@ -2334,9 +2367,9 @@ def admin_dashboard():
             else:
                 data_combinada = data_uis.copy()
 
-            # Luego unimos con contratos usando apartment_id
-            if not data_contratos.empty and "apartment_id" in data_combinada.columns:
-                columnas_deseadas = ['apartment_id', 'estado', 'fecha_instalacion',
+            # Luego unimos con contratos usando apartment_id_normalizado
+            if not data_contratos.empty and "apartment_id_normalizado" in data_combinada.columns:
+                columnas_deseadas = ['apartment_id_normalizado', 'estado', 'fecha_instalacion',
                                      'fecha_fin_contrato', 'divisor', 'puerto']
 
                 if 'num_contrato' in data_contratos.columns:
@@ -2356,17 +2389,24 @@ def admin_dashboard():
                     data_combinada = pd.merge(
                         data_combinada,
                         contratos_para_merge,
-                        on='apartment_id',
+                        on='apartment_id_normalizado',
                         how='left',
                         suffixes=('', '_contrato')
                     )
 
                     for col in contratos_para_merge.columns:
-                        if col == 'apartment_id':
+                        if col == 'apartment_id_normalizado':
                             continue
                         if f"{col}_contrato" in data_combinada.columns:
                             data_combinada[col] = data_combinada[f"{col}_contrato"]
                             data_combinada = data_combinada.drop(columns=[f"{col}_contrato"])
+
+            # Verificar normalización
+            if "apartment_id" in data_combinada.columns and "apartment_id_normalizado" in data_combinada.columns:
+                normalizados = data_combinada[
+                    data_combinada["apartment_id"] != data_combinada["apartment_id_normalizado"]]
+                if len(normalizados) > 0:
+                    st.success(f"✅ Se normalizaron {len(normalizados)} apartment_id al formato estándar")
 
             # --- Renombrar comercial -> solicitante ---
             if "comercial" in data_combinada.columns:
