@@ -2247,97 +2247,53 @@ def admin_dashboard():
 
             # Función para normalizar apartment_id
             def normalizar_apartment_id(apartment_id):
-                if pd.isna(apartment_id) or apartment_id is None:
-                    return apartment_id
+                if pd.isna(apartment_id) or apartment_id is None or apartment_id == "":
+                    return None
 
-                str_id = str(apartment_id).strip()
+                str_id = str(apartment_id).strip().upper()
 
-                # Si ya empieza con P00, dejarlo como está
+                # Si ya empieza con P00, limpiar y estandarizar
                 if str_id.startswith('P00'):
-                    return str_id
+                    numeros = ''.join(filter(str.isdigit, str_id[3:]))
+                    return f"P00{numeros}" if numeros else str_id
 
-                # Si es solo numérico y tiene entre 1 y 10 dígitos, agregar P00
+                # Si es solo numérico, agregar P00
                 if str_id.isdigit() and 1 <= len(str_id) <= 10:
                     return f"P00{str_id}"
 
-                # Si tiene otros formatos, intentar limpiar
-                cleaned = ''.join(filter(str.isdigit, str_id))
-                if cleaned.isdigit() and 1 <= len(cleaned) <= 10:
-                    return f"P00{cleaned}"
+                # Intentar extraer números de cualquier formato
+                numeros = ''.join(filter(str.isdigit, str_id))
+                if numeros and 1 <= len(numeros) <= 10:
+                    return f"P00{numeros}"
 
-                # Si no se puede normalizar, devolver el original
                 return str_id
 
             with st.spinner("Cargando datos..."):
                 try:
                     conn = obtener_conexion()
 
-                    # --- Verificar tablas disponibles ---
-                    tablas = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
-                    tablas_disponibles = tablas['name'].values
-
-                    # --- Cargar datos_uis ---
-                    if 'datos_uis' not in tablas_disponibles:
-                        st.toast("❌ La tabla 'datos_uis' no se encuentra en la base de datos.")
-                        conn.close()
-                        st.stop()
+                    # --- CARGAR TODAS LAS TABLAS ---
                     data_uis = pd.read_sql("SELECT * FROM datos_uis", conn)
                     data_uis["origen"] = "UIS"
-                    # Normalizar apartment_id en datos_uis
                     data_uis["apartment_id_normalizado"] = data_uis["apartment_id"].apply(normalizar_apartment_id)
 
-                    # --- Cargar viabilidades ---
-                    if 'viabilidades' in tablas_disponibles:
-                        data_via = pd.read_sql(
-                            "SELECT id, latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, "
-                            "cto_cercana, olt, cto_admin, id_cto, municipio_admin, serviciable, coste, comentarios_comercial, "
-                            "comentarios_internos, fecha_viabilidad, ticket, apartment_id, nombre_cliente, telefono, usuario, "
-                            "direccion_id, confirmacion_rafa, zona_estudio, Presupuesto_enviado, nuevapromocion, resultado, "
-                            "justificacion, contratos, respuesta_comercial, comentarios_gestor "
-                            "FROM viabilidades", conn)
-                        data_via["origen"] = "Viabilidad"
+                    data_via = pd.read_sql("SELECT * FROM viabilidades", conn)
+                    data_via["origen"] = "Viabilidad"
 
-                        # --- Expandir filas por cada apartment_id ---
-                        data_via = data_via.assign(
-                            apartment_id=data_via['apartment_id'].str.split(',')
-                        ).explode('apartment_id')
-                        data_via['apartment_id'] = data_via['apartment_id'].str.strip()
-                        # Normalizar apartment_id en viabilidades
-                        data_via["apartment_id_normalizado"] = data_via["apartment_id"].apply(normalizar_apartment_id)
+                    # Expandir apartment_id separados por comas - MÁS ROBUSTO
+                    data_via_expandido = data_via.assign(
+                        apartment_id=data_via['apartment_id'].str.split(',')
+                    ).explode('apartment_id')
+                    data_via_expandido['apartment_id'] = data_via_expandido['apartment_id'].str.strip()
+                    data_via = data_via_expandido[data_via_expandido['apartment_id'] != ''].copy()
+                    data_via["apartment_id_normalizado"] = data_via["apartment_id"].apply(normalizar_apartment_id)
 
-                        # --- Cargar datos TIRC y hacer merge ---
-                        if 'TIRC' in tablas_disponibles:
-                            data_tirc = pd.read_sql(
-                                "SELECT apartment_id, parcela_catastral, site_operational_state, apartment_operational_state "
-                                "FROM TIRC",
-                                conn
-                            )
-                            # Normalizar apartment_id en TIRC
-                            data_tirc["apartment_id_normalizado"] = data_tirc["apartment_id"].apply(
-                                normalizar_apartment_id)
-                            data_via = pd.merge(
-                                data_via,
-                                data_tirc,
-                                on='apartment_id_normalizado',
-                                how='left'
-                            )
+                    data_contratos = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
+                    data_contratos["apartment_id_normalizado"] = data_contratos["apartment_id"].apply(
+                        normalizar_apartment_id)
 
-                        # Asegurar que todas las columnas de TIRC existan
-                        for col in ['parcela_catastral', 'site_operational_state', 'apartment_operational_state']:
-                            if col not in data_via.columns:
-                                data_via[col] = None
-
-                    else:
-                        data_via = pd.DataFrame()
-
-                    # --- Cargar contratos ---
-                    if 'seguimiento_contratos' in tablas_disponibles:
-                        data_contratos = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
-                        # Normalizar apartment_id en contratos
-                        data_contratos["apartment_id_normalizado"] = data_contratos["apartment_id"].apply(
-                            normalizar_apartment_id)
-                    else:
-                        data_contratos = pd.DataFrame()
+                    data_tirc = pd.read_sql("SELECT * FROM TIRC", conn)
+                    data_tirc["apartment_id_normalizado"] = data_tirc["apartment_id"].apply(normalizar_apartment_id)
 
                     conn.close()
 
@@ -2345,113 +2301,311 @@ def admin_dashboard():
                     st.toast(f"❌ Error al cargar los datos: {e}")
                     st.stop()
 
-            # --- Renombrar columnas de viabilidades para alinear con datos_uis ---
-            if not data_via.empty:
-                rename_map = {
-                    "cto_admin": "cto",
-                    "id_cto": "cto_id",
-                    "direccion_id": "address_id",
-                    "ticket": "id_ams",
-                    "usuario": "comercial"
-                }
-                data_via = data_via.rename(columns=rename_map)
+            # PASO 1: Crear una tabla maestra de todos los apartment_id
+            st.toast("**Paso 1: Creando tabla maestra de apartment_id...**")
 
-                # Asegurar que todas las columnas de datos_uis estén presentes
-                for col in data_uis.columns:
-                    if col not in data_via.columns:
-                        data_via[col] = None
+            # Recolectar todos los apartment_id únicos de todas las tablas
+            todos_apartment_ids = set()
 
-            # --- UNIR CONTRATOS CON TODOS LOS DATOS (UIS + VIABILIDADES) ---
-            if not data_via.empty:
-                data_combinada = pd.concat([data_uis, data_via], ignore_index=True)
-            else:
-                data_combinada = data_uis.copy()
+            # De UIS
+            uis_apt_ids = data_uis[['apartment_id', 'apartment_id_normalizado']].drop_duplicates()
+            todos_apartment_ids.update(uis_apt_ids['apartment_id_normalizado'].dropna())
 
-            # Luego unimos con contratos usando apartment_id_normalizado
-            if not data_contratos.empty and "apartment_id_normalizado" in data_combinada.columns:
-                columnas_deseadas = ['apartment_id_normalizado', 'estado', 'fecha_instalacion',
-                                     'fecha_fin_contrato', 'divisor', 'puerto']
+            # De Viabilidades
+            via_apt_ids = data_via[['apartment_id', 'apartment_id_normalizado']].drop_duplicates()
+            todos_apartment_ids.update(via_apt_ids['apartment_id_normalizado'].dropna())
 
-                if 'num_contrato' in data_contratos.columns:
-                    columnas_deseadas.append('num_contrato')
+            # De Contratos
+            contr_apt_ids = data_contratos[['apartment_id', 'apartment_id_normalizado']].drop_duplicates()
+            todos_apartment_ids.update(contr_apt_ids['apartment_id_normalizado'].dropna())
 
-                columnas_disponibles = []
-                for col in columnas_deseadas:
-                    if col in data_contratos.columns:
-                        columnas_disponibles.append(col)
+            # De TIRC
+            tirc_apt_ids = data_tirc[['apartment_id', 'apartment_id_normalizado']].drop_duplicates()
+            todos_apartment_ids.update(tirc_apt_ids['apartment_id_normalizado'].dropna())
 
-                if columnas_disponibles:
-                    contratos_para_merge = data_contratos[columnas_disponibles].copy()
+            # Crear tabla maestra
+            tabla_maestra = pd.DataFrame({'apartment_id_normalizado': list(todos_apartment_ids)})
+            st.toast(f"✅ Tabla maestra creada con {len(tabla_maestra)} apartment_id únicos")
 
-                    if 'num_contrato' in contratos_para_merge.columns:
-                        contratos_para_merge = contratos_para_merge.rename(columns={'num_contrato': 'contrato_uis'})
+            # PASO 2: Unir datos de todas las tablas a la tabla maestra
+            st.toast("**Paso 2: Uniendo datos de todas las tablas...**")
 
-                    data_combinada = pd.merge(
-                        data_combinada,
-                        contratos_para_merge,
-                        on='apartment_id_normalizado',
-                        how='left',
-                        suffixes=('', '_contrato')
-                    )
+            # Unir datos de UIS
+            uis_agrupado = data_uis.groupby('apartment_id_normalizado').first().reset_index()
+            tabla_maestra = pd.merge(tabla_maestra, uis_agrupado, on='apartment_id_normalizado', how='left',
+                                     suffixes=('', '_uis'))
 
-                    for col in contratos_para_merge.columns:
-                        if col == 'apartment_id_normalizado':
-                            continue
-                        if f"{col}_contrato" in data_combinada.columns:
-                            data_combinada[col] = data_combinada[f"{col}_contrato"]
-                            data_combinada = data_combinada.drop(columns=[f"{col}_contrato"])
+            # Unir datos de Viabilidades
+            via_agrupado = data_via.groupby('apartment_id_normalizado').first().reset_index()
+            via_agrupado = via_agrupado.rename(columns={
+                "cto_admin": "cto",
+                "id_cto": "cto_id",
+                "direccion_id": "address_id",
+                "ticket": "id_ams",
+                "usuario": "comercial"
+            })
+            tabla_maestra = pd.merge(tabla_maestra, via_agrupado, on='apartment_id_normalizado', how='left',
+                                     suffixes=('', '_via'))
 
-            # Verificar normalización
-            if "apartment_id" in data_combinada.columns and "apartment_id_normalizado" in data_combinada.columns:
-                normalizados = data_combinada[
-                    data_combinada["apartment_id"] != data_combinada["apartment_id_normalizado"]]
-                if len(normalizados) > 0:
-                    st.success(f"✅ Se normalizaron {len(normalizados)} apartment_id al formato estándar")
+            # Unir datos de TIRC
+            tirc_agrupado = data_tirc.groupby('apartment_id_normalizado').first().reset_index()
+            tabla_maestra = pd.merge(tabla_maestra, tirc_agrupado, on='apartment_id_normalizado', how='left',
+                                     suffixes=('', '_tirc'))
 
-            # --- Renombrar comercial -> solicitante ---
-            if "comercial" in data_combinada.columns:
-                data_combinada = data_combinada.rename(columns={"comercial": "solicitante"})
+            # Unir datos de Contratos - FORZAR LA INCLUSIÓN DEL ESTADO
+            contr_agrupado = data_contratos.groupby('apartment_id_normalizado').first().reset_index()
+            # Renombrar la columna estado para evitar conflictos
+            contr_agrupado = contr_agrupado.rename(columns={'estado': 'estado_contrato_original'})
 
-            # --- Renombrar id_ams a id_ams/ticket para mayor claridad ---
-            if "id_ams" in data_combinada.columns:
-                data_combinada = data_combinada.rename(columns={"id_ams": "id_ams/ticket"})
+            tabla_maestra = pd.merge(tabla_maestra, contr_agrupado, on='apartment_id_normalizado', how='left',
+                                     suffixes=('', '_contrato'))
 
-            # --- Limpieza y tipos ---
-            for col in data_combinada.columns:
-                if data_combinada[col].dtype == "object":
-                    data_combinada[col] = data_combinada[col].replace({'true': True, 'false': False})
-                    try:
-                        data_combinada[col] = pd.to_numeric(data_combinada[col], errors="ignore")
-                    except Exception:
-                        pass
+            st.toast(f"✅ Datos unidos - {len(tabla_maestra)} registros en tabla maestra")
 
-            # --- Eliminar duplicadas ---
-            if data_combinada.columns.duplicated().any():
-                data_combinada = data_combinada.loc[:, ~data_combinada.columns.duplicated()]
+            # --- RESULTADOS DEL CRUCE MEJORADO ---
+            # Calcular estadísticas
+            total_contratos = len(data_contratos)
+            contratos_cruzados_mejorado = tabla_maestra[
+                'num_contrato'].notna().sum() if 'num_contrato' in tabla_maestra.columns else 0
+            eficiencia_mejorada = (contratos_cruzados_mejorado / total_contratos) * 100 if total_contratos > 0 else 0
 
-            # --- DEPURACIÓN FINAL ---
-            columnas_tirc = ['parcela_catastral', 'site_operational_state', 'apartment_operational_state']
-            viabilidades_con_tirc = data_combinada[data_combinada['origen'] == 'Viabilidad']
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Contratos Totales", total_contratos)
+            with col2:
+                st.metric("Contratos Cruzados", contratos_cruzados_mejorado)
+            with col3:
+                st.metric("Eficiencia", f"{eficiencia_mejorada:.1f}%")
 
-            for col in columnas_tirc:
-                if col in viabilidades_con_tirc.columns:
-                    no_vacios = viabilidades_con_tirc[col].notna() & (viabilidades_con_tirc[col] != '')
+            # Mostrar los 12 contratos que no se cruzaron
+            if contratos_cruzados_mejorado < total_contratos:
+                st.toast(f"🚨 {total_contratos - contratos_cruzados_mejorado} contratos no se cruzaron")
+                contratos_no_cruzados = data_contratos[~data_contratos['apartment_id_normalizado'].isin(
+                    tabla_maestra[tabla_maestra['num_contrato'].notna()]['apartment_id_normalizado'])]
+                if len(contratos_no_cruzados) > 0:
+                    with st.expander("Ver contratos no cruzados"):
+                        st.dataframe(contratos_no_cruzados[
+                                         ['apartment_id', 'apartment_id_normalizado', 'num_contrato', 'cliente',
+                                          'estado']])
 
-            # Mostrar viabilidades que SÍ tienen datos TIRC
-            viabilidades_con_datos_tirc = viabilidades_con_tirc[
-                viabilidades_con_tirc[columnas_tirc].notna().any(axis=1) &
-                (viabilidades_con_tirc[columnas_tirc] != '').any(axis=1)
-                ]
+            # --- PREPARAR DATOS FINALES PARA VISUALIZACIÓN ---
+            # Primero, identificar qué columnas tenemos disponibles
+            columnas_disponibles = tabla_maestra.columns.tolist()
 
-            # --- Mostrar en AgGrid ---
-            st.session_state["df"] = data_combinada
-            columnas = data_combinada.columns.tolist()
+            # Definir las columnas que nos interesan (sin sufijos)
+            columnas_interes = [
+                'apartment_id_normalizado', 'origen', 'provincia', 'municipio', 'poblacion',
+                'id_ams', 'address_id', 'site_operational_state', 'apartment_operational_state',
+                'cto_id', 'olt', 'cto', 'latitud', 'longitud', 'comercial',
+                'serviciable', 'coste', 'fecha_viabilidad', 'nombre_cliente', 'telefono',
+                'parcela_catastral', 'site_activation_date', 'apartment_activation_date',
+                'num_contrato', 'cliente', 'estado_contrato_original', 'fecha_instalacion', 'fecha_fin_contrato',
+                'divisor', 'puerto', 'comentarios', 'fecha_inicio_contrato'
+            ]
 
-            # Crear lista de columnas a mostrar (excluyendo 'id' y 'motivo')
-            columnas_a_mostrar = [col for col in columnas if col not in ['id', 'motivo']]
+            # Buscar versiones de estas columnas en las columnas disponibles
+            columnas_finales = ['apartment_id_normalizado']  # Siempre incluir esta
 
-            # Inicializar GridOptions
-            gb = GridOptionsBuilder.from_dataframe(data_combinada[columnas_a_mostrar])
+            for col_base in columnas_interes:
+                # Buscar la columna base primero
+                if col_base in columnas_disponibles:
+                    columnas_finales.append(col_base)
+                else:
+                    # Buscar versiones con sufijos
+                    for sufijo in ['_uis', '_via', '_tirc', '_contrato']:
+                        col_con_sufijo = col_base + sufijo
+                        if col_con_sufijo in columnas_disponibles:
+                            columnas_finales.append(col_con_sufijo)
+                            break
+
+            # Crear dataset final para visualización - SOLO con columnas que existen
+            columnas_finales_existentes = [col for col in columnas_finales if col in tabla_maestra.columns]
+            data_final = tabla_maestra[columnas_finales_existentes].copy()
+
+            # Limpiar y unificar columnas duplicadas
+            # Para id_ams
+            if 'id_ams' in data_final.columns and 'id_ams_via' in data_final.columns:
+                data_final['id_ams'] = data_final['id_ams'].fillna(data_final['id_ams_via'])
+                data_final = data_final.drop(['id_ams_via'], axis=1)
+
+            # Para comercial/solicitante
+            if 'comercial' in data_final.columns:
+                data_final = data_final.rename(columns={"comercial": "solicitante"})
+            elif 'comercial_via' in data_final.columns:
+                data_final = data_final.rename(columns={"comercial_via": "solicitante"})
+
+            # Para serviciable
+            if 'serviciable' in data_final.columns and 'serviciable_via' in data_final.columns:
+                data_final['serviciable'] = data_final['serviciable'].fillna(data_final['serviciable_via'])
+                data_final = data_final.drop(['serviciable_via'], axis=1)
+
+            # --- FORZAR LA INCLUSIÓN DEL ESTADO DE CONTRATOS ---
+            # Opción 1: Si existe estado_contrato_original, renombrarlo a estado
+            if 'estado_contrato_original' in data_final.columns:
+                data_final['estado'] = data_final['estado_contrato_original']
+
+            # Opción 2: Si no existe, hacer una unión directa con la tabla de contratos
+            if 'estado' not in data_final.columns:
+                # Hacer merge directo con la tabla de contratos para obtener el estado
+                data_final = pd.merge(data_final,
+                                      data_contratos[['apartment_id_normalizado', 'estado']],
+                                      on='apartment_id_normalizado',
+                                      how='left')
+
+            # Opción 3: Si aún no existe, crear columna vacía
+            if 'estado' not in data_final.columns:
+                data_final['estado'] = None
+
+            # --- ENRIQUECER DATOS DE CONTRATOS CON TIRC Y VIABILIDADES - CORREGIDO ---
+            st.toast("**Enriqueciendo datos de contratos con TIRC y Viabilidades...**")
+
+            # Identificar contratos que no tienen origen (solo existen en seguimiento_contratos)
+            contratos_sin_origen = data_final[data_final['origen'].isna()].copy()
+
+            if len(contratos_sin_origen) > 0:
+                st.toast(f"🔍 Encontrados {len(contratos_sin_origen)} contratos sin origen, enriqueciendo datos...")
+
+                # Crear diccionarios para búsqueda rápida de datos - MÁS ROBUSTO
+                tirc_dict = {}
+                for _, row in data_tirc.iterrows():
+                    apt_id = row['apartment_id_normalizado']
+                    if pd.notna(apt_id) and apt_id not in tirc_dict:
+                        tirc_dict[apt_id] = row
+
+                via_dict = {}
+                for _, row in data_via.iterrows():
+                    apt_id = row['apartment_id_normalizado']
+                    if pd.notna(apt_id) and apt_id not in via_dict:
+                        via_dict[apt_id] = row
+
+                # Para cada contrato sin origen, buscar en TIRC y Viabilidades - CORREGIDO
+                for idx in contratos_sin_origen.index:
+                    # Obtener el valor de manera segura
+                    apt_id_value = data_final.loc[idx, 'apartment_id_normalizado']
+
+                    # Verificar si es una Series y obtener el valor escalar
+                    if isinstance(apt_id_value, pd.Series):
+                        if len(apt_id_value) > 0:
+                            apt_id = apt_id_value.iloc[0]
+                        else:
+                            apt_id = None
+                    else:
+                        apt_id = apt_id_value
+
+                    # Función auxiliar para verificar si un valor es nulo o vacío
+                    def es_valor_valido(valor):
+                        if isinstance(valor, pd.Series):
+                            return False
+                        return not (pd.isna(valor) or valor is None or valor == '')
+
+                    # Verificar si es un valor válido
+                    if not es_valor_valido(apt_id):
+                        data_final.at[idx, 'origen'] = 'Contrato'
+                        continue
+
+                    origen_actual = 'Contrato'
+                    datos_enriquecidos = False
+
+                    # Buscar en TIRC
+                    if apt_id in tirc_dict:
+                        tirc_row = tirc_dict[apt_id]
+                        # Completar datos faltantes con TIRC
+                        campos_tirc = ['provincia', 'municipio', 'poblacion', 'cto_id', 'site_operational_state',
+                                       'apartment_operational_state', 'parcela_catastral', 'address_id']
+
+                        for campo in campos_tirc:
+                            if campo in tirc_row and campo in data_final.columns:
+                                valor_actual = data_final.at[idx, campo]
+                                valor_tirc = tirc_row[campo]
+                                if not es_valor_valido(valor_actual) and es_valor_valido(valor_tirc):
+                                    data_final.at[idx, campo] = valor_tirc
+                                    datos_enriquecidos = True
+
+                        # Campos específicos de TIRC con nombres diferentes
+                        if 'OLT' in tirc_row and 'olt' in data_final.columns:
+                            valor_actual = data_final.at[idx, 'olt']
+                            valor_tirc = tirc_row['OLT']
+                            if not es_valor_valido(valor_actual) and es_valor_valido(valor_tirc):
+                                data_final.at[idx, 'olt'] = valor_tirc
+                                datos_enriquecidos = True
+
+                        if 'CTO' in tirc_row and 'cto' in data_final.columns:
+                            valor_actual = data_final.at[idx, 'cto']
+                            valor_tirc = tirc_row['CTO']
+                            if not es_valor_valido(valor_actual) and es_valor_valido(valor_tirc):
+                                data_final.at[idx, 'cto'] = valor_tirc
+                                datos_enriquecidos = True
+
+                        if datos_enriquecidos:
+                            origen_actual = 'Contrato + TIRC'
+
+                    # Buscar en Viabilidades
+                    if apt_id in via_dict:
+                        via_row = via_dict[apt_id]
+                        # Completar datos faltantes con Viabilidades
+                        campos_via = ['provincia', 'municipio', 'poblacion', 'latitud', 'longitud',
+                                      'nombre_cliente', 'telefono', 'serviciable', 'coste', 'id_ams']
+
+                        for campo in campos_via:
+                            if campo in via_row and campo in data_final.columns:
+                                valor_actual = data_final.at[idx, campo]
+                                valor_via = via_row[campo]
+                                if not es_valor_valido(valor_actual) and es_valor_valido(valor_via):
+                                    data_final.at[idx, campo] = valor_via
+                                    datos_enriquecidos = True
+
+                        # Campo específico de viabilidades
+                        if 'usuario' in via_row and 'solicitante' in data_final.columns:
+                            valor_actual = data_final.at[idx, 'solicitante']
+                            valor_via = via_row['usuario']
+                            if not es_valor_valido(valor_actual) and es_valor_valido(valor_via):
+                                data_final.at[idx, 'solicitante'] = valor_via
+                                datos_enriquecidos = True
+
+                        if datos_enriquecidos:
+                            if origen_actual == 'Contrato + TIRC':
+                                origen_actual = 'Contrato + TIRC + Viabilidad'
+                            else:
+                                origen_actual = 'Contrato + Viabilidad'
+
+                    data_final.at[idx, 'origen'] = origen_actual
+
+            # Limpieza final
+            for col in data_final.columns:
+                if col in data_final.columns:
+                    col_data = data_final[col]
+                    if hasattr(col_data, 'dtype') and col_data.dtype == "object":
+                        data_final[col] = data_final[col].replace({'true': True, 'false': False})
+                        try:
+                            data_final[col] = pd.to_numeric(data_final[col], errors="ignore")
+                        except:
+                            pass
+
+            # Eliminar columnas duplicadas si las hay
+            data_final = data_final.loc[:, ~data_final.columns.duplicated()]
+
+            # --- MOSTRAR ESTADÍSTICAS DE ORIGEN ---
+            st.toast("✅ Datos enriquecidos correctamente")
+
+            # Mostrar distribución de orígenes
+            if 'origen' in data_final.columns:
+                distribucion_origen = data_final['origen'].value_counts()
+                with st.expander("📊 Distribución de orígenes de datos"):
+                    st.dataframe(distribucion_origen)
+
+                    # Mostrar estadísticas de contratos enriquecidos
+                    contratos_enriquecidos = len(data_final[data_final['origen'].str.contains('Contrato', na=False)])
+                    st.metric("Contratos enriquecidos con TIRC/Viabilidades", contratos_enriquecidos)
+
+            # --- MOSTRAR DATOS EN AgGrid ---
+            st.session_state["df"] = data_final
+
+            # Preparar columnas para mostrar
+            columnas = data_final.columns.tolist()
+            columnas_a_mostrar = [col for col in columnas]
+
+            # Configurar AgGrid
+            gb = GridOptionsBuilder.from_dataframe(data_final[columnas_a_mostrar])
             gb.configure_default_column(
                 filter=True,
                 floatingFilter=True,
@@ -2461,36 +2615,27 @@ def admin_dashboard():
                 flex=1
             )
 
-            # Columnas a ocultar
+            # Columnas a ocultar (solo las que existen)
             columnas_a_ocultar = [
                 'id', 'motivo', 'respuesta_comercial', 'comentarios_gestor',
                 'Presupuesto_enviado', 'justificacion', 'comentarios_comercial',
                 'comentarios_internos', 'comentario', 'contratos', 'zona_estudio',
                 'nombre_cliente', 'telefono', 'municipio_admin', 'nuevapromocion',
-                'resultado', 'confirmacion_rafa ', 'CERTIFICABLE', 'zona'
+                'resultado', 'confirmacion_rafa', 'CERTIFICABLE', 'zona', 'estado_contrato_original'
             ]
 
-            for col in columnas_a_ocultar:
-                if col in columnas_a_mostrar:
-                    gb.configure_column(col, hide=True)
+            # Filtrar solo las columnas que existen
+            columnas_a_ocultar_existentes = [col for col in columnas_a_ocultar if col in columnas_a_mostrar]
 
-            # Configurar columnas de TIRC
-            columnas_tirc = ['parcela_catastral', 'site_operational_state', 'apartment_operational_state']
-            for col in columnas_tirc:
-                if col in columnas_a_mostrar:
-                    gb.configure_column(
-                        col,
-                        minWidth=180,
-                        flex=1,
-                        hide=False,
-                        pinned=False
-                    )
+            for col in columnas_a_ocultar_existentes:
+                gb.configure_column(col, hide=True)
 
             gridOptions = gb.build()
             gridOptions['suppressColumnVirtualisation'] = True
 
+            # Mostrar la tabla
             AgGrid(
-                data_combinada[columnas_a_mostrar],
+                data_final[columnas_a_mostrar],
                 gridOptions=gridOptions,
                 enable_enterprise_modules=True,
                 update_mode=GridUpdateMode.NO_UPDATE,
@@ -2500,28 +2645,25 @@ def admin_dashboard():
                 theme='alpine-dark'
             )
 
-            # 🔽 Generar Excel temporal en memoria
+            # --- BOTONES DE DESCARGA Y ENVÍO ---
             towrite = io.BytesIO()
             with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                data_combinada[columnas].to_excel(writer, index=False, sheet_name='Datos')
+                data_final.to_excel(writer, index=False, sheet_name='Datos Completos')
+
             towrite.seek(0)
 
-            # 🎨 Mostrar botones en una sola fila
-            col1, col2 = st.columns([1, 1])  # Dos columnas iguales
-
+            col1, col2 = st.columns([1, 1])
             with col1:
-                with st.spinner("Preparando archivo Excel..."):
-                    st.download_button(
-                        label="📥 Descargar excel de control",
-                        data=towrite,
-                        file_name="datos.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-
+                st.download_button(
+                    label="📥 Descargar excel completo",
+                    data=towrite,
+                    file_name="datos_completos_mejorado.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
             with col2:
-                if st.button("📧 Enviar excel de control", use_container_width=True):
-                    with st.spinner("Enviando Excel de control..."):
+                if st.button("📧 Enviar excel completo", use_container_width=True):
+                    with st.spinner("Enviando Excel..."):
                         try:
                             correo_excel_control(
                                 destinatario="aarozamena@symtel.es",
