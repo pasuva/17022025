@@ -2959,42 +2959,243 @@ def admin_dashboard():
 
         if sub_seccion == "TIRC":
             st.info(
-                "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos TIRC.")
+                "ℹ️ Aquí puedes visualizar, filtrar y descargar los datos TIRC junto con información de viabilidades relacionadas.")
+
             # --- 1️⃣ Leer datos de la base de datos ---
             try:
                 conn = obtener_conexion()
                 df_tirc = pd.read_sql("SELECT * FROM TIRC", conn)
+                df_viabilidades = pd.read_sql("SELECT * FROM viabilidades", conn)
                 conn.close()
             except Exception as e:
-                st.toast(f"❌ Error al cargar datos de TIRC: {e}")
-                df_tirc = pd.DataFrame()  # tabla vacía para evitar errores
+                st.toast(f"❌ Error al cargar datos: {e}")
+                df_tirc = pd.DataFrame()
+                df_viabilidades = pd.DataFrame()
 
             if not df_tirc.empty:
-                # --- 2️⃣ Configurar AgGrid ---
-                gb = GridOptionsBuilder.from_dataframe(df_tirc)
+                # --- 2️⃣ PROCESAR Y ENRIQUECER DATOS TIRC ---
+
+                # Función para normalizar apartment_id (la misma que usamos antes)
+                def normalizar_apartment_id(apartment_id):
+                    if pd.isna(apartment_id) or apartment_id is None or apartment_id == "":
+                        return None
+                    str_id = str(apartment_id).strip().upper()
+                    if str_id.startswith('P00'):
+                        numeros = ''.join(filter(str.isdigit, str_id[3:]))
+                        return f"P00{numeros}" if numeros else str_id
+                    if str_id.isdigit() and 1 <= len(str_id) <= 10:
+                        return f"P00{str_id}"
+                    numeros = ''.join(filter(str.isdigit, str_id))
+                    if numeros and 1 <= len(numeros) <= 10:
+                        return f"P00{numeros}"
+                    return str_id
+
+                # Aplicar normalización a TIRC
+                df_tirc["apartment_id_normalizado"] = df_tirc["apartment_id"].apply(normalizar_apartment_id)
+
+                # Preparar viabilidades para el cruce (expandir múltiples apartment_id)
+                df_via_expandido = df_viabilidades.assign(
+                    apartment_id=df_viabilidades['apartment_id'].str.split(',')
+                ).explode('apartment_id')
+                df_via_expandido['apartment_id'] = df_via_expandido['apartment_id'].str.strip()
+                df_via_expandido = df_via_expandido[df_via_expandido['apartment_id'] != ''].copy()
+                df_via_expandido["apartment_id_normalizado"] = df_via_expandido["apartment_id"].apply(
+                    normalizar_apartment_id)
+
+                # --- 3️⃣ CREAR DATASET ENRIQUECIDO ---
+
+                # Agrupar viabilidades para evitar duplicados
+                via_agrupada = df_via_expandido.groupby('apartment_id_normalizado').agg({
+                    'ticket': 'first',
+                    'estado': 'first',
+                    'serviciable': 'first',
+                    'coste': 'first',
+                    'fecha_viabilidad': 'first',
+                    'usuario': 'first',
+                    'nombre_cliente': 'first',
+                    'telefono': 'first',
+                    'id': 'count'  # Contar cuántas viabilidades tiene este apartment_id
+                }).reset_index()
+
+                via_agrupada = via_agrupada.rename(columns={
+                    'id': 'cantidad_viabilidades',
+                    'usuario': 'comercial_viabilidad'
+                })
+
+                # Unir TIRC con viabilidades
+                df_tirc_enriquecido = pd.merge(
+                    df_tirc,
+                    via_agrupada,
+                    on='apartment_id_normalizado',
+                    how='left',
+                    suffixes=('', '_via')
+                )
+
+                # Crear columna de relación
+                df_tirc_enriquecido['relacion_viabilidad'] = df_tirc_enriquecido['ticket'].apply(
+                    lambda x: '✅ Con viabilidad' if pd.notna(x) else '❌ Sin viabilidad'
+                )
+
+                # --- 4️⃣ ESTADÍSTICAS ---
+                total_tirc = len(df_tirc_enriquecido)
+                tirc_con_viabilidad = len(
+                    df_tirc_enriquecido[df_tirc_enriquecido['relacion_viabilidad'] == '✅ Con viabilidad'])
+                porcentaje_con_viabilidad = (tirc_con_viabilidad / total_tirc) * 100 if total_tirc > 0 else 0
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total TIRC", total_tirc)
+                with col2:
+                    st.metric("TIRC con viabilidad", tirc_con_viabilidad)
+                with col3:
+                    st.metric("Cobertura", f"{porcentaje_con_viabilidad:.1f}%")
+
+                # --- 5️⃣ FILTROS ---
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    filtro_relacion = st.selectbox(
+                        "Relación con viabilidad:",
+                        ["Todos", "✅ Con viabilidad", "❌ Sin viabilidad"]
+                    )
+                with col2:
+                    filtro_estado = st.selectbox(
+                        "Estado viabilidad:",
+                        ["Todos"] + list(df_tirc_enriquecido['estado'].dropna().unique())
+                    )
+                with col3:
+                    filtro_serviciable = st.selectbox(
+                        "Serviciable:",
+                        ["Todos"] + list(df_tirc_enriquecido['serviciable'].dropna().unique())
+                    )
+
+                # Aplicar filtros
+                df_filtrado = df_tirc_enriquecido.copy()
+                if filtro_relacion != "Todos":
+                    df_filtrado = df_filtrado[df_filtrado['relacion_viabilidad'] == filtro_relacion]
+                if filtro_estado != "Todos":
+                    df_filtrado = df_filtrado[df_filtrado['estado'] == filtro_estado]
+                if filtro_serviciable != "Todos":
+                    df_filtrado = df_filtrado[df_filtrado['serviciable'] == filtro_serviciable]
+
+                # --- 6️⃣ COLUMNAS PARA MOSTRAR ---
+                columnas_base = [
+                    'apartment_id', 'provincia', 'municipio', 'poblacion',
+                    'ESTADO', 'SINCRONISMO', 'TIPO CTO', 'CTO', 'OLT'
+                ]
+
+                columnas_viabilidad = [
+                    'relacion_viabilidad', 'ticket', 'estado', 'serviciable',
+                    'coste', 'fecha_viabilidad', 'comercial_viabilidad',
+                    'nombre_cliente', 'telefono', 'cantidad_viabilidades'
+                ]
+
+                # Seleccionar solo columnas que existen
+                columnas_a_mostrar = []
+                for col in columnas_base + columnas_viabilidad:
+                    if col in df_filtrado.columns:
+                        columnas_a_mostrar.append(col)
+
+                # --- 7️⃣ CONFIGURAR AgGrid ---
+                gb = GridOptionsBuilder.from_dataframe(df_filtrado[columnas_a_mostrar])
                 gb.configure_pagination(paginationAutoPageSize=True)
-                gb.configure_default_column(editable=False, filter=True, sortable=True)
-                gb.configure_selection('single', use_checkbox=True)  # si quieres seleccionar filas
+                gb.configure_default_column(
+                    editable=False,
+                    filter=True,
+                    sortable=True,
+                    minWidth=120,
+                    flex=1
+                )
+
+                # Configurar columnas específicas
+                gb.configure_column("relacion_viabilidad", headerName="📋 Relación", width=150)
+                gb.configure_column("ticket", headerName="🎫 Ticket Viabilidad", width=150)
+                gb.configure_column("coste", headerName="💰 Coste", width=100)
+                gb.configure_column("fecha_viabilidad", headerName="📅 Fecha Viab.", width=120)
+                gb.configure_column("estado", headerName="📊 Estado Viab.", width=120)
+                gb.configure_column("serviciable", headerName="✅ Serviciable", width=120)
+
                 grid_options = gb.build()
 
-                # --- 3️⃣ Mostrar tabla ---
+                # --- 8️⃣ MOSTRAR TABLA ---
                 AgGrid(
-                    df_tirc,
+                    df_filtrado[columnas_a_mostrar],
                     gridOptions=grid_options,
                     enable_enterprise_modules=True,
                     update_mode="MODEL_CHANGED",
-                    height=400,
-                    fit_columns_on_grid_load=True
+                    height=500,
+                    fit_columns_on_grid_load=False,
+                    theme='alpine-dark'
                 )
 
-                # --- 4️⃣ Opción de exportar a CSV ---
-                csv = df_tirc.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Descargar CSV",
-                    data=csv,
-                    file_name="tirc_datos.csv",
-                    mime="text/csv"
-                )
+                # --- 9️⃣ OPCIONES DE DESCARGA ---
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    # Descargar CSV filtrado
+                    csv = df_filtrado[columnas_a_mostrar].to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Descargar CSV (filtrado)",
+                        data=csv,
+                        file_name="tirc_filtrado.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+
+                with col2:
+                    # Descargar Excel completo
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df_tirc_enriquecido.to_excel(writer, sheet_name='TIRC Completo', index=False)
+                        df_filtrado.to_excel(writer, sheet_name='TIRC Filtrado', index=False)
+                    output.seek(0)
+
+                    st.download_button(
+                        label="📥 Descargar Excel (completo)",
+                        data=output,
+                        file_name="tirc_completo.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+                with col3:
+                    # Descargar solo TIRC sin viabilidad
+                    tirc_sin_viabilidad = df_tirc_enriquecido[
+                        df_tirc_enriquecido['relacion_viabilidad'] == '❌ Sin viabilidad']
+                    if not tirc_sin_viabilidad.empty:
+                        csv_sin_viab = tirc_sin_viabilidad[columnas_base].to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 TIRC sin viabilidad",
+                            data=csv_sin_viab,
+                            file_name="tirc_sin_viabilidad.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+
+                # --- 🔟 INFORMACIÓN ADICIONAL ---
+                with st.expander("📈 Información detallada de la relación TIRC-Viabilidades"):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.write("**Distribución por estado de viabilidad:**")
+                        if 'estado' in df_tirc_enriquecido.columns:
+                            estado_counts = df_tirc_enriquecido['estado'].value_counts()
+                            st.dataframe(estado_counts, use_container_width=True)
+
+                    with col2:
+                        st.write("**Distribución por serviciable:**")
+                        if 'serviciable' in df_tirc_enriquecido.columns:
+                            serviciable_counts = df_tirc_enriquecido['serviciable'].value_counts()
+                            st.dataframe(serviciable_counts, use_container_width=True)
+
+                    # Mostrar algunos ejemplos de TIRC sin viabilidad
+                    tirc_sin_viab_ejemplos = df_tirc_enriquecido[
+                        df_tirc_enriquecido['relacion_viabilidad'] == '❌ Sin viabilidad'
+                        ].head(10)
+
+                    if not tirc_sin_viab_ejemplos.empty:
+                        st.write("**Ejemplos de TIRC sin viabilidad:**")
+                        st.dataframe(tirc_sin_viab_ejemplos[['apartment_id', 'provincia', 'municipio', 'poblacion']])
+
             else:
                 st.warning("⚠️ No hay datos en la tabla TIRC.")
 

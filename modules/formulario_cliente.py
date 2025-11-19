@@ -172,7 +172,7 @@ def validar_codigo_postal(cp):
 
     if primer_digito_int == 0:
         # Códigos que empiezan por 0 (Álava, Albacete, etc.)
-        if not ('01' <= codigo_provincia <= '03'):
+        if not ('01' <= codigo_provincia <= '09'):
             return False, "Código postal con formato inválido para el rango 01-03"
 
     elif primer_digito_int == 1:
