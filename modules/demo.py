@@ -285,6 +285,13 @@ def demo_dashboard():
                     f"Lat: {bounds['south']:.4f} a {bounds['north']:.4f}\n"
                     f"Lon: {bounds['west']:.4f} a {bounds['east']:.4f}")
 
+        # NUEVO: Filtro de tipo OLT para el área
+        area_tipo_olt_filter = st.selectbox(
+            "🏢 Tipo OLT en el Área",
+            ["Todos", "CTO VERDE", "CTO COMPARTIDA"],
+            key="area_tipo_olt"
+        )
+
         col3, col4 = st.columns(2)
         with col3:
             if st.button("📍 Cargar datos del área", type="primary", use_container_width=True):
@@ -309,6 +316,14 @@ def demo_dashboard():
                                 bounds['south'], bounds['north'],
                                 bounds['west'], bounds['east']
                             ]
+
+                            # Añadir filtro por tipo OLT si no es "Todos"
+                            if area_tipo_olt_filter != "Todos":
+                                query += " AND tipo_olt_rental = ?"
+                                params.append(area_tipo_olt_filter)
+                            else:
+                                # Si es "Todos", solo mostrar CTO VERDE y CTO COMPARTIDA (excluir preventa)
+                                query += " AND tipo_olt_rental IN ('CTO VERDE', 'CTO COMPARTIDA')"
 
                             area_df = pd.read_sql(query, conn, params=params)
                             conn.close()
@@ -634,9 +649,6 @@ def demo_dashboard():
         )
 
     else:
-        # Estado inicial - sin datos cargados
-        st.info("👆 **Selecciona un método de filtrado:** Usa los filtros de campos o dibuja un área en el mapa")
-
         # Mapa vacío inicial
         m = folium.Map(location=[40.4168, -3.7038], zoom_start=6, max_zoom=21,
                        tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
