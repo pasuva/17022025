@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import smtplib
-from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.header import Header
@@ -18,8 +17,6 @@ def limpiar_texto(texto):
     return ""
 
 # Función general para enviar un correo electrónico en formato HTML
-# Función general para enviar un correo electrónico en formato HTML
-from email.mime.application import MIMEApplication  # 👈 asegúrate de tener este import
 
 from email.mime.application import MIMEApplication
 

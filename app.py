@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip
+from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip, demo
 from modules.formulario_cliente import formulario_cliente
 
 st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
@@ -84,6 +84,8 @@ else:
         comercial_rafa.comercial_dashboard()
     elif rol == "comercial_vip":
         comercial_vip.comercial_dashboard_vip()
+    elif rol == "demo":
+        demo.demo_dashboard()
     else:
         st.error("Rol no reconocido")
 
