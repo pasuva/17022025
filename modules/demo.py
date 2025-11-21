@@ -10,11 +10,7 @@ from modules import login
 from streamlit_cookies_controller import CookieController
 from functools import lru_cache
 import contextlib
-
-# Constantes
-COOKIE_NAME = "my_app"
-DB_CONNECTION_STRING = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-ALLOWED_OLT_TYPES = ["CTO VERDE", "CTO COMPARTIDA"]
+import hashlib
 
 # Añadir al principio del archivo, después de los imports
 @st.cache_data(ttl=3600, show_spinner=False)  # Cache por 1 hora
@@ -27,6 +23,10 @@ st.session_state.update({
     "initial_loaded": True  # Evitar recargas innecesarias
 })
 
+# Constantes
+COOKIE_NAME = "my_app"
+DB_CONNECTION_STRING = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+ALLOWED_OLT_TYPES = ["CTO VERDE", "CTO COMPARTIDA"]
 
 # Cache para consultas frecuentes
 @lru_cache(maxsize=32)
@@ -59,6 +59,22 @@ def setup_page():
             font-size: 14px;
             font-family: 'Segoe UI', sans-serif;
             z-index: 999;
+        }
+        /* Prevenir flickering y parpadeos */
+        .stApp {
+            background-color: #f0f2f6;
+        }
+        /* Ocultar spinner por defecto, mostrarlo solo cuando sea necesario */
+        div.stSpinner > div {
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        div.stSpinner[data-testid="stSpinner"] > div {
+            opacity: 1;
+        }
+        /* Mejorar rendimiento de renderizado */
+        .element-container {
+            contain: layout style paint;
         }
         </style>
         <div class="footer">
@@ -385,20 +401,70 @@ def apply_field_filters(provincia_sel, municipio_sel, poblacion_sel, cto_filter,
             st.error(f"❌ Error al cargar los datos: {e}")
 
 
+# NUEVO: Función para crear popups completos
+def create_complete_popup(row):
+    """Crea popup completo con toda la información requerida"""
+    return f"""
+    <div style="font-family: Arial; font-size: 12px; min-width: 280px;">
+        <div style="background-color: #f0f2f6; padding: 8px; border-radius: 5px; margin-bottom: 8px;">
+            <strong>🏢 ID:</strong> {row['apartment_id']}<br>
+        </div>
+
+        <div style="margin-bottom: 8px;">
+            <strong>📍 Ubicación:</strong><br>
+            {row['provincia']}, {row['municipio']}<br>
+            {row['vial']} {row['numero']}{row['letra'] or ''}<br>
+            CP: {row['cp']}<br>
+            📍 {row['latitud']:.6f}, {row['longitud']:.6f}
+        </div>
+
+        <div style="background-color: #e8f4fd; padding: 8px; border-radius: 5px;">
+            <strong>🔧 Infraestructura:</strong><br>
+            🏢 OLT: {row.get('olt', 'N/D')}<br>
+            📡 CTO: {row.get('cto', 'N/D')}<br>
+            🔢 CTO ID: {row.get('cto_id', 'N/D')}<br>
+            🏭 Tipo OLT: {row.get('tipo_olt_rental', 'N/D')}
+        </div>
+    </div>
+    """
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_map_config_hash(_df_display):
+    """Genera un hash único para la configuración del mapa basado en los datos"""
+    if _df_display is None or _df_display.empty:
+        return "empty_map"
+
+    # Crear un hash basado en las coordenadas y cantidad de puntos
+    coords_hash = hashlib.md5(
+        pd.util.hash_pandas_object(_df_display[['latitud', 'longitud']].dropna()).values.tobytes()
+    ).hexdigest()[:16]
+
+    return f"map_{len(_df_display)}_{coords_hash}"
+
+
 def create_map(df_display):
-    """Crea y configura el mapa Folium"""
+    """Crea y configura el mapa Folium con optimizaciones para muchos puntos"""
     if df_display.empty:
         return create_empty_map()
+
+    # OPTIMIZACIÓN: Para muchos puntos, usar configuración más simple
+    if len(df_display) > 1000:
+        return create_optimized_map(df_display)
 
     # Configurar mapa según la cantidad de puntos
     if len(df_display) == 1:
         lat, lon = df_display['latitud'].iloc[0], df_display['longitud'].iloc[0]
         m = folium.Map(location=[lat, lon], zoom_start=18, max_zoom=21,
-                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+                       attr="Google",
+                       prefer_canvas=True)
     else:
         lat, lon = df_display['latitud'].mean(), df_display['longitud'].mean()
         m = folium.Map(location=[lat, lon], zoom_start=12, max_zoom=21,
-                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+                       tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+                       attr="Google",
+                       prefer_canvas=True)
         bounds_data = [[df_display['latitud'].min(), df_display['longitud'].min()],
                        [df_display['latitud'].max(), df_display['longitud'].max()]]
         m.fit_bounds(bounds_data)
@@ -406,8 +472,8 @@ def create_map(df_display):
     # Añadir controles al mapa
     add_map_controls(m)
 
-    # Añadir marcadores
-    add_markers_to_map(m, df_display)
+    # Añadir marcadores optimizados según cantidad
+    add_optimized_markers(m, df_display)
 
     # Añadir leyenda
     add_legend(m)
@@ -415,10 +481,115 @@ def create_map(df_display):
     return m
 
 
+def create_optimized_map(df_display):
+    """Crea un mapa optimizado para grandes cantidades de puntos"""
+    lat, lon = df_display['latitud'].mean(), df_display['longitud'].mean()
+
+    m = folium.Map(
+        location=[lat, lon],
+        zoom_start=10,
+        max_zoom=19,
+        tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+        attr="Google",
+        prefer_canvas=True,
+        control_scale=True
+    )
+
+    # Ajustar bounds para muchos puntos
+    bounds_data = [[df_display['latitud'].min(), df_display['longitud'].min()],
+                   [df_display['latitud'].max(), df_display['longitud'].max()]]
+    m.fit_bounds(bounds_data, padding=(10, 10))
+
+    # Añadir controles básicos
+    add_map_controls(m)
+
+    # Marcadores optimizados para muchos puntos
+    add_high_performance_markers(m, df_display)
+
+    # Leyenda simplificada
+    add_legend(m)
+
+    return m
+
+
+def add_optimized_markers(m, df_display):
+    """Añade marcadores optimizados según la cantidad de puntos"""
+    if len(df_display) < 100:
+        # Para pocos puntos: marcadores completos
+        add_detailed_markers(m, df_display)
+    elif len(df_display) < 1000:
+        # Para cantidad media: cluster con información completa
+        add_clustered_markers(m, df_display)
+    else:
+        # Para muchos puntos: cluster optimizado
+        add_high_performance_markers(m, df_display)
+
+
+def add_detailed_markers(m, df_display):
+    """Marcadores detallados para pocos puntos"""
+    for _, row in df_display.iterrows():
+        create_marker(m, row, 0, 0)
+
+
+def add_clustered_markers(m, df_display):
+    """Marcadores con cluster para cantidad media de puntos"""
+    marker_cluster = MarkerCluster(
+        name="Puntos",
+        overlay=True,
+        control=True,
+        icon_create_function=None,
+        maxClusterRadius=10,
+        minClusterSize=2,
+        spiderfyOnMaxZoom=True
+    )
+
+    for _, row in df_display.iterrows():
+        create_marker(marker_cluster, row, 0, 0)
+
+    marker_cluster.add_to(m)
+
+
+def add_high_performance_markers(m, df_display):
+    """Marcadores optimizados para alto rendimiento con muchos puntos"""
+    marker_cluster = MarkerCluster(
+        name="Puntos",
+        overlay=True,
+        control=True,
+        maxClusterRadius=15,
+        minClusterSize=3,
+        disableClusteringAtZoom=18,
+        spiderfyOnMaxZoom=True,
+        show_coverage_on_hover=False,
+        zoom_to_bounds_on_click=True
+    )
+
+    # OPTIMIZACIÓN: Usar popups completos pero con diseño optimizado
+    for _, row in df_display.iterrows():
+        marker_color = get_marker_color(row.get("tipo_olt_rental", ""))
+
+        # Tooltip simplificado para mejor rendimiento
+        tooltip_text = f"🏢 {row['apartment_id']}"
+
+        folium.Marker(
+            location=[row['latitud'], row['longitud']],
+            popup=folium.Popup(create_complete_popup(row), max_width=300),  # NUEVO: Popup completo
+            tooltip=tooltip_text,
+            icon=folium.Icon(color=marker_color, icon='info-sign')
+        ).add_to(marker_cluster)
+
+    marker_cluster.add_to(m)
+
+
 def create_empty_map():
     """Crea un mapa vacío con controles básicos"""
-    m = folium.Map(location=[40.4168, -3.7038], zoom_start=6, max_zoom=21,
-                   tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google")
+    m = folium.Map(
+        location=[40.4168, -3.7038],
+        zoom_start=6,
+        max_zoom=21,
+        tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+        attr="Google",
+        prefer_canvas=True
+    )
     add_map_controls(m)
     return m
 
@@ -436,54 +607,16 @@ def add_map_controls(m):
     Draw(export=False, position="topleft", draw_options=draw_options).add_to(m)
 
 
-def add_markers_to_map(m, df_display):
-    """Añade marcadores al mapa"""
-    if len(df_display) < 500:
-        cluster_layer = m
-    else:
-        cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
-
-    # Contar coordenadas duplicadas para ajustar posición
-    coord_counts = df_display[['latitud', 'longitud']].value_counts().to_dict()
-
-    for _, row in df_display.iterrows():
-        coord = (row['latitud'], row['longitud'])
-        count = coord_counts.get(coord, 1)
-
-        # Ajustar posición para marcadores superpuestos
-        lat_offset = count * 0.00003 if count > 1 else 0
-        lon_offset = count * -0.00003 if count > 1 else 0
-        coord_counts[coord] = count - 1
-
-        # Crear marcador
-        create_marker(cluster_layer, row, lat_offset, lon_offset)
-
-
 def create_marker(layer, row, lat_offset, lon_offset):
-    """Crea un marcador individual"""
+    """Crea un marcador individual con popup completo"""
     marker_color = get_marker_color(row.get("tipo_olt_rental", ""))
 
-    popup_text = f"""
-    <div style="min-width: 250px">
-        <h4>🏢 ID: {row['apartment_id']}</h4>
-        <hr>
-        <b>📍 Ubicación:</b><br>
-        {row['provincia']}, {row['municipio']}<br>
-        {row['vial']} {row['numero']}{row['letra'] or ''}<br>
-        CP: {row['cp']}<br>
-        📍 {row['latitud']:.6f}, {row['longitud']:.6f}<br>
-        <br>
-        <b>🔧 Infraestructura:</b><br>
-        🏢 OLT: {row.get('olt', 'N/D')}<br>
-        📡 CTO: {row.get('cto', 'N/D')}<br>
-        🔢 CTO ID: {row.get('cto_id', 'N/D')}<br>
-        🏭 Tipo OLT: {row.get('tipo_olt_rental', 'N/D')}<br>
-    </div>
-    """
+    # NUEVO: Usar la función create_complete_popup para todos los marcadores
+    popup_content = create_complete_popup(row)
 
     folium.Marker(
         location=[row['latitud'] + lat_offset, row['longitud'] + lon_offset],
-        popup=folium.Popup(popup_text, max_width=300),
+        popup=folium.Popup(popup_content, max_width=300),
         tooltip=f"🏢 {row['apartment_id']} - {row['vial']} {row['numero']}",
         icon=folium.Icon(color=marker_color, icon='info-sign')
     ).add_to(layer)
@@ -528,11 +661,16 @@ def process_drawn_area(map_data):
         return
 
     geometry = map_data["last_active_drawing"]["geometry"]
+
     if geometry["type"] not in ["Polygon", "Rectangle"]:
         return
 
     # Extraer coordenadas según el tipo de geometría
-    coords = geometry["coordinates"][0] if geometry["type"] == "Polygon" else geometry["coordinates"][0]
+    if geometry["type"] == "Polygon":
+        coords = geometry["coordinates"][0]
+    else:
+        coords = geometry["coordinates"][0]
+
     lats = [coord[1] for coord in coords]
     lons = [coord[0] for coord in coords]
 
@@ -549,7 +687,7 @@ def process_drawn_area(map_data):
 
 
 def display_data_table(df_display):
-    """Muestra la tabla de datos y opciones de descarga"""
+    """Muestra la tabla de datos y opciones de descarga con optimizaciones"""
     st.subheader("📋 Datos Detallados")
 
     columnas_mostrar = [
@@ -558,6 +696,10 @@ def display_data_table(df_display):
     ]
 
     df_table_display = df_display[columnas_mostrar].copy()
+
+    if len(df_table_display) > 500:
+        st.info(f"📊 Mostrando {len(df_table_display)} registros. Use la descarga CSV para ver todos los datos.")
+
     st.dataframe(df_table_display, use_container_width=True)
 
     # Botón de descarga
@@ -574,10 +716,13 @@ def get_data_to_display():
     """Determina qué datos mostrar basado en los filtros activos"""
     if st.session_state.get("area_filtered_df") is not None:
         df_to_show = st.session_state.area_filtered_df
-        st.info("📊 **Visualizando:** Datos filtrados por ÁREA GEOGRÁFICA")
+        point_count = len(df_to_show)
+        if point_count > 1000:
+            st.toast(f"⚠️ Se están cargando {point_count} puntos. Esto puede afectar el rendimiento.")
+        st.toast(f"📊 **Visualizando:** {point_count} puntos filtrados por ÁREA GEOGRÁFICA")
     elif st.session_state.get("demo_filtered_df") is not None:
         df_to_show = st.session_state.demo_filtered_df
-        st.info("📊 **Visualizando:** Datos filtrados por CAMPOS")
+        st.toast(f"📊 **Visualizando:** {len(df_to_show)} puntos filtrados por CAMPOS")
     else:
         df_to_show = None
         st.info("👆 **Selecciona un método de filtrado:** Usa los filtros de campos o dibuja un área en el mapa")
@@ -585,9 +730,23 @@ def get_data_to_display():
     return df_to_show
 
 
+# NUEVO: Estado de sesión para evitar recargas innecesarias
+def initialize_session_state():
+    """Inicializa el estado de sesión para optimizar recargas"""
+    if "map_initialized" not in st.session_state:
+        st.session_state.map_initialized = False
+    if "current_map_data" not in st.session_state:
+        st.session_state.current_map_data = None
+    if "map_hash" not in st.session_state:
+        st.session_state.map_hash = None
+
+
 def demo_dashboard():
     """Dashboard de demostración para visualización de puntos en mapa"""
     setup_page()
+
+    # Inicializar estado de sesión
+    initialize_session_state()
 
     if not check_authentication():
         return
@@ -620,19 +779,79 @@ def demo_dashboard():
     # Determinar qué datos mostrar
     df_to_show = get_data_to_display()
 
-    # Visualización del mapa
-    if df_to_show is not None:
-        m = create_map(df_to_show)
-        with st.spinner("⏳ Renderizando mapa..."):
-            map_data = st_folium(m, height=700, width="100%", key="demo_map",
-                                 returned_objects=["last_active_drawing", "bounds"])
-        process_drawn_area(map_data)
-        display_data_table(df_to_show)
-    else:
-        m = create_empty_map()
-        map_data = st_folium(m, height=500, width="100%", key="demo_map_empty",
-                             returned_objects=["last_active_drawing", "bounds"])
-        process_drawn_area(map_data)
+    # OPTIMIZACIÓN: Usar container para evitar re-render completo
+    map_container = st.container()
+
+    with map_container:
+        # Visualización del mapa
+        if df_to_show is not None:
+            # Generar hash único para el mapa
+            current_map_hash = get_map_config_hash(df_to_show)
+
+            # Solo regenerar el mapa si los datos han cambiado
+            if (not st.session_state.map_initialized or
+                    st.session_state.map_hash != current_map_hash or
+                    st.session_state.current_map_data is None or
+                    len(st.session_state.current_map_data) != len(df_to_show)):
+
+                # OPTIMIZACIÓN: Mostrar progreso solo si hay muchos puntos
+                if len(df_to_show) > 500:
+                    progress_text = f"Renderizando {len(df_to_show)} puntos en el mapa..."
+                    progress_bar = st.progress(0, text=progress_text)
+
+                    m = create_map(df_to_show)
+                    progress_bar.progress(50, text="Mapa creado, cargando interfaz...")
+
+                    map_data = st_folium(
+                        m,
+                        height=700,
+                        width="100%",
+                        key=f"demo_map_{current_map_hash}",
+                        returned_objects=["last_active_drawing", "bounds"]
+                    )
+
+                    progress_bar.progress(100, text="¡Mapa cargado!")
+                    time.sleep(0.5)
+                    progress_bar.empty()
+                else:
+                    m = create_map(df_to_show)
+                    map_data = st_folium(
+                        m,
+                        height=700,
+                        width="100%",
+                        key=f"demo_map_{current_map_hash}",
+                        returned_objects=["last_active_drawing", "bounds"]
+                    )
+
+                # Actualizar estado de sesión
+                st.session_state.update({
+                    "map_initialized": True,
+                    "current_map_data": df_to_show.copy(),
+                    "map_hash": current_map_hash
+                })
+            else:
+                # Reutilizar el mapa existente
+                m = create_map(df_to_show)
+                map_data = st_folium(
+                    m,
+                    height=700,
+                    width="100%",
+                    key=f"demo_map_{current_map_hash}",
+                    returned_objects=["last_active_drawing", "bounds"]
+                )
+
+            process_drawn_area(map_data)
+            display_data_table(df_to_show)
+        else:
+            m = create_empty_map()
+            map_data = st_folium(
+                m,
+                height=500,
+                width="100%",
+                key="demo_map_empty",
+                returned_objects=["last_active_drawing", "bounds"]
+            )
+            process_drawn_area(map_data)
 
 
 if __name__ == "__main__":
