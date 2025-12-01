@@ -1,171 +1,198 @@
-import uuid, os, base64, bcrypt, sqlitecloud
+import uuid
+import os
+import base64
+import bcrypt
+import sqlitecloud
 import streamlit as st
 from datetime import datetime
-from streamlit_cookies_controller import CookieController  # Se importa de forma local
-
+from streamlit_cookies_controller import CookieController
+from functools import lru_cache
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# URL de conexión a SQLite Cloud
+# Configuración global
 DB_URL = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VERSION_FILE = os.path.join(BASE_DIR, "version.txt")
+COOKIE_NAME = "my_app"
+COOKIE_CONFIG = {"max_age": 24 * 60 * 60, "path": '/', "same_site": 'Lax', "secure": True}
 
-cookie_name = "my_app"
-
+# Inicialización de estado de sesión
 if "login_ok" not in st.session_state:
-    st.session_state["login_ok"] = False
+    st.session_state.update({
+        "login_ok": False,
+        "username": None,
+        "role": None,
+        "session_id": None
+    })
 
 
+@lru_cache(maxsize=1)
 def get_latest_version():
+    """Obtiene la última versión con cache para mejorar rendimiento"""
     try:
-        with open(VERSION_FILE, "r", encoding="utf-8") as f:
-            versions = f.readlines()
-            if versions:
-                return versions[-1].strip()
-    except FileNotFoundError:
-        return "Desconocida"
-    return "Desconocida"
-
-
-def verify_user(nombre, password):
-    # Conexión a SQLite Cloud
-    conn = sqlitecloud.connect(DB_URL)
-    cursor = conn.execute("SELECT password, role FROM usuarios WHERE username = ?", (nombre,))
-    result = cursor.fetchone()
-    conn.close()
-
-    if result:
-        hashed_pw, rol = result
-        if bcrypt.checkpw(password.encode(), hashed_pw.encode()):
-            return rol
-    return None
-
-def log_trazabilidad(usuario, accion, detalles):
-    # Conexión a SQLite Cloud
-    conn = sqlitecloud.connect(DB_URL)
-    cursor = conn.execute(""" 
-        INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
-        VALUES (?, ?, ?, ?)
-    """, (usuario, accion, detalles, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-    conn.close()
-
-def get_latest_version():
-    try:
-        conn = sqlitecloud.connect(DB_URL)
-        cursor = conn.cursor()
-        cursor.execute("SELECT version FROM versiones ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            #print("[DEBUG] Última versión encontrada:", row[0])
-            return row[0]
-        else:
-            #print("[DEBUG] No se encontraron versiones.")
-            return "desconocido"
+        with sqlitecloud.connect(DB_URL) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT version FROM versiones ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
+            return row[0] if row else "desconocido"
     except Exception as e:
-        print("[ERROR] al obtener la última versión:", e)
+        st.error(f"Error al obtener versión: {e}")
         return "desconocido"
 
+
+def get_db_connection():
+    """Crea y retorna una conexión a la base de datos"""
+    return sqlitecloud.connect(DB_URL)
+
+
+def verify_user(username, password):
+    """Verifica las credenciales del usuario"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                "SELECT password, role FROM usuarios WHERE username = ?",
+                (username,)
+            )
+            result = cursor.fetchone()
+
+        if result and bcrypt.checkpw(password.encode(), result[0].encode()):
+            return result[1]
+    except Exception as e:
+        st.error(f"Error de autenticación: {e}")
+    return None
+
+
+def log_trazabilidad(usuario, accion, detalles):
+    """Registro de trazas en la base de datos"""
+    try:
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha) VALUES (?, ?, ?, ?)",
+                (usuario, accion, detalles, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            )
+            conn.commit()
+    except Exception as e:
+        st.error(f"Error en trazabilidad: {e}")
+
+
+def set_user_session(controller, username, role, session_id):
+    """Establece la sesión del usuario y las cookies"""
+    st.session_state.update({
+        "login_ok": True,
+        "username": username,
+        "role": role,
+        "session_id": session_id
+    })
+
+    # Configurar cookies
+    controller.set(f'{COOKIE_NAME}_session_id', session_id, **COOKIE_CONFIG)
+    controller.set(f'{COOKIE_NAME}_username', username, **COOKIE_CONFIG)
+    controller.set(f'{COOKIE_NAME}_role', role, **COOKIE_CONFIG)
+
+
+def load_and_encode_image(image_path):
+    """Carga y codifica imagen en base64 con cache"""
+    if 'cached_logo' not in st.session_state:
+        try:
+            with open(image_path, 'rb') as f:
+                st.session_state.cached_logo = base64.b64encode(f.read()).decode()
+        except FileNotFoundError:
+            st.session_state.cached_logo = ""
+    return st.session_state.cached_logo
+
+
+def render_login_form():
+    """Renderiza el formulario de login"""
+    st.markdown("""
+        <style>
+            .user-circle {
+                width: 100px;
+                height: 100px;
+                border-radius: 50%;
+                background-color: #6c757d;
+                color: white;
+                font-size: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 30px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        </style>
+        <div class="user-circle">👤</div>
+    """, unsafe_allow_html=True)
+
+    logo_base64 = load_and_encode_image('img/Adobe_Express_file.png')
+    st.markdown(f"""
+        <h1 style="text-align: center; font-size: 50px; color: #007041;">
+            <img src="data:image/png;base64,{logo_base64}" 
+                 style="vertical-align: middle; width: 40px; height: 40px; margin-right: 10px;" />
+            VERDE SUITE
+        </h1>
+    """, unsafe_allow_html=True)
+
+
+def handle_automatic_login(controller):
+    """Maneja el login automático mediante cookies"""
+    cookie_session_id = controller.get(f'{COOKIE_NAME}_session_id')
+    cookie_username = controller.get(f'{COOKIE_NAME}_username')
+    cookie_role = controller.get(f'{COOKIE_NAME}_role')
+
+    if all([cookie_session_id, cookie_username, cookie_role]):
+        st.session_state.update({
+            "login_ok": True,
+            "username": cookie_username,
+            "role": cookie_role,
+            "session_id": cookie_session_id
+        })
+        st.success(f"¡Bienvenido de nuevo, {st.session_state['username']}!")
+        st.rerun()
+
+
 def login():
-    # Se instancia localmente el controlador de cookies para que cada navegador administre sus propias cookies.
+    """Función principal de login"""
     controller = CookieController(key="cookies")
 
-    # Verificar si el usuario ya está autenticado usando cookies
-    if "login_ok" not in st.session_state:
-        st.session_state["login_ok"] = False
-
-    # Recuperar las cookies usando los nombres adecuados
-    cookie_session_id = controller.get(f'{cookie_name}_session_id')
-    cookie_username = controller.get(f'{cookie_name}_username')
-    cookie_role = controller.get(f'{cookie_name}_role')
-
-    # Si existen las cookies y son válidas, iniciamos sesión automáticamente
-    if cookie_session_id and cookie_username and cookie_role:
-        st.session_state["login_ok"] = True
-        st.session_state["username"] = cookie_username
-        st.session_state["role"] = cookie_role
-        st.session_state["session_id"] = cookie_session_id  # Guardamos el session_id
-        st.success(f"¡Bienvenido de nuevo, {st.session_state['username']}!")
-        # Forzamos la recarga para que se ejecute el dashboard en app.py
-        st.rerun()
-        return
-
+    # Intentar login automático si no está logueado
     if not st.session_state["login_ok"]:
-        st.markdown(""" 
-            <style> 
-                .user-circle { 
-                    width: 100px; 
-                    height: 100px; 
-                    border-radius: 50%; 
-                    background-color: #6c757d; 
-                    color: white; 
-                    font-size: 50px; 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    margin-bottom: 30px; 
-                    text-align: center; 
-                    margin-left: auto; 
-                    margin-right: auto; 
-                } 
-            </style> 
-            <div class="user-circle">👤</div> 
-            """, unsafe_allow_html=True)
+        handle_automatic_login(controller)
 
-        # Genera un session_id único para esta sesión
+    # Mostrar formulario de login si aún no está autenticado
+    if not st.session_state["login_ok"]:
+        render_login_form()
+
+        # Generar session_id único
         session_id = str(uuid.uuid4())
         st.session_state["session_id"] = session_id
 
-        st.markdown(
-            """
-            <h1 style="text-align: center; font-size: 50px; color: #007041;">
-                <img src="data:image/png;base64,{}" style="vertical-align: middle; width: 40px; height: 40px; margin-right: 10px;" />
-                VERDE SUITE
-            </h1>
-            """.format(base64.b64encode(open('img/Adobe_Express_file.png', 'rb').read()).decode()),
-            unsafe_allow_html=True
-        )
-
-        # Crear columnas vacías a izquierda y derecha para centrar el contenido
+        # Formulario de login centrado
         col1, col2, col3 = st.columns([1, 2, 1])
 
         with col2:
-            st.success("🔐 Por favor, inicia sesión con tu usuario y tu contraseña.")
+            st.success("🔐 Por favor, inicia sesión con tu usuario y contraseña.")
 
-            nombre = st.text_input("Usuario")
+            username = st.text_input("Usuario")
             password = st.text_input("Contraseña", type="password")
 
-            if st.button("Iniciar sesión"):
-                rol = verify_user(nombre, password)
-                if rol:
-                    st.session_state["login_ok"] = True
-                    st.session_state["username"] = nombre
-                    st.session_state["role"] = rol
-                    st.session_state["session_id"] = session_id  # Guardamos el session_id
+            if st.button("Iniciar sesión", type="primary"):
+                if not username or not password:
+                    st.error("Por favor ingresa usuario y contraseña")
+                    return
 
-                    st.success(f"Bienvenido, {nombre} ({rol})")
-
-                    # Guardar cookies
-                    if st.session_state.get("login_ok"):
-                        controller.set(f'{cookie_name}_session_id', session_id, max_age=24 * 60 * 60, path='/',
-                                       same_site='Lax', secure=True)
-                        controller.set(f'{cookie_name}_username', nombre, max_age=24 * 60 * 60, path='/',
-                                       same_site='Lax', secure=True)
-                        controller.set(f'{cookie_name}_role', rol, max_age=24 * 60 * 60, path='/', same_site='Lax',
-                                       secure=True)
-
-                    detalles = f"Usuario '{nombre}' inició sesión en el sistema."
-                    log_trazabilidad(nombre, "Inicio sesión", detalles)
+                role = verify_user(username, password)
+                if role:
+                    set_user_session(controller, username, role, session_id)
+                    log_trazabilidad(username, "Inicio sesión", f"Usuario '{username}' inició sesión")
+                    st.success(f"Bienvenido, {username} ({role})")
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
 
-            # 🔽 Mostrar versión centrada abajo
+            # Mostrar versión
             version_actual = get_latest_version()
             st.markdown(
-                f"<div style='text-align: center; margin-top: 50px;'>🔍 <strong>Versión actual:</strong> {version_actual}</div>",
+                f"<div style='text-align: center; margin-top: 50px;'>"
+                f"🔍 <strong>Versión actual:</strong> {version_actual}</div>",
                 unsafe_allow_html=True
             )
-

@@ -43,15 +43,31 @@ def log_trazabilidad(usuario, accion, detalles):
 
 
 @st.cache_data
-def cargar_datos():
+def cargar_datos(usuario=None):
     """Carga los datos de las tablas con caché"""
     conn = get_db_connection()
-    query_datos_uis = """
-        SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, tipo_olt_rental, serviciable 
-        FROM datos_uis 
-        WHERE comercial = 'RAFA SANZ'
-    """
-    datos_uis = pd.read_sql(query_datos_uis, conn)
+
+    # Usar el usuario proporcionado o el de la sesión
+    if usuario is None:
+        username = st.session_state.get("username", "").strip()
+    else:
+        username = usuario
+
+    # Construir query dinámica según el usuario
+    if username:
+        query_datos_uis = """
+            SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, tipo_olt_rental, serviciable 
+            FROM datos_uis 
+            WHERE comercial = ?
+        """
+        datos_uis = pd.read_sql(query_datos_uis, conn, params=(username,))
+    else:
+        # Si no hay usuario, cargar todos los datos (para compatibilidad)
+        query_datos_uis = """
+            SELECT apartment_id, latitud, longitud, fecha, provincia, municipio, vial, numero, letra, poblacion, tipo_olt_rental, serviciable 
+            FROM datos_uis
+        """
+        datos_uis = pd.read_sql(query_datos_uis, conn)
 
     query_comercial_rafa = """
         SELECT apartment_id, serviciable, Contrato, municipio, poblacion, comercial 
@@ -417,18 +433,14 @@ def mostrar_coordenadas():
                 st.session_state.pop(key, None)
             st.rerun()
 
+
 def mostrar_mapa_de_asignaciones():
-    st.title("Mapa Asignaciones")
+    username = st.session_state.get("username", "").strip()
 
     # Cargar datos con spinner
     with st.spinner("Cargando datos..."):
-        datos_uis, comercial_rafa = cargar_datos()
-
-        # 🔒 Filtro especial si el usuario es Juan
-        if st.session_state["username"].strip().lower() == "juan":
-            # Limpia valores nulos y normaliza
-            datos_uis['provincia'] = datos_uis['provincia'].fillna("").str.strip().str.lower()
-            datos_uis = datos_uis[datos_uis["provincia"].isin(["asturias", "lugo"])]
+        # Pasar el username actual a cargar_datos
+        datos_uis, comercial_rafa = cargar_datos(username)
 
         # Si después del filtro no quedan datos, detenemos
         if datos_uis.empty:
@@ -442,7 +454,9 @@ def mostrar_mapa_de_asignaciones():
 
         Usa los filtros de **Provincia**, **Municipio** y **Población** para ver las zonas que necesites.  
         Opcionalmente, puedes usar los **rangos de fecha** para una búsqueda más precisa.
-        """)# Filtro por provincia
+        """)
+
+    # Filtro por provincia
     provincias = datos_uis['provincia'].unique()
     provincia_seleccionada = st.selectbox("Seleccione una provincia:", provincias)
     datos_uis = datos_uis[datos_uis["provincia"] == provincia_seleccionada]
@@ -485,7 +499,7 @@ def mostrar_mapa_de_asignaciones():
         if 'fecha' in datos_uis.columns:
             # Convertir texto a datetime
             datos_uis['fecha'] = pd.to_datetime(datos_uis['fecha'], errors='coerce')
-            hoy = datetime.now()  # CORRECTO
+            hoy = datetime.now()
             datos_uis = datos_uis[
                 (datos_uis['fecha'].dt.year == hoy.year) &
                 (datos_uis['fecha'].dt.month == hoy.month)
@@ -525,14 +539,12 @@ def mostrar_mapa_de_asignaciones():
     datos_uis['latitud'] = datos_uis['latitud'].astype(float)
     datos_uis['longitud'] = datos_uis['longitud'].astype(float)
 
-    username = st.session_state.get("username", "").strip().lower()
-
     # Lista general de comerciales para otros usuarios
     comerciales_generales = ["jose ramon"]
 
     # Comerciales disponibles según usuario
-    if username == "juan":
-        comerciales_disponibles = ["Comercial2","Comercial3"]
+    if username.lower() == "juan":
+        comerciales_disponibles = ["Comercial2", "Comercial3"]
     else:
         comerciales_disponibles = comerciales_generales
 
@@ -549,6 +561,7 @@ def mostrar_mapa_de_asignaciones():
                 txt = unicodedata.normalize('NFKC', txt)
                 txt = txt.replace("'", "").replace('"', "").strip()
                 return txt
+
             municipios = sorted(datos_uis['municipio'].dropna().unique())
             municipio_sel = st.selectbox("Seleccione un municipio:", municipios, key="municipio_sel")
 
@@ -578,11 +591,11 @@ def mostrar_mapa_de_asignaciones():
                 cursor = conn.cursor()
 
                 if tipo_asignacion == "Municipio completo":
-                    condicion_where = "municipio = ? AND comercial = 'RAFA SANZ'"
-                    params = (municipio_sel,)
+                    condicion_where = "municipio = ? AND comercial = ?"
+                    params = (municipio_sel, username)
                 else:
-                    condicion_where = "municipio = ? AND poblacion = ? AND comercial = 'RAFA SANZ'"
-                    params = (municipio_sel, poblacion_sel)
+                    condicion_where = "municipio = ? AND poblacion = ? AND comercial = ?"
+                    params = (municipio_sel, poblacion_sel, username)
 
                 # Total de puntos de esa zona
                 cursor.execute(f"SELECT COUNT(*) FROM datos_uis WHERE {condicion_where}", params)
@@ -590,8 +603,8 @@ def mostrar_mapa_de_asignaciones():
 
                 # Total ya asignados
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM comercial_rafa WHERE {condicion_where.replace('comercial =', '1=1 AND comercial =')}",
-                    params)
+                    f"SELECT COUNT(*) FROM comercial_rafa WHERE {condicion_where.replace('comercial = ?', '1=1')}",
+                    params[:-1] if len(params) > 1 else params)
                 asignados = cursor.fetchone()[0] or 0
 
                 pendientes = total_puntos - asignados
@@ -609,22 +622,22 @@ def mostrar_mapa_de_asignaciones():
                                 SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
                                 FROM datos_uis
                                 WHERE municipio = ?
-                                  AND comercial = 'RAFA SANZ'
+                                  AND comercial = ?
                                   AND apartment_id NOT IN (
                                       SELECT apartment_id FROM comercial_rafa WHERE municipio = ?
                                   )
-                            """, (municipio_sel, municipio_sel))
+                            """, (municipio_sel, username, municipio_sel))
                         else:
                             cursor.execute(f"""
                                 SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
                                 FROM datos_uis
                                 WHERE municipio = ? AND poblacion = ?
-                                  AND comercial = 'RAFA SANZ'
+                                  AND comercial = ?
                                   AND apartment_id NOT IN (
                                       SELECT apartment_id FROM comercial_rafa
                                       WHERE municipio = ? AND poblacion = ?
                                   )
-                            """, (municipio_sel, poblacion_sel, municipio_sel, poblacion_sel))
+                            """, (municipio_sel, poblacion_sel, username, municipio_sel, poblacion_sel))
 
                         puntos = cursor.fetchall()
                         nuevos_asignados = len(puntos)
@@ -700,7 +713,7 @@ def mostrar_mapa_de_asignaciones():
                                 + (
                                     f" - {poblacion_sel}" if tipo_asignacion == "Población específica" else " (municipio completo)")
                                 + f"\n👥 Asignado a: {', '.join(comerciales_seleccionados)}\n"
-                                  f"🕵️ Asignado por: {st.session_state['username']}"
+                                  f"🕵️ Asignado por: {username}"
                         )
                         for email_admin in emails_admins:
                             correo_asignacion_administracion2(email_admin, municipio_sel,
@@ -714,7 +727,7 @@ def mostrar_mapa_de_asignaciones():
                         )
 
                         log_trazabilidad(
-                            st.session_state["username"], "Asignación múltiple",
+                            username, "Asignación múltiple",
                             f"Zona {municipio_sel} "
                             + (
                                 f"- {poblacion_sel}" if tipo_asignacion == "Población específica" else " (municipio completo)")

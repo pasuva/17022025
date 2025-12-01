@@ -610,152 +610,266 @@ def comercial_dashboard():
     elif menu_opcion == "Viabilidades":
         viabilidades_section()
 
-    # Sección de Visualización de datos
+    # Y en la función principal, reemplazar la sección con:
     elif menu_opcion == "Visualización de Datos":
-        st.subheader("Datos de Ofertas con Contrato")
+        seccion_visualizacion_datos()
 
-        # Verificar si el usuario ha iniciado sesión
-        if "username" not in st.session_state:
-            st.toast("❌ No has iniciado sesión. Por favor, vuelve a la pantalla de inicio de sesión.")
-            st.stop()
 
-        comercial_usuario = st.session_state.get("username", None)
+def seccion_visualizacion_datos():
+    """Sección optimizada de visualización de datos"""
+    st.subheader("📊 Visualización de Datos")
 
-        try:
-            conn = get_db_connection()
-            # Consulta SQL con filtro por comercial logueado (primera tabla: comercial_rafa) LOWER(Contrato) = 'sí'
-            #             AND
-            query_ofertas = """
-            SELECT *
-            FROM comercial_rafa
-            WHERE LOWER(comercial) = LOWER(?)
-            """
+    # Verificar autenticación
+    if "username" not in st.session_state:
+        st.error("❌ No has iniciado sesión")
+        st.stop()
 
-            df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
+    comercial_usuario = st.session_state.get("username")
 
-            # ⬇️ Pega aquí el nuevo bloque
-            query_seguimiento = """
-                            SELECT apartment_id, estado
-                            FROM seguimiento_contratos
-                            WHERE LOWER(estado) = 'finalizado'
-                        """
+    try:
+        # Cargar datos optimizados
+        df_ofertas, df_viabilidades = cargar_datos_visualizacion(comercial_usuario)
+
+        # Mostrar secciones
+        mostrar_tabla_ofertas(df_ofertas, comercial_usuario)
+        mostrar_tabla_viabilidades(df_viabilidades, comercial_usuario)
+
+    except Exception as e:
+        st.error(f"❌ Error al cargar los datos: {e}")
+
+
+@st.cache_data(ttl=300)  # Cache de 5 minutos
+def cargar_datos_visualizacion(comercial_usuario):
+    """Carga optimizada de datos para visualización"""
+    conn = get_db_connection()
+    try:
+        # Cargar ofertas del comercial
+        query_ofertas = "SELECT * FROM comercial_rafa WHERE LOWER(comercial) = LOWER(?)"
+        df_ofertas = pd.read_sql(query_ofertas, conn, params=(comercial_usuario,))
+
+        # Enriquecer con estado de contrato
+        if not df_ofertas.empty:
+            query_seguimiento = "SELECT apartment_id, estado FROM seguimiento_contratos WHERE LOWER(estado) = 'finalizado'"
             df_seguimiento = pd.read_sql(query_seguimiento, conn)
-            df_ofertas['Contrato_Activo'] = df_ofertas['apartment_id'].isin(df_seguimiento['apartment_id']).map(
-                {True: '✅ Activo', False: '❌ No Activo'})
+            df_ofertas['Contrato_Activo'] = df_ofertas['apartment_id'].isin(
+                df_seguimiento['apartment_id']
+            ).map({True: '✅ Activo', False: '❌ No Activo'})
 
-            # Consulta SQL para la segunda tabla: viabilidades (filtrando por el nombre del comercial logueado)
-            query_viabilidades = """
-            SELECT v.ticket, v.latitud, v.longitud, v.provincia, v.municipio, v.poblacion, v.vial, v.numero, v.letra, v.cp, 
-                   v.serviciable, v.coste, v.comentarios_comercial, v.justificacion, v.resultado, v.respuesta_comercial
-            FROM viabilidades v
-            WHERE LOWER(v.usuario) = LOWER(?)
-            """
+        # Cargar viabilidades del comercial
+        query_viabilidades = """
+            SELECT ticket, latitud, longitud, provincia, municipio, poblacion, vial, numero, 
+                   letra, cp, serviciable, coste, comentarios_comercial, justificacion, 
+                   resultado, respuesta_comercial
+            FROM viabilidades 
+            WHERE LOWER(usuario) = LOWER(?)
+        """
+        df_viabilidades = pd.read_sql(query_viabilidades, conn, params=(comercial_usuario,))
 
-            df_viabilidades = pd.read_sql(query_viabilidades, conn, params=(comercial_usuario,))
+        return df_ofertas, df_viabilidades
 
+    finally:
+        conn.close()
+
+
+def mostrar_tabla_ofertas(df_ofertas, comercial_usuario):
+    """Muestra tabla de ofertas optimizada"""
+    if df_ofertas.empty:
+        st.warning(f"⚠️ No hay ofertas para el comercial '{comercial_usuario}'")
+        return
+
+    st.subheader("📋 Tabla de Visitas/Ofertas")
+
+    # Filtros rápidos para la tabla
+    col1, col2 = st.columns(2)
+    with col1:
+        filtro_contrato = st.selectbox(
+            "Filtrar por estado de contrato:",
+            ["Todos", "✅ Activo", "❌ No Activo"]
+        )
+
+    with col2:
+        filtro_serviciable = st.selectbox(
+            "Filtrar por serviciable:",
+            ["Todos", "Sí", "No"]
+        )
+
+    # Aplicar filtros
+    df_filtrado = df_ofertas.copy()
+    if filtro_contrato != "Todos":
+        df_filtrado = df_filtrado[df_filtrado['Contrato_Activo'] == filtro_contrato]
+    if filtro_serviciable != "Todos":
+        df_filtrado = df_filtrado[df_filtrado['serviciable'] == filtro_serviciable]
+
+    # Mostrar métricas rápidas
+    mostrar_metricas_ofertas(df_filtrado)
+
+    # Mostrar tabla
+    st.dataframe(df_filtrado, use_container_width=True)
+
+    # Botón de exportación
+    if st.button("📤 Exportar a CSV", key="export_ofertas"):
+        csv = df_filtrado.to_csv(index=False)
+        st.download_button(
+            label="⬇️ Descargar CSV",
+            data=csv,
+            file_name=f"ofertas_{comercial_usuario}_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+
+
+def mostrar_metricas_ofertas(df):
+    """Muestra métricas rápidas de ofertas"""
+    if df.empty:
+        return
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("Total Ofertas", len(df))
+
+    with col2:
+        activas = len(df[df['Contrato_Activo'] == '✅ Activo'])
+        st.metric("Contratos Activos", activas)
+
+    with col3:
+        serviciables = len(df[df['serviciable'] == 'Sí'])
+        st.metric("Serviciables", serviciables)
+
+    with col4:
+        no_serviciables = len(df[df['serviciable'] == 'No'])
+        st.metric("No Serviciables", no_serviciables)
+
+
+def mostrar_tabla_viabilidades(df_viabilidades, comercial_usuario):
+    """Muestra tabla de viabilidades optimizada"""
+    if df_viabilidades.empty:
+        st.warning(f"⚠️ No hay viabilidades para el comercial '{comercial_usuario}'")
+        return
+
+    st.subheader("📋 Tabla de Viabilidades")
+    st.dataframe(df_viabilidades, use_container_width=True)
+
+    # Procesar viabilidades pendientes
+    procesar_viabilidades_pendientes(df_viabilidades, comercial_usuario)
+
+
+def procesar_viabilidades_pendientes(df_viabilidades, comercial_usuario):
+    """Procesa y muestra viabilidades pendientes de respuesta"""
+    # Definir criterios para viabilidades críticas
+    JUSTIFICACIONES_CRITICAS = ["MAS PREVENTA", "PDTE. RAFA FIN DE OBRA"]
+    RESULTADOS_CRITICOS = ["PDTE INFORMACION RAFA", "OK", "SOBRECOSTE"]
+
+    # Filtrar viabilidades que requieren atención
+    df_condiciones = df_viabilidades[
+        (df_viabilidades['justificacion'].isin(JUSTIFICACIONES_CRITICAS)) |
+        (df_viabilidades['resultado'].isin(RESULTADOS_CRITICOS))
+        ]
+
+    # Filtrar las pendientes de respuesta
+    df_pendientes = df_condiciones[
+        df_condiciones['respuesta_comercial'].isna() |
+        (df_condiciones['respuesta_comercial'] == "")
+        ]
+
+    if df_pendientes.empty:
+        st.success("🎉 No tienes viabilidades pendientes de contestar")
+        return
+
+    st.warning(f"🔔 Tienes {len(df_pendientes)} viabilidades pendientes de contestar")
+    st.subheader("📝 Gestión de Viabilidades Pendientes")
+
+    # Mostrar formularios para cada viabilidad pendiente
+    for _, row in df_pendientes.iterrows():
+        mostrar_formulario_viabilidad(row, comercial_usuario)
+
+
+def mostrar_formulario_viabilidad(viabilidad, comercial_usuario):
+    """Muestra formulario individual para viabilidad pendiente"""
+    ticket = viabilidad['ticket']
+
+    with st.expander(f"🎫 Ticket {ticket} - {viabilidad['municipio']} {viabilidad['vial']} {viabilidad['numero']}"):
+        # Información contextual
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**📌 Justificación:**  \n{viabilidad.get('justificacion', '—')}")
+        with col2:
+            st.markdown(f"**📊 Resultado:**  \n{viabilidad.get('resultado', '—')}")
+
+        # Instrucciones colapsables
+        with st.expander("ℹ️ Instrucciones para completar", expanded=False):
+            st.markdown("""
+            **Por favor, indica:**
+            - ✅ Si estás de acuerdo o no con la resolución
+            - 🏠 Información adicional de tu visita (cliente, obra, accesos, etc.)
+            - 💰 Si el cliente acepta o no el presupuesto
+            - 📝 Cualquier detalle que ayude a la oficina a cerrar la viabilidad
+            """)
+
+        # Formulario de comentario
+        with st.form(key=f"form_viabilidad_{ticket}"):
+            nuevo_comentario = st.text_area(
+                "✏️ Tu respuesta:",
+                value="",
+                placeholder="Ejemplo: El cliente confirma que esperará a fin de obra para contratar...",
+                help="Este comentario se enviará a la oficina técnica"
+            )
+
+            if st.form_submit_button("💾 Guardar Respuesta", use_container_width=True):
+                guardar_respuesta_viabilidad(ticket, nuevo_comentario, comercial_usuario)
+
+
+def guardar_respuesta_viabilidad(ticket, comentario, comercial_usuario):
+    """Guarda la respuesta de viabilidad y envía notificaciones"""
+    if not comentario.strip():
+        st.error("❌ El comentario no puede estar vacío")
+        return
+
+    try:
+        # Actualizar en base de datos
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE viabilidades SET respuesta_comercial = ? WHERE ticket = ?",
+                (comentario, ticket)
+            )
+            conn.commit()
+        finally:
             conn.close()
 
-            # Verificar si hay datos para mostrar en la primera tabla (ofertas_comercial)
-            if df_ofertas.empty:
-                st.warning(f"⚠️ No hay ofertas con contrato activo para el comercial '{comercial_usuario}'.")
-            else:
-                st.subheader("📋 Tabla de Visitas/Ofertas")
-                st.dataframe(df_ofertas, use_container_width=True)
+        # Enviar notificaciones
+        enviar_notificaciones_viabilidad(ticket, comercial_usuario, comentario)
 
-            # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
-            # Mostrar segunda tabla (viabilidades)
-            if df_viabilidades.empty:
-                st.warning(f"⚠️ No hay viabilidades disponibles para el comercial '{comercial_usuario}'.")
-            else:
-                st.subheader("📋 Tabla de Viabilidades")
-                st.dataframe(df_viabilidades, use_container_width=True)
+        st.success(f"✅ Respuesta guardada para el ticket {ticket}")
+        st.rerun()
 
-                # Filtrar viabilidades críticas por justificación
-                justificaciones_criticas = ["MAS PREVENTA", "PDTE. RAFA FIN DE OBRA"]
+    except Exception as e:
+        st.error(f"❌ Error al guardar la respuesta: {e}")
 
-                # Filtrar viabilidades críticas por resultado
-                resultados_criticos = ["PDTE INFORMACION RAFA", "OK", "SOBRECOSTE"]
 
-                # Filtrar las viabilidades que cumplen la condición
-                df_condiciones = df_viabilidades[
-                    (df_viabilidades['justificacion'].isin(justificaciones_criticas)) |
-                    (df_viabilidades['resultado'].isin(resultados_criticos))
-                    ]
+def enviar_notificaciones_viabilidad(ticket, comercial_usuario, comentario):
+    """Envía notificaciones por correo electrónico"""
+    try:
+        # Obtener destinatarios
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT email FROM usuarios WHERE role IN ('admin','comercial_jefe')")
+            destinatarios = [fila[0] for fila in cursor.fetchall()]
+        finally:
+            conn.close()
 
-                # Filtrar solo las que aún NO tienen respuesta_comercial
-                df_pendientes = df_condiciones[
-                    df_condiciones['respuesta_comercial'].isna() | (df_condiciones['respuesta_comercial'] == "")
-                    ]
+        # Enviar notificaciones
+        for email in destinatarios:
+            try:
+                correo_respuesta_comercial(email, ticket, comercial_usuario, comentario)
+            except Exception as e:
+                st.warning(f"⚠️ No se pudo enviar notificación a {email}: {e}")
 
-                if not df_pendientes.empty:
-                    st.warning(f"🔔 Tienes {len(df_pendientes)} viabilidades pendientes de contestar.")
+        st.toast(f"📧 Notificaciones enviadas a {len(destinatarios)} destinatarios")
 
-                    st.subheader("📝 Añadir comentarios a Viabilidades pendientes")
-
-                    for _, row in df_pendientes.iterrows():
-                        with st.expander(f"Ticket {row['ticket']} - {row['municipio']} {row['vial']} {row['numero']}"):
-                            # Mostrar información contextual
-                            st.markdown(f"""
-                                    **📌 Justificación oficina:**  
-                                    {row.get('justificacion', '—')}
-
-                                    **📊 Resultado oficina:**  
-                                    {row.get('resultado', '—')}
-                                    """)
-
-                            with st.expander("ℹ️ Instrucciones para completar este campo", expanded=False):
-                                st.markdown("""
-                                **Por favor, completa este campo indicando:**
-                                - Si estás de acuerdo of no con la resolución.  
-                                - Información adicional de tu visita (cliente, obra, accesos, etc.), detalles que ayuden a la oficina a cerrar la viabilidad.  
-                                - Si el cliente acepta o no el presupuesto.
-                                """)
-
-                            nuevo_comentario = st.text_area(
-                                f"✏️ Comentario para ticket {row['ticket']}",
-                                value="",
-                                placeholder="Ejemplo: El cliente confirma que esperará a fin de obra para contratar...",
-                                key=f"comentario_{row['ticket']}"
-                            )
-
-                            if st.button(f"💾 Guardar comentario ({row['ticket']})", key=f"guardar_{row['ticket']}"):
-                                try:
-                                    conn = get_db_connection()
-                                    cursor = conn.cursor()
-
-                                    # Guardar la respuesta del comercial
-                                    cursor.execute(
-                                        "UPDATE viabilidades SET respuesta_comercial = ? WHERE ticket = ?",
-                                        (nuevo_comentario, row['ticket'])
-                                    )
-
-                                    conn.commit()
-                                    conn.close()
-
-                                    # 🔔 Enviar notificación por correo a administradores y comercial_jefe
-                                    # Obtener emails de administradores y comercial_jefe
-                                    conn = get_db_connection()
-                                    cursor = conn.cursor()
-                                    cursor.execute(
-                                        "SELECT email FROM usuarios WHERE role IN ('admin','comercial_jefe')")
-                                    destinatarios = [fila[0] for fila in cursor.fetchall()]
-                                    conn.close()
-
-                                    for email in destinatarios:
-                                        correo_respuesta_comercial(email, row['ticket'], comercial_usuario,
-                                                                   nuevo_comentario)
-
-                                    st.toast(
-                                        f"✅ Comentario guardado y notificación enviada para el ticket {row['ticket']}.")
-                                    st.rerun()  # 🔄 Refrescar la página para que desaparezca de pendientes
-                                except Exception as e:
-                                    st.toast(f"❌ Error al guardar el comentario para el ticket {row['ticket']}: {e}")
-                else:
-                    st.info("🎉 No tienes viabilidades pendientes de contestar. ✅")
-
-        except Exception as e:
-            st.toast(f"❌ Error al cargar los datos: {e}")
-
+    except Exception as e:
+        st.warning(f"⚠️ Error al enviar notificaciones: {e}")
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
     conn = get_db_connection()
