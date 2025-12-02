@@ -704,7 +704,7 @@ def mostrar_tabla_ofertas(df_ofertas, comercial_usuario):
     mostrar_metricas_ofertas(df_filtrado)
 
     # Mostrar tabla
-    st.dataframe(df_filtrado, use_container_width=True)
+    st.dataframe(df_filtrado, width='stretch')
 
     # Botón de exportación
     if st.button("📤 Exportar a CSV", key="export_ofertas"):
@@ -747,7 +747,7 @@ def mostrar_tabla_viabilidades(df_viabilidades, comercial_usuario):
         return
 
     st.subheader("📋 Tabla de Viabilidades")
-    st.dataframe(df_viabilidades, use_container_width=True)
+    st.dataframe(df_viabilidades, width='stretch')
 
     # Procesar viabilidades pendientes
     procesar_viabilidades_pendientes(df_viabilidades, comercial_usuario)
@@ -814,7 +814,7 @@ def mostrar_formulario_viabilidad(viabilidad, comercial_usuario):
                 help="Este comentario se enviará a la oficina técnica"
             )
 
-            if st.form_submit_button("💾 Guardar Respuesta", use_container_width=True):
+            if st.form_submit_button("💾 Guardar Respuesta", width='stretch'):
                 guardar_respuesta_viabilidad(ticket, nuevo_comentario, comercial_usuario)
 
 

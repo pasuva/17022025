@@ -285,7 +285,7 @@ def mostrar_coordenadas():
     with col3:
         radio_km = st.number_input("📏 Radio (km)", value=1.0, min_value=0.1, max_value=50.0, step=0.5, key="coord_radio")
 
-    buscar = st.button("🔍 Buscar coordenadas", use_container_width=True)
+    buscar = st.button("🔍 Buscar coordenadas", width='stretch')
 
     if buscar:
         with st.spinner("🗺️ Calculando puntos dentro del radio..."):
@@ -1124,97 +1124,182 @@ def mostrar_mapa_de_asignaciones():
 
 
 def mostrar_descarga_datos():
+    # Configuración común para el menú
+    SUB_SECCIONES = {
+        "Zonas asignadas": {
+            "icon": "geo-alt",
+            "description": "Visualiza el total de asignaciones realizadas por el gestor."
+        },
+        "Ofertas realizadas": {
+            "icon": "bar-chart-line",
+            "description": "Ofertas comerciales: Visualización del total de ofertas asignadas."
+        },
+        "Viabilidades estudiadas": {
+            "icon": "check2-square",
+            "description": "Viabilidades: Visualización del total de viabilidades reportadas."
+        },
+        "Datos totales": {
+            "icon": "database",
+            "description": "Visualización total de los datos"
+        }
+    }
+
+    # Estilos reutilizables
+    MENU_STYLES = {
+        "container": {
+            "padding": "0!important",
+            "margin": "0px",
+            "background-color": "#F0F7F2",
+            "border-radius": "0px",
+            "max-width": "none"
+        },
+        "icon": {"color": "#2C5A2E", "font-size": "25px"},
+        "nav-link": {
+            "color": "#2C5A2E",
+            "font-size": "18px",
+            "text-align": "center",
+            "margin": "0px",
+            "--hover-color": "#66B032",
+            "border-radius": "0px",
+        },
+        "nav-link-selected": {
+            "background-color": "#66B032",
+            "color": "white",
+            "font-weight": "bold"
+        }
+    }
+
     sub_seccion = option_menu(
         menu_title=None,
-        options=["Zonas asignadas", "Ofertas realizadas", "Viabilidades estudiadas", "Datos totales"],
-        icons=["geo-alt", "bar-chart-line", "check2-square", "database"],
+        options=list(SUB_SECCIONES.keys()),
+        icons=[SUB_SECCIONES[sec]["icon"] for sec in SUB_SECCIONES],
         default_index=0,
         orientation="horizontal",
-        styles={
-            "container": {
-                "padding": "0!important",
-                "margin": "0px",
-                "background-color": "#F0F7F2",
-                "border-radius": "0px",
-                "max-width": "none"
-            },
-            "icon": {
-                "color": "#2C5A2E",
-                "font-size": "25px"
-            },
-            "nav-link": {
-                "color": "#2C5A2E",
-                "font-size": "18px",
-                "text-align": "center",
-                "margin": "0px",
-                "--hover-color": "#66B032",
-                "border-radius": "0px",
-            },
-            "nav-link-selected": {
-                "background-color": "#66B032",
-                "color": "white",
-                "font-weight": "bold"
-            }
-        }
+        styles=MENU_STYLES
     )
 
-    # Conexión y datos comunes
-    conn = get_db_connection()
+    # Obtener datos una sola vez
     username = st.session_state.get("username", "").strip().lower()
-    excluir_para_juan = ["nestor", "rafaela", "jose ramon", "roberto", "marian", "juan pablo"]
-    placeholders = ",".join("?" for _ in excluir_para_juan)
 
-    # Cargar datos según el usuario
-    if username == "juan":
-        assigned_zones = pd.read_sql(
-            f"""
-            SELECT DISTINCT municipio, poblacion, comercial
-            FROM comercial_rafa
-            WHERE LOWER(comercial) NOT IN ({placeholders})
-            """, conn, params=[c.lower() for c in excluir_para_juan])
+    # Cargar todos los datos necesarios en una sola conexión
+    conn = get_db_connection()
 
-        total_ofertas = pd.read_sql(
-            f"""
-            SELECT DISTINCT *
-            FROM comercial_rafa
-            WHERE LOWER(comercial) NOT IN ({placeholders})
-            """, conn, params=[c.lower() for c in excluir_para_juan])
-    elif username == "rafa sanz":
-        # Rafa Sanz no ve a Juan Pablo
-        assigned_zones = pd.read_sql(
-            """
-            SELECT DISTINCT municipio, poblacion, comercial
-            FROM comercial_rafa
-            WHERE LOWER(comercial) != 'juan pablo'
-            """, conn)
+    # Definir configuraciones por usuario
+    USER_CONFIGS = {
+        "juan": {
+            "excluir_comerciales": ["nestor", "rafaela", "jose ramon", "roberto", "marian", "juan pablo"],
+            "comerciales_mios": ["comercial2", "comercial3"],
+            "provincias_datos": ["lugo", "asturias"],
+            "excluir_viabilidades": ["roberto", "jose ramon", "nestor", "rafaela",
+                                     "rebe", "marian", "rafa sanz", "juan pablo"]
+        },
+        "rafa sanz": {
+            "excluir_comerciales": ["juan pablo"],
+            "comerciales_mios": ["roberto", "nestor", "jose ramon"],
+            "provincias_datos": None,
+            "excluir_viabilidades": ["juan pablo", "roberto", "nestor",
+                                     "comercial2", "comercial3", "juan", "marian"]
+        }
+    }
 
-        total_ofertas = pd.read_sql(
-            """
-            SELECT DISTINCT *
-            FROM comercial_rafa
-            WHERE LOWER(comercial) != 'juan pablo'
-            """, conn)
+    config = USER_CONFIGS.get(username, {})
+
+    # Función para construir consultas con parámetros
+    def construir_consulta_exclusion(base_query, exclusion_field="comercial", exclusion_list=None):
+        if not exclusion_list:
+            return base_query, []
+
+        placeholders = ",".join(["?"] * len(exclusion_list))
+        query = f"{base_query} WHERE LOWER({exclusion_field}) NOT IN ({placeholders})"
+        return query, [c.lower() for c in exclusion_list]
+
+    # Cargar datos de zonas asignadas y ofertas
+    if username in USER_CONFIGS:
+        # Consulta base
+        query_zonas = "SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa"
+        query_ofertas = "SELECT DISTINCT * FROM comercial_rafa"
+
+        # Aplicar filtros según usuario
+        exclusion_list = config.get("excluir_comerciales", [])
+
+        if exclusion_list:
+            query_zonas, params = construir_consulta_exclusion(query_zonas, "comercial", exclusion_list)
+            query_ofertas, params_ofertas = construir_consulta_exclusion(query_ofertas, "comercial", exclusion_list)
+        else:
+            query_zonas, params = query_zonas, []
+            query_ofertas, params_ofertas = query_ofertas, []
+
+        assigned_zones = pd.read_sql(query_zonas, conn, params=params)
+        total_ofertas = pd.read_sql(query_ofertas, conn, params=params_ofertas)
     else:
+        # Usuario sin filtros especiales
         assigned_zones = pd.read_sql(
-            "SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa", conn)
-        total_ofertas = pd.read_sql(
-            "SELECT DISTINCT * FROM comercial_rafa", conn)
+            "SELECT DISTINCT municipio, poblacion, comercial FROM comercial_rafa",
+            conn
+        )
+        total_ofertas = pd.read_sql("SELECT DISTINCT * FROM comercial_rafa", conn)
 
-    # Contratos activos
+    # Cargar contratos activos
     df_contratos = pd.read_sql("""
         SELECT apartment_id
         FROM seguimiento_contratos
         WHERE TRIM(LOWER(estado)) = 'finalizado'
     """, conn)
 
+    # Marcar contratos activos (optimizado)
+    total_ofertas['Contrato_Activo'] = total_ofertas['apartment_id'].isin(
+        df_contratos['apartment_id']
+    ).map({True: '✅ Activo', False: '❌ No Activo'})
+
+    # Cerrar conexión temprana
     conn.close()
 
-    # Marcar contratos activos
-    total_ofertas['Contrato_Activo'] = total_ofertas['apartment_id'].isin(df_contratos['apartment_id']).map(
-        {True: '✅ Activo', False: '❌ No Activo'}
-    )
+    # Función para mostrar tarjetas de zonas
+    def mostrar_tarjetas_zonas(zonas_df):
+        if zonas_df.empty:
+            st.warning("⚠️ No se encontraron zonas asignadas para los comerciales de este gestor.")
+            return
 
-    # Subsección: Zonas asignadas
+        resumen = (
+            zonas_df.groupby("comercial")
+            .agg(total_zonas=("municipio", "count"))
+            .reset_index()
+            .sort_values("total_zonas", ascending=False)
+        )
+
+        # Definir colores por rango
+        COLORES_RANGO = {
+            (31, float('inf')): "#C8E6C9",  # verde claro
+            (16, 30): "#FFF9C4",  # amarillo claro
+            (0, 15): "#FFEBEE"  # rojo claro
+        }
+
+        cols = st.columns(len(resumen))
+        for i, row in enumerate(resumen.itertuples()):
+            total = int(row.total_zonas)
+
+            # Determinar color
+            bg_color = "#FFFFFF"  # default
+            for (min_val, max_val), color in COLORES_RANGO.items():
+                if min_val <= total <= max_val:
+                    bg_color = color
+                    break
+
+            with cols[i]:
+                st.markdown(f"""
+                    <div style="
+                        background-color:{bg_color};
+                        padding:20px;
+                        text-align:center;
+                        transition:transform 0.2s ease-in-out;
+                    ">
+                        <h3 style="color:#1B5E20; margin-bottom:10px;">👤 {row.comercial.title()}</h3>
+                        <p style="font-size:30px; font-weight:bold; color:#2E7D32; margin:0;">{total}</p>
+                        <p style="font-size:14px; color:#388E3C; margin-top:5px;">zonas asignadas</p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+    # Procesar según subsección
     if sub_seccion == "Zonas asignadas":
         with st.expander("📊 Información sobre las zonas asignadas", expanded=False):
             st.info("""
@@ -1228,67 +1313,26 @@ def mostrar_descarga_datos():
             - 🔴 **Rojo:** 15 o menos zonas.
             """)
 
-        # 🔹 Filtrar los comerciales según el gestor logueado
-        if username == "juan":
-            comerciales_mios = ["comercial2", "comercial3"]
-            zonas_filtradas = assigned_zones[assigned_zones["comercial"].str.lower().isin(comerciales_mios)]
-        elif username == "rafa sanz":
-            comerciales_mios = ["roberto", "nestor", "jose ramon"]
-            zonas_filtradas = assigned_zones[assigned_zones["comercial"].str.lower().isin(comerciales_mios)]
+        # Filtrar comerciales según el gestor
+        comerciales_mios = config.get("comerciales_mios", [])
+        if comerciales_mios:
+            zonas_filtradas = assigned_zones[
+                assigned_zones["comercial"].str.lower().isin(comerciales_mios)
+            ]
         else:
             zonas_filtradas = assigned_zones.copy()
 
-        # 🔹 Mostrar resumen visual por comercial
-        if not zonas_filtradas.empty:
-            resumen = (
-                zonas_filtradas.groupby("comercial")
-                .agg(total_zonas=("municipio", "count"))
-                .reset_index()
-                .sort_values("total_zonas", ascending=False)
-            )
-
-            # Crear columnas dinámicas según número de comerciales
-            cols = st.columns(len(resumen))
-            for i, row in enumerate(resumen.itertuples()):
-                total = int(row.total_zonas)
-
-                # Color dinámico según volumen de zonas
-                if total > 30:
-                    bg_color = "#C8E6C9"  # verde claro
-                elif total > 15:
-                    bg_color = "#FFF9C4"  # amarillo claro
-                else:
-                    bg_color = "#FFEBEE"  # rojo claro
-
-                with cols[i]:
-                    st.markdown(f"""
-                        <div style="
-                            background-color:{bg_color};
-                            padding:20px;
-                            text-align:center;
-                            transition:transform 0.2s ease-in-out;
-                        ">
-                            <h3 style="color:#1B5E20; margin-bottom:10px;">👤 {row.comercial.title()}</h3>
-                            <p style="font-size:30px; font-weight:bold; color:#2E7D32; margin:0;">{total}</p>
-                            <p style="font-size:14px; color:#388E3C; margin-top:5px;">zonas asignadas</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-        else:
-            st.warning("⚠️ No se encontraron zonas asignadas para los comerciales de este gestor.")
+        mostrar_tarjetas_zonas(zonas_filtradas)
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # 🔹 Mostrar detalle completo debajo de las tarjetas
-        st.dataframe(zonas_filtradas, use_container_width=True)
+        st.dataframe(zonas_filtradas, width='stretch')
 
-    # Sub: Ofertas realizadas
     elif sub_seccion == "Ofertas realizadas":
         log_trazabilidad(username, "Visualización de mapa", "Usuario visualizó el mapa de Rafa Sanz.")
-        st.info(
-            "ℹ️ Ofertas comerciales: Visualización del total de ofertas asignadas a cada comercial y su estado actual")
-        st.dataframe(total_ofertas, use_container_width=True)
+        st.info(f"ℹ️ {SUB_SECCIONES[sub_seccion]['description']}")
+        st.dataframe(total_ofertas, width='stretch')
 
-    # Sub: Viabilidades estudiadas
     elif sub_seccion == "Viabilidades estudiadas":
+        # Cargar viabilidades (conexión específica si es necesario)
         conn = get_db_connection()
         viabilidades = pd.read_sql("""
             SELECT *
@@ -1297,38 +1341,52 @@ def mostrar_descarga_datos():
         """, conn)
         conn.close()
 
-        viabilidades['fecha_viabilidad'] = pd.to_datetime(viabilidades['fecha_viabilidad'], errors='coerce')
+        # Procesar datos
+        viabilidades['fecha_viabilidad'] = pd.to_datetime(
+            viabilidades['fecha_viabilidad'], errors='coerce'
+        )
         viabilidades['usuario'] = viabilidades['usuario'].fillna("").str.strip().str.lower()
 
-        if username == "juan":
-            comerciales_excluir = ["roberto", "jose ramon", "nestor", "rafaela", "rebe", "marian", "rafa sanz", "marian", "juan pablo"]
-            viabilidades = viabilidades[~viabilidades['usuario'].isin(comerciales_excluir)]
-        elif username.lower() == "rafa sanz":
-            viabilidades = viabilidades[~viabilidades['usuario'].isin(["juan pablo", "roberto", "nestor", "Comercial2", "Comercial3","juan","marian"])]
+        # Aplicar filtros de usuario
+        excluir_viabilidades = config.get("excluir_viabilidades", [])
+        if excluir_viabilidades:
+            viabilidades = viabilidades[~viabilidades['usuario'].isin(excluir_viabilidades)]
 
-        st.info(
-            "ℹ️ Viabilidades: Visualización del total de viabilidades reportadas por cada comercial y su estado actual")
-        st.dataframe(viabilidades, use_container_width=True)
-
+        st.info(f"ℹ️ {SUB_SECCIONES[sub_seccion]['description']}")
+        st.dataframe(viabilidades, width='stretch')
 
     elif sub_seccion == "Datos totales":
-        st.info("ℹ️ Visualización total de los datos")
-        username = st.session_state.get("username", "").strip().lower()
-        # Conectar a la base de datos y leer la tabla
+        st.info(f"ℹ️ {SUB_SECCIONES[sub_seccion]['description']}")
+
+        # Cargar datos UIS según usuario
         conn = get_db_connection()
-        datos_uis = pd.read_sql(
-            "SELECT apartment_id, address_id, provincia, municipio, poblacion, vial, numero, parcela_catastral, "
-            "letra, cp, olt, cto, latitud, longitud, comercial FROM datos_uis", conn)
-        conn.close()
+
         if username == "juan":
             # Solo Lugo y Asturias
-            datos_filtrados = datos_uis[datos_uis['provincia'].str.strip().str.lower().isin(["lugo", "asturias"])]
-            st.dataframe(datos_filtrados, use_container_width=True, height=580)
+            datos_uis = pd.read_sql("""
+                SELECT apartment_id, address_id, provincia, municipio, poblacion, 
+                       vial, numero, parcela_catastral, letra, cp, olt, cto, 
+                       latitud, longitud, comercial 
+                FROM datos_uis
+                WHERE LOWER(TRIM(provincia)) IN ('lugo', 'asturias')
+            """, conn)
 
         elif username == "rafa sanz":
-            # Solo registros cuyo comercial sea 'rafa sanz'
-            datos_filtrados = datos_uis[datos_uis['comercial'].str.strip().str.lower() == "rafa sanz"]
-            st.dataframe(datos_filtrados, use_container_width=True, height=580)
+            # Solo registros de 'rafa sanz'
+            datos_uis = pd.read_sql("""
+                SELECT apartment_id, address_id, provincia, municipio, poblacion, 
+                       vial, numero, parcela_catastral, letra, cp, olt, cto, 
+                       latitud, longitud, comercial 
+                FROM datos_uis
+                WHERE LOWER(TRIM(comercial)) = 'rafa sanz'
+            """, conn)
+        else:
+            datos_uis = pd.DataFrame()  # DataFrame vacío para otros usuarios
+
+        conn.close()
+
+        if not datos_uis.empty:
+            st.dataframe(datos_uis, width='stretch', height=580)
         else:
             st.warning("⚠️ No tienes acceso a visualizar estos datos.")
 
@@ -1655,7 +1713,7 @@ def mostrar_viabilidades():
 
         # 📋 Mostrar tabla resultante
         st.info("ℹ️ Listado completo de viabilidades y su estado actual.")
-        st.dataframe(viabilidades, use_container_width=True)
+        st.dataframe(viabilidades, width='stretch')
 
     if sub_seccion == "Crear viabilidades":
         st.info("🆕 Aquí podrás crear nuevas viabilidades manualmente (en desarrollo).")

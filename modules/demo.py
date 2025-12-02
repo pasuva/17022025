@@ -214,9 +214,9 @@ def create_filters(provincias, tipos_olt):
         # Botones de acción
         col1, col2 = st.columns(2)
         with col1:
-            aplicar_filtros = st.button("🔍 Aplicar Filtros", type="primary", use_container_width=True)
+            aplicar_filtros = st.button("🔍 Aplicar Filtros", type="primary", width='stretch')
         with col2:
-            limpiar_filtros = st.button("🧹 Limpiar", use_container_width=True)
+            limpiar_filtros = st.button("🧹 Limpiar", width='stretch')
 
         # Filtro por área
         create_area_filter()
@@ -308,10 +308,10 @@ def create_area_filter():
 
     col3, col4 = st.columns(2)
     with col3:
-        if st.button("📍 Cargar datos del área", type="primary", use_container_width=True):
+        if st.button("📍 Cargar datos del área", type="primary", width='stretch'):
             load_area_data(area_tipo_olt_filter)
     with col4:
-        if st.button("🗑️ Limpiar filtro de área", use_container_width=True):
+        if st.button("🗑️ Limpiar filtro de área", width='stretch'):
             st.session_state.update({
                 "apply_area_filter": False,
                 "drawn_bounds": None,
@@ -700,7 +700,7 @@ def display_data_table(df_display):
     if len(df_table_display) > 500:
         st.info(f"📊 Mostrando {len(df_table_display)} registros. Use la descarga CSV para ver todos los datos.")
 
-    st.dataframe(df_table_display, use_container_width=True)
+    st.dataframe(df_table_display, width='stretch')
 
     # Botón de descarga
     csv = df_table_display.to_csv(index=False)

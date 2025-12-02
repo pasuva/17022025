@@ -1,30 +1,25 @@
 import secrets
 import urllib
-import zipfile, folium, sqlite3, datetime, bcrypt, os, sqlitecloud, io
-import pandas as pd
-import plotly.express as px
-import streamlit as st
+import zipfile, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 from modules.notificaciones import correo_usuario, correo_nuevas_zonas_comercial, correo_excel_control, correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, correo_viabilidad_comercial
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
 from datetime import datetime
 from streamlit_cookies_controller import CookieController
-from folium.plugins import MarkerCluster, Geocoder
-from streamlit_folium import st_folium
-import plotly.graph_objects as go
-from rapidfuzz import fuzz
 from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 from io import BytesIO
 from google.oauth2.service_account import Credentials
 import gspread
 import json
 from googleapiclient.discovery import build
-from branca.element import Template, MacroElement
 import warnings
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 import ftfy
+
+import plotly.express as px
+import plotly.graph_objects as go
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -493,269 +488,768 @@ def cargar_datos_por_provincia(provincia):
     return datos_uis, comercial_rafa_df
 
 
-def mapa_seccion():
-    """Muestra un mapa interactivo con los datos de serviciabilidad y ofertas,
-       con un filtro siempre visible por Apartment ID."""
+import folium
+import pandas as pd
+import numpy as np
+import streamlit as st
+from folium.plugins import MarkerCluster, Geocoder, Fullscreen, MousePosition, MeasureControl
+from streamlit_folium import st_folium
+from branca.element import Template, MacroElement
+from typing import Tuple, Dict, List
+import time
+from functools import lru_cache
 
-    # 🔍 FILTRO OPCIONAL SIEMPRE VISIBLE: Apartment ID
-    apartment_search = st.text_input("🔍 Buscar por Apartment ID (opcional)")
 
-    col1, col2, col3 = st.columns(3)
+# ============================================
+# FUNCIONES DE CARGUE OPTIMIZADAS
+# ============================================
 
-    # —— Si se busca por ID, cargamos todos sin filtrar y aislamos ese registro
-    if apartment_search:
-        datos_uis, comercial_rafa_df = cargar_datos_uis()
-        datos_filtrados = datos_uis[datos_uis["apartment_id"].astype(str) == apartment_search]
-        comercial_rafa_filtradas = comercial_rafa_df[comercial_rafa_df["apartment_id"].astype(str) == apartment_search]
+@st.cache_data(ttl=600, max_entries=20)
+def cargar_provincias() -> List[str]:
+    """Carga la lista de provincias disponibles (cache por 10 minutos)"""
+    conn = obtener_conexion()
+    try:
+        query = "SELECT DISTINCT provincia FROM datos_uis WHERE provincia IS NOT NULL ORDER BY provincia"
+        df = pd.read_sql(query, conn)
+        return df['provincia'].tolist()
+    finally:
+        conn.close()
 
-        if datos_filtrados.empty:
-            st.toast(f"❌ No se encontró ningún Apartment ID **{apartment_search}**.")
-            return
 
-    # —— Si no, fluye tu lógica normal por provincia/municipio/población
+@st.cache_data(ttl=300, max_entries=50)
+def cargar_datos_por_provincia(provincia: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Carga datos de una provincia específica con columnas esenciales"""
+    conn = obtener_conexion()
+    try:
+        # Solo columnas necesarias para el mapa
+        query_uis = f"""
+            SELECT apartment_id, latitud, longitud, provincia, municipio, 
+                   poblacion, vial, numero
+            FROM datos_uis 
+            WHERE provincia = ? 
+            AND latitud IS NOT NULL 
+            AND longitud IS NOT NULL
+            AND latitud != 0 
+            AND longitud != 0
+            LIMIT 1000  -- Limitar para carga rápida
+        """
+
+        query_comercial = f"""
+            SELECT apartment_id, comercial, serviciable, incidencia, contrato
+            FROM comercial_rafa c
+            WHERE EXISTS (
+                SELECT 1 FROM datos_uis d 
+                WHERE d.apartment_id = c.apartment_id 
+                AND d.provincia = ?
+            )
+        """
+
+        datos_uis = pd.read_sql(query_uis, conn, params=(provincia,))
+        comercial_rafa = pd.read_sql(query_comercial, conn, params=(provincia,))
+
+        # Optimizar tipos de datos
+        if not datos_uis.empty and 'latitud' in datos_uis.columns and 'longitud' in datos_uis.columns:
+            datos_uis[['latitud', 'longitud']] = datos_uis[['latitud', 'longitud']].astype(float)
+
+        return datos_uis, comercial_rafa
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=300, max_entries=10)
+def cargar_datos_limitados() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Carga datos limitados para vista inicial rápida"""
+    conn = obtener_conexion()
+    try:
+        # Solo primeros 500 registros para carga rápida
+        query_uis = """
+            SELECT apartment_id, latitud, longitud, provincia, municipio, 
+                   poblacion, vial, numero
+            FROM datos_uis 
+            WHERE latitud IS NOT NULL 
+            AND longitud IS NOT NULL
+            AND latitud != 0 
+            AND longitud != 0
+            LIMIT 500
+        """
+
+        query_comercial = """
+            SELECT apartment_id, comercial, serviciable, incidencia, contrato
+            FROM comercial_rafa
+            LIMIT 1000
+        """
+
+        datos_uis = pd.read_sql(query_uis, conn)
+        comercial_rafa = pd.read_sql(query_comercial, conn)
+
+        if not datos_uis.empty and 'latitud' in datos_uis.columns and 'longitud' in datos_uis.columns:
+            datos_uis[['latitud', 'longitud']] = datos_uis[['latitud', 'longitud']].astype(float)
+
+        return datos_uis, comercial_rafa
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=300)
+def buscar_por_id(apartment_id: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Búsqueda optimizada por ID de apartment"""
+    conn = obtener_conexion()
+    try:
+        query_uis = f"""
+            SELECT apartment_id, latitud, longitud, provincia, municipio, 
+                   poblacion, vial, numero
+            FROM datos_uis 
+            WHERE apartment_id = ? 
+            AND latitud IS NOT NULL 
+            AND longitud IS NOT NULL
+        """
+
+        query_comercial = f"""
+            SELECT apartment_id, comercial, serviciable, incidencia, contrato
+            FROM comercial_rafa
+            WHERE apartment_id = ?
+        """
+
+        datos_uis = pd.read_sql(query_uis, conn, params=(apartment_id,))
+        comercial_rafa = pd.read_sql(query_comercial, conn, params=(apartment_id,))
+
+        if not datos_uis.empty and 'latitud' in datos_uis.columns and 'longitud' in datos_uis.columns:
+            datos_uis[['latitud', 'longitud']] = datos_uis[['latitud', 'longitud']].astype(float)
+
+        return datos_uis, comercial_rafa
+    finally:
+        conn.close()
+
+
+# ============================================
+# FUNCIONES AUXILIARES OPTIMIZADAS
+# ============================================
+
+def crear_diccionarios_optimizados(comercial_df: pd.DataFrame) -> Dict:
+    """Crea diccionarios optimizados para búsqueda rápida"""
+    dicts = {
+        'serviciable': {},
+        'contrato': {},
+        'incidencia': {},
+        'comercial': {}
+    }
+
+    if comercial_df.empty:
+        return dicts
+
+    # Crear diccionarios solo para columnas que existen
+    for columna in dicts.keys():
+        if columna in comercial_df.columns:
+            # Usar vectorización para mejor rendimiento
+            mask = comercial_df[columna].notna()
+            if mask.any():
+                subset = comercial_df[mask]
+                dicts[columna] = pd.Series(
+                    subset[columna].astype(str).str.strip().str.lower().values,
+                    index=subset['apartment_id']
+                ).to_dict()
+
+    return dicts
+
+
+def determinar_color_marcador(apt_id: str, serv_uis: str, dicts: Dict) -> Tuple[str, str]:
+    """Determina el color y categoría del marcador (función vectorizable)"""
+
+    # Valores del diccionario
+    incidencia = dicts['incidencia'].get(apt_id, '')
+    serv_oferta = dicts['serviciable'].get(apt_id, '')
+    contrato = dicts['contrato'].get(apt_id, '')
+
+    # Lógica de decisión optimizada
+    if incidencia == 'sí':
+        return 'purple', 'incidencia'
+    elif serv_oferta == 'no':
+        return 'red', 'no_serviciable'
+    elif serv_uis == 'sí':
+        return 'green', 'serviciable'
+    elif contrato == 'sí' and serv_uis != 'sí':
+        return 'orange', 'contratado'
+    elif contrato == 'no interesado' and serv_uis != 'sí':
+        return 'gray', 'no_interesado'
     else:
-        provincias = cargar_provincias()
-        provincia_sel = col1.selectbox("Provincia", ["Selecciona una provincia"] + provincias)
-        if provincia_sel == "Selecciona una provincia":
-            st.warning("Selecciona una provincia para cargar los datos.")
-            return
+        return 'blue', 'no_visitado'
 
-        with st.spinner("⏳ Cargando datos..."):
-            datos_uis, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
 
-        if datos_uis.empty:
-            st.toast("❌ No se encontraron datos para la provincia seleccionada.")
-            return
+# ============================================
+# FUNCIÓN PRINCIPAL CON FILTROS EN ZONA PRINCIPAL
+# ============================================
 
-        # 🔹 Filtros de Municipio
-        municipios = sorted(datos_uis['municipio'].dropna().unique())
-        municipio_sel = col2.selectbox("Municipio", ["Todas"] + municipios)
-        datos_filtrados = datos_uis if municipio_sel == "Todas" else datos_uis[datos_uis["municipio"] == municipio_sel]
-        comercial_rafa_filtradas = comercial_rafa_df if municipio_sel == "Todas" else comercial_rafa_df[comercial_rafa_df["municipio"] == municipio_sel]
+def agregar_leyenda_al_mapa(mapa):
+    """Añade una leyenda como control HTML al mapa"""
 
-        # 🔹 Filtros de Población
-        poblaciones = sorted(datos_filtrados['poblacion'].dropna().unique())
-        poblacion_sel = col3.selectbox("Población", ["Todas"] + poblaciones)
-        if poblacion_sel != "Todas":
-            datos_filtrados = datos_filtrados[datos_filtrados["poblacion"] == poblacion_sel]
-            comercial_rafa_filtradas = comercial_rafa_filtradas[comercial_rafa_filtradas["poblacion"] == poblacion_sel]
+    leyenda_html = '''
+    <div style="position: fixed; 
+                bottom: 50px; left: 50px; 
+                background-color: white; 
+                border: 2px solid grey; 
+                z-index: 9999; 
+                padding: 10px;
+                border-radius: 5px;
+                font-family: Arial;
+                font-size: 12px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.2);">
+        <h4 style="margin: 0 0 10px 0;">Leyenda</h4>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+            <div style="width: 15px; height: 15px; background-color: green; 
+                        margin-right: 8px; border-radius: 50%;"></div>
+            <span>Serviciable</span>
+        </div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+            <div style="width: 15px; height: 15px; background-color: red; 
+                        margin-right: 8px; border-radius: 50%;"></div>
+            <span>No serviciable</span>
+        </div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+            <div style="width: 15px; height: 15px; background-color: blue; 
+                        margin-right: 8px; border-radius: 50%;"></div>
+            <span>Contratado</span>
+        </div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+            <div style="width: 15px; height: 15px; background-color: orange; 
+                        margin-right: 8px; border-radius: 50%;"></div>
+            <span>Incidencia</span>
+        </div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+            <div style="width: 15px; height: 15px; background-color: gray; 
+                        margin-right: 8px; border-radius: 50%;"></div>
+            <span>No interesado</span>
+        </div>
+        <div style="display: flex; align-items: center;">
+            <div style="width: 15px; height: 15px; background-color: black; 
+                        margin-right: 8px; border-radius: 50%;"></div>
+            <span>No visitado</span>
+        </div>
+    </div>
+    '''
 
-    # 🔹 Filtramos datos sin coordenadas y convertimos tipos
-    datos_filtrados = datos_filtrados.dropna(subset=['latitud', 'longitud'])
-    datos_filtrados[['latitud', 'longitud']] = datos_filtrados[['latitud', 'longitud']].astype(float)
-    if datos_filtrados.empty:
-        st.warning("⚠️ No hay datos que cumplan los filtros seleccionados.")
+    mapa.get_root().html.add_child(folium.Element(leyenda_html))
+
+
+def determinar_color_marcador(apartment_id: str, serv_uis: str, dicts: Dict) -> Tuple[str, str]:
+    """
+    Determina el color y estado del marcador basado en múltiples fuentes
+
+    Prioridad:
+    1. Datos comerciales (si existe registro)
+    2. Datos UIS (serv_uis)
+    3. Por defecto: 'no_visitado'
+    """
+
+    # Primero verificar si existe en datos comerciales
+    if apartment_id in dicts.get('serviciable', {}):
+        serv_comercial = dicts['serviciable'][apartment_id]
+
+        # Verificar si hay incidencia
+        if apartment_id in dicts.get('incidencia', {}) and dicts['incidencia'][apartment_id] == 'sí':
+            return 'orange', 'incidencia'
+
+        # Verificar si está contratado
+        if apartment_id in dicts.get('contrato', {}) and dicts['contrato'][apartment_id] == 'sí':
+            return 'blue', 'contratado'
+
+        # Verificar estado serviciable
+        if serv_comercial == 'sí':
+            return 'green', 'serviciable'
+        elif serv_comercial == 'no':
+            return 'red', 'no_serviciable'
+        elif serv_comercial == 'no interesado':
+            return 'gray', 'no_interesado'
+
+    # Si no hay datos comerciales, usar datos UIS
+    if serv_uis and isinstance(serv_uis, str):
+        serv_uis_lower = serv_uis.lower()
+        if 'serviciable' in serv_uis_lower or 'sí' in serv_uis_lower:
+            return 'green', 'serviciable'
+        elif 'no serviciable' in serv_uis_lower or 'no' in serv_uis_lower:
+            return 'red', 'no_serviciable'
+
+    # Por defecto
+    return 'black', 'no_visitado'
+
+
+def mostrar_info_detallada(apartment_id: str, datos_filtrados: pd.DataFrame,
+                           comercial_filtradas: pd.DataFrame, dicts: Dict):
+    """Muestra información detallada del apartamento clicado"""
+
+    # Quitar el prefijo "🏠 " si existe
+    apartment_id = apartment_id.replace("🏠 ", "")
+
+    st.subheader(f"🏠 **Información del Apartment ID: {apartment_id}**")
+
+    # Buscar datos en ambos dataframes
+    datos_apt = datos_filtrados[datos_filtrados['apartment_id'] == apartment_id]
+    comercial_apt = comercial_filtradas[comercial_filtradas['apartment_id'] == apartment_id]
+
+    if datos_apt.empty:
+        st.warning("No se encontraron datos para este apartamento")
         return
 
-    # 🔹 Unificar la información comercial de ambas fuentes
-    ofertas_combinadas = pd.concat([comercial_rafa_filtradas], ignore_index=True)
-    serviciable_dict = ofertas_combinadas.set_index("apartment_id")["serviciable"].str.strip().str.lower().to_dict()
-    contrato_dict    = ofertas_combinadas.set_index("apartment_id")["Contrato"].str.strip().str.lower().to_dict()
-    incidencia_dict  = ofertas_combinadas.set_index("apartment_id")["incidencia"].str.strip().str.lower().to_dict()
+    datos_apt = datos_apt.iloc[0]
 
-    # 🔹 Calcular centro del mapa
-    center_lat, center_lon = datos_filtrados[['latitud', 'longitud']].mean()
-
-    limpiar_mapa()  # evita sobrecarga de mapas
-
-    with st.spinner("⏳ Cargando mapa..."):
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            zoom_start=12,
-            max_zoom=21,
-            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-            attr="Google"
-        )
-        Geocoder().add_to(m)
-
-        # Clustering
-        if m.options['zoom'] >= 15:
-            cluster_layer = m
-        else:
-            cluster_layer = MarkerCluster(maxClusterRadius=5, minClusterSize=3).add_to(m)
-
-        # 1️⃣ Detectar duplicados
-        coord_counts = {}
-        for _, row in datos_filtrados.iterrows():
-            coord = (row['latitud'], row['longitud'])
-            coord_counts[coord] = coord_counts.get(coord, 0) + 1
-
-        # 2️⃣ Dibujar marcadores con desplazamiento si hace falta
-        for _, row in datos_filtrados.iterrows():
-            apt_id = row['apartment_id']
-            lat_val, lon_val = row['latitud'], row['longitud']
-            popup_text = f"🏠 {apt_id} - 📍 {lat_val}, {lon_val}"
-
-            # Asegura que ningún valor sea None antes de aplicar strip y lower
-            serv_uis = (str(row.get("serviciable") or "")).strip().lower()
-            serv_oferta = (serviciable_dict.get(apt_id) or "").strip().lower()
-            contrato = (contrato_dict.get(apt_id) or "").strip().lower()
-            incidencia = (incidencia_dict.get(apt_id) or "").strip().lower()
-
-            if incidencia == "sí":
-                marker_color = 'purple'
-            elif serv_oferta == "no":
-                marker_color = 'red'
-            elif serv_uis == "si":
-                marker_color = 'green'
-            elif contrato == "sí" and serv_uis != "si":
-                marker_color = 'orange'
-            elif contrato == "no interesado" and serv_uis != "si":
-                marker_color = 'gray'
-            else:
-                marker_color = 'blue'
-
-            # aplicar offset si duplicados
-            count = coord_counts[(row['latitud'], row['longitud'])]
-            if count > 1:
-                lat_val += count * 0.00003
-                lon_val -= count * 0.00003
-                coord_counts[(row['latitud'], row['longitud'])] -= 1
-
-            folium.Marker(
-                location=[lat_val, lon_val],
-                popup=popup_text,
-                icon=folium.Icon(color=marker_color, icon="map-marker"),
-                tooltip=apt_id
-            ).add_to(cluster_layer)
-
-        # renderizar y captura de click
-        legend = """
-                    {% macro html(this, kwargs) %}
-                    <div style="
-                        position: fixed; 
-                        bottom: 0px; left: 0px; width: 190px; 
-                        z-index:9999; 
-                        font-size:14px;
-                        background-color: white;
-                        color: black;
-                        border:2px solid grey;
-                        border-radius:8px;
-                        padding: 10px;
-                        box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-                    ">
-                    <b>Leyenda</b><br>
-                    <i style="color:green;">●</i> Serviciable y Finalizado<br>
-                    <i style="color:red;">●</i> No serviciable<br>
-                    <i style="color:orange;">●</i> Contrato Sí<br>
-                    <i style="color:black;">●</i> No interesado<br>
-                    <i style="color:purple;">●</i> Incidencia<br>
-                    <i style="color:blue;">●</i> No Visitado<br>
-                    </div>
-                    {% endmacro %}
-                    """
-
-        macro = MacroElement()
-        macro._template = Template(legend)
-        m.get_root().add_child(macro)
-        map_data = st_folium(m, height=500, use_container_width=True)
-        selected_apartment = map_data.get("last_object_clicked_tooltip")
-        if selected_apartment:
-            mostrar_info_apartamento(selected_apartment,
-                                     datos_filtrados,
-                                     comercial_rafa_df)
-
-def mostrar_info_apartamento(apartment_id, datos_df, comercial_rafa_df):
-    """ Muestra la información del apartamento clicado, junto con un campo para comentarios.
-        Se actualiza el campo 'comentarios' en la tabla (comercial_rafa) donde se encuentre el registro.
-    """
-    st.subheader(f"🏠 **Información del Apartament ID {apartment_id}**")
-
-    # Obtener los datos de cada DataFrame usando el apartment_id
-    datos_info = datos_df[datos_df["apartment_id"] == apartment_id]
-    comercial_rafa_info = comercial_rafa_df[comercial_rafa_df["apartment_id"] == apartment_id]
-
-    # Layout con dos columnas para mostrar las tablas
+    # Crear columnas para la visualización
     col1, col2 = st.columns(2)
 
-    # Tabla de Datos Generales
-    if not datos_info.empty:
-        with col1:
-            st.markdown("##### 🔹 **Datos Generales**")
-            data_uis = {
-                "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Calle/Vial", "Número", "Letra",
-                          "Código Postal", "cto_id", "cto", "Estado del Sitio", "Estado del Apartamento",
-                          "Proyecto de CTO", "Zona"],
-                "Valor": [
-                    datos_info.iloc[0]['apartment_id'],
-                    datos_info.iloc[0]['provincia'],
-                    datos_info.iloc[0]['municipio'],
-                    datos_info.iloc[0]['poblacion'],
-                    datos_info.iloc[0]['vial'],
-                    datos_info.iloc[0]['numero'],
-                    datos_info.iloc[0]['letra'],
-                    datos_info.iloc[0]['cp'],
-                    datos_info.iloc[0]['cto_id'],
-                    datos_info.iloc[0]['cto'],
-                    datos_info.iloc[0]['site_operational_state'],
-                    datos_info.iloc[0]['apartment_operational_state'],
-                    datos_info.iloc[0]['tipo_olt_rental'],
-                    datos_info.iloc[0]['zona']
-                ]
-            }
-            df_uis = pd.DataFrame(data_uis)
-            st.dataframe(df_uis.style.set_table_styles([{'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},{'selector': 'tbody td', 'props': [('padding', '10px')]},]))
-    else:
-        with col1:
-            st.warning("❌ **No se encontraron datos para el apartamento en `datos_uis`.**")
+    # Columna 1: Datos generales
+    with col1:
+        st.markdown("##### 🔹 **Datos Generales**")
 
-    # Tabla de Datos Comerciales (prioridad a ofertas_info, luego comercial_rafa_info)
-    fuente = None
-    tabla_objetivo = None  # Variable para determinar qué tabla actualizar.
-    if not comercial_rafa_info.empty:
-        fuente = comercial_rafa_info
-        tabla_objetivo = "comercial_rafa"
-    else:
-        with col2:
-            st.warning("❌ **No se encontraron datos para el apartamento en `comercial_rafa`.**")
+        datos_generales = {
+            "ID Apartamento": datos_apt.get('apartment_id', 'N/A'),
+            "Provincia": datos_apt.get('provincia', 'N/A'),
+            "Municipio": datos_apt.get('municipio', 'N/A'),
+            "Población": datos_apt.get('poblacion', 'N/A'),
+            "Dirección": f"{datos_apt.get('vial', '')} {datos_apt.get('numero', '')} {datos_apt.get('letra', '')}",
+            "Código Postal": datos_apt.get('cp', 'N/A'),
+            "CTO ID": datos_apt.get('cto_id', 'N/A'),
+            "Zona": datos_apt.get('zona', 'N/A')
+        }
 
-    if fuente is not None:
-        with col2:
-            st.markdown("##### 🔹 **Datos Comerciales**")
-            data_comercial = {
-                "Campo": ["ID Apartamento", "Provincia", "Municipio", "Población", "Serviciable", "Motivo Serviciable",
-                          "Incidencia", "Motivo de Incidencia", "Nombre Cliente", "Teléfono", "Dirección Alternativa",
-                          "Observaciones", "Comercial", "Comentarios"],
-                "Valor": [
-                    fuente.iloc[0]['apartment_id'],
-                    fuente.iloc[0]['provincia'],
-                    fuente.iloc[0]['municipio'],
-                    fuente.iloc[0]['poblacion'],
-                    fuente.iloc[0]['serviciable'],
-                    fuente.iloc[0].get('motivo_serviciable', 'No disponible'),
-                    fuente.iloc[0].get('incidencia', 'No disponible'),
-                    fuente.iloc[0].get('motivo_incidencia', 'No disponible'),
-                    fuente.iloc[0].get('nombre_cliente', 'No disponible'),
-                    fuente.iloc[0].get('telefono', 'No disponible'),
-                    fuente.iloc[0].get('direccion_alternativa', 'No disponible'),
-                    fuente.iloc[0].get('observaciones', 'No hay observaciones.'),
-                    fuente.iloc[0].get('comercial', 'No disponible.'),
-                    fuente.iloc[0].get('comentarios', 'No disponible.')
-                ]
-            }
-            df_comercial = pd.DataFrame(data_comercial)
-            st.dataframe(df_comercial.style.set_table_styles([{'selector': 'thead th', 'props': [('background-color', '#f1f1f1'), ('font-weight', 'bold')]},{'selector': 'tbody td', 'props': [('padding', '10px')]},]))
+        for key, value in datos_generales.items():
+            st.text(f"{key}: {value}")
 
-        # Preparamos el comentario ya existente para el formulario
-        # Si el campo es None o 'No disponible.' se muestra una cadena vacía para editar
-        comentario_previo = fuente.iloc[0].get('comentarios') or ""
-        if comentario_previo == "No disponible.":
-            comentario_previo = ""
+    # Columna 2: Datos comerciales y estado
+    with col2:
+        st.markdown("##### 🔹 **Estado y Comercial**")
 
-        # Campo para agregar o editar nuevos comentarios, utilizando el comentario previo como valor inicial
-        nuevo_comentario = st.text_area(f"### 🔹 **Añadir/Editar Comentario u Observación de {apartment_id}**",
-                                        value=comentario_previo,
-                                        help="El comentario se guardará en la tabla correspondiente de la base de datos, asociado al Apartment ID elegido")
-        if st.button("Guardar Comentario"):
-            if not nuevo_comentario.strip():
-                st.toast("❌ El comentario no puede estar vacío.")
-            else:
-                # Actualizamos la base de datos
-                resultado = guardar_comentario(apartment_id, nuevo_comentario, tabla_objetivo)
-                if resultado:
-                    st.toast("✅ Comentario guardado exitosamente.")
+        # Determinar estado actual
+        serv_uis = str(datos_apt.get('serviciable', '')).lower().strip()
+        _, estado = determinar_color_marcador(apartment_id, serv_uis, dicts)
+
+        st.metric("Estado", estado.replace('_', ' ').title())
+
+        if apartment_id in dicts.get('comercial', {}):
+            st.metric("Comercial", dicts['comercial'][apartment_id])
+
+        if apartment_id in dicts.get('serviciable', {}):
+            st.metric("Serviciable", dicts['serviciable'][apartment_id].title())
+
+    # Sección de comentarios si hay datos comerciales
+    if not comercial_apt.empty:
+        st.markdown("---")
+        st.markdown("##### 📝 **Información Comercial**")
+
+        # Mostrar datos comerciales
+        comercial_data = comercial_apt.iloc[0]
+        cols_com = st.columns(2)
+
+        with cols_com[0]:
+            if 'motivo_serviciable' in comercial_data:
+                st.text(f"Motivo: {comercial_data['motivo_serviciable']}")
+            if 'nombre_cliente' in comercial_data:
+                st.text(f"Cliente: {comercial_data['nombre_cliente']}")
+
+        with cols_com[1]:
+            if 'telefono' in comercial_data:
+                st.text(f"Teléfono: {comercial_data['telefono']}")
+            if 'observaciones' in comercial_data:
+                st.text(f"Observaciones: {comercial_data['observaciones']}")
+
+        # Campo para comentarios
+        st.markdown("##### 💬 **Comentarios**")
+
+        # Obtener comentario actual
+        comentario_actual = comercial_data.get('comentarios', '')
+        if pd.isna(comentario_actual):
+            comentario_actual = ""
+
+        nuevo_comentario = st.text_area(
+            "Añadir o editar comentario:",
+            value=comentario_actual,
+            height=100,
+            key=f"comentario_{apartment_id}"
+        )
+
+        if st.button("💾 Guardar Comentario", key=f"guardar_{apartment_id}"):
+            try:
+                # Actualizar el comentario en los datos
+                if 'guardar_comentario' in globals():
+                    resultado = guardar_comentario(apartment_id, nuevo_comentario, "comercial_rafa")
+                    if resultado:
+                        st.success("✅ Comentario guardado exitosamente")
+                        st.rerun()
                 else:
-                    st.toast("❌ Hubo un error al guardar el comentario. Intenta nuevamente.")
+                    st.info("⚠️ La función 'guardar_comentario' no está disponible")
+            except Exception as e:
+                st.error(f"❌ Error al guardar: {str(e)}")
+
+
+def mapa_seccion():
+    """Muestra un mapa interactivo con filtros en zona principal"""
+
+    # Fila 1: Búsqueda por ID y Provincia
+    col1, col2, col3 = st.columns([2, 2, 1])
+
+    with col1:
+        apartment_search = st.text_input(
+            "Buscar por Apartment ID",
+            placeholder="Ej: APT123456",
+            help="Busca un apartment específico por su ID",
+            key="search_id_input"
+        )
+
+    with col2:
+        # Cargar provincias
+        with st.spinner("Cargando..."):
+            provincias = cargar_provincias()
+
+        provincia_sel = st.selectbox(
+            "Provincia",
+            ["Selecciona provincia"] + provincias,
+            key="select_provincia_input"
+        )
+
+    with col3:
+        modo_busqueda = st.radio(
+            "Modo",
+            ["Exacta", "Parcial"],
+            horizontal=True,
+            index=0,
+            key="modo_busqueda_input",
+            label_visibility="collapsed"
+        )
+
+    # Fila 2: Filtros avanzados en expander
+    with st.expander("⚙️ Filtros Avanzados", expanded=False):
+        col_a1, col_a2, col_a3, col_a4 = st.columns(4)
+
+        with col_a1:
+            estado_filtro = st.multiselect(
+                "Filtrar por estado",
+                ["Serviciable", "No serviciable", "Contratado", "Incidencia", "No interesado", "No visitado"],
+                default=["Serviciable", "No serviciable", "Contratado", "Incidencia", "No interesado", "No visitado"],
+                key="estado_filtro_input"
+            )
+
+        with col_a2:
+            mostrar_clusters = st.checkbox("Mostrar clusters", value=True, key="mostrar_clusters_input")
+
+        with col_a3:
+            mostrar_leyenda = st.checkbox("Mostrar leyenda en mapa", value=True, key="mostrar_leyenda_input")
+
+        with col_a4:
+            zoom_inicial = st.slider("Zoom inicial", 8, 18, 12, key="zoom_inicial_input")
+
+    # ===== LÓGICA DE CARGA DE DATOS =====
+
+    # Inicializar variables
+    datos_filtrados = pd.DataFrame()
+    comercial_filtradas = pd.DataFrame()
+    dicts = {}
+
+    # Opción 1: Búsqueda por ID
+    if apartment_search:
+        with st.spinner("🔍 Buscando apartment..."):
+            if modo_busqueda == "Exacta":
+                datos_uis, comercial_rafa_df = buscar_por_id(apartment_search)
+                if not datos_uis.empty:
+                    datos_filtrados = datos_uis
+                    comercial_filtradas = comercial_rafa_df
+                    st.success(f"✅ Encontrado: {apartment_search}")
+                else:
+                    st.error(f"❌ No se encontró el Apartment ID: {apartment_search}")
+                    return
+            else:
+                # Búsqueda parcial - cargar datos limitados primero
+                datos_uis, comercial_rafa_df = cargar_datos_limitados()
+                mask = datos_uis['apartment_id'].astype(str).str.contains(apartment_search, case=False, na=False)
+                datos_filtrados = datos_uis[mask]
+                comercial_filtradas = comercial_rafa_df[
+                    comercial_rafa_df['apartment_id'].isin(datos_filtrados['apartment_id'])]
+
+                if datos_filtrados.empty:
+                    st.warning(f"⚠️ No se encontraron coincidencias para: {apartment_search}")
+                    # Mostrar vista limitada por defecto
+                    datos_filtrados, comercial_filtradas = cargar_datos_limitados()
+                else:
+                    st.success(f"✅ Encontradas {len(datos_filtrados)} coincidencias")
+
+    # Opción 2: Filtro por provincia
+    elif provincia_sel != "Selecciona provincia":
+        with st.spinner(f"⏳ Cargando datos de {provincia_sel}..."):
+            datos_uis, comercial_rafa_df = cargar_datos_por_provincia(provincia_sel)
+
+            if datos_uis.empty:
+                st.warning(f"⚠️ No hay datos para {provincia_sel}")
+                # Cargar vista limitada
+                datos_filtrados, comercial_filtradas = cargar_datos_limitados()
+            else:
+                datos_filtrados = datos_uis
+                comercial_filtradas = comercial_rafa_df
+
+                # Filtros adicionales
+                col_m1, col_m2 = st.columns(2)
+
+                with col_m1:
+                    if 'municipio' in datos_filtrados.columns:
+                        municipios = ["Todos"] + sorted(datos_filtrados['municipio'].dropna().unique().tolist())
+                        municipio_sel = st.selectbox("Municipio", municipios, key="select_municipio_input")
+
+                        if municipio_sel and municipio_sel != "Todos":
+                            datos_filtrados = datos_filtrados[datos_filtrados['municipio'] == municipio_sel]
+
+                with col_m2:
+                    if 'poblacion' in datos_filtrados.columns and 'municipio_sel' in locals() and municipio_sel != "Todos":
+                        poblaciones = ["Todas"] + sorted(datos_filtrados['poblacion'].dropna().unique().tolist())
+                        poblacion_sel = st.selectbox("Población", poblaciones, key="select_poblacion_input")
+
+                        if poblacion_sel and poblacion_sel != "Todas":
+                            datos_filtrados = datos_filtrados[datos_filtrados['poblacion'] == poblacion_sel]
+
+    # Opción 3: Vista inicial (sin filtros)
+    else:
+        st.info("👆 Selecciona una provincia o busca por ID para cargar datos")
+
+        # Cargar datos limitados para vista previa
+        with st.spinner("⏳ Cargando vista previa..."):
+            datos_filtrados, comercial_filtradas = cargar_datos_limitados()
+
+            if not datos_filtrados.empty:
+                st.success(f"✅ Vista previa cargada: {len(datos_filtrados)} apartments")
+
+    # ===== VERIFICACIÓN Y PROCESAMIENTO DE DATOS =====
+
+    if datos_filtrados.empty:
+        st.warning("⚠️ No hay datos para mostrar. Prueba con otros filtros.")
+        return
+
+    # Crear diccionarios optimizados
+    dicts = crear_diccionarios_optimizados(comercial_filtradas)
+
+    # Aplicar filtros de estado si están activos
+    if estado_filtro and len(estado_filtro) < 6:
+        estados_permitidos = [estado.lower().replace(" ", "_") for estado in estado_filtro]
+
+        # Calcular estado para cada fila
+        estados = []
+        for _, row in datos_filtrados.iterrows():
+            apt_id = row['apartment_id']
+            serv_uis = str(row.get('serviciable', '')).lower().strip() if 'serviciable' in row else ''
+            _, estado = determinar_color_marcador(apt_id, serv_uis, dicts)
+            estados.append(estado)
+
+        # Filtrar por estado
+        mask = [estado in estados_permitidos for estado in estados]
+        datos_filtrados = datos_filtrados[mask].copy()
+
+        # Actualizar datos comerciales
+        if not datos_filtrados.empty:
+            apt_ids = datos_filtrados['apartment_id'].tolist()
+            comercial_filtradas = comercial_filtradas[comercial_filtradas['apartment_id'].isin(apt_ids)]
+            dicts = crear_diccionarios_optimizados(comercial_filtradas)
+
+    # ===== ESTADÍSTICAS =====
+    if not datos_filtrados.empty:
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+
+        with col_s1:
+            st.metric("Total Apartments", f"{len(datos_filtrados):,}")
+
+        with col_s2:
+            if not comercial_filtradas.empty:
+                comerciales = comercial_filtradas['comercial'].nunique()
+                st.metric("Comerciales", comerciales)
+
+        with col_s3:
+            # Contar serviciables
+            serviciables = sum(1 for apt_id in datos_filtrados['apartment_id']
+                               if dicts.get('serviciable', {}).get(apt_id) == 'sí')
+            st.metric("Serviciables", serviciables)
+
+        with col_s4:
+            # Contar incidencias
+            incidencias = sum(1 for apt_id in datos_filtrados['apartment_id']
+                              if dicts.get('incidencia', {}).get(apt_id) == 'sí')
+            st.metric("Incidencias", incidencias)
+
+    # ===== CREACIÓN DEL MAPA =====
+
+    if datos_filtrados.empty:
+        st.warning("⚠️ No hay datos que cumplan los filtros seleccionados")
+        return
+
+    # Calcular centro del mapa
+    if len(datos_filtrados) == 1:
+        center_lat = float(datos_filtrados.iloc[0]['latitud'])
+        center_lon = float(datos_filtrados.iloc[0]['longitud'])
+        zoom_start = 16
+    elif len(datos_filtrados) <= 10:
+        center_lat = float(datos_filtrados['latitud'].mean())
+        center_lon = float(datos_filtrados['longitud'].mean())
+        zoom_start = 14
+    else:
+        center_lat = float(datos_filtrados['latitud'].mean())
+        center_lon = float(datos_filtrados['longitud'].mean())
+        zoom_start = zoom_inicial
+
+    # Crear mapa
+    with st.spinner("🗺️ Generando mapa..."):
+        m = folium.Map(
+            location=[center_lat, center_lon],
+            zoom_start=zoom_start,
+            max_zoom=21,
+            tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+            attr="Google Satellite",
+            control_scale=True
+        )
+
+        # Añadir plugins
+        if mostrar_clusters and len(datos_filtrados) > 10:
+            cluster_layer = MarkerCluster(
+                max_cluster_radius=80,
+                min_cluster_size=2,
+                disable_clustering_at_zoom=16
+            ).add_to(m)
+            layer = cluster_layer
+        else:
+            layer = m
+
+        Geocoder(collapsed=True, position='topright').add_to(m)
+        Fullscreen(position='topright').add_to(m)
+
+        # Añadir leyenda al mapa si está activado
+        if mostrar_leyenda:
+            agregar_leyenda_al_mapa(m)
+
+        # Manejar coordenadas duplicadas
+        coord_counts = {}
+        for _, row in datos_filtrados.iterrows():
+            coord = (round(row['latitud'], 6), round(row['longitud'], 6))
+            coord_counts[coord] = coord_counts.get(coord, 0) + 1
+
+        # Añadir marcadores
+        markers_added = 0
+        for _, row in datos_filtrados.iterrows():
+            apt_id = row['apartment_id']
+            lat = float(row['latitud'])
+            lon = float(row['longitud'])
+
+            # Aplicar offset si hay duplicados
+            coord_key = (round(lat, 6), round(lon, 6))
+            if coord_counts.get(coord_key, 0) > 1:
+                offset = coord_counts[coord_key] * 0.00002
+                lat += offset
+                lon -= offset
+                coord_counts[coord_key] -= 1
+
+            # Determinar color
+            serv_uis = str(row.get('serviciable', '')).lower().strip() if 'serviciable' in row else ''
+            color, estado = determinar_color_marcador(apt_id, serv_uis, dicts)
+
+            # Crear popup
+            popup_html = f"""
+            <div style="font-family: Arial; max-width: 250px;">
+                <div style="background: #2c3e50; color: white; padding: 8px; border-radius: 5px 5px 0 0;">
+                    <strong>🏠 {apt_id}</strong>
+                </div>
+                <div style="padding: 10px;">
+                    <div><strong>📍 Ubicación:</strong></div>
+                    <div>{row.get('provincia', '')}</div>
+                    <div>{row.get('municipio', '')} - {row.get('poblacion', '')}</div>
+                    <div style="margin-top: 5px;">{row.get('vial', '')} {row.get('numero', '')}</div>
+                    <div style="color: #666; font-size: 11px; margin-top: 5px;">
+                        📍 {lat:.6f}, {lon:.6f}
+                    </div>
+            """
+
+            # Añadir info comercial si existe
+            if apt_id in dicts.get('comercial', {}) or apt_id in dicts.get('serviciable', {}):
+                popup_html += '<hr style="margin: 10px 0;"><div><strong>👤 Datos:</strong></div>'
+
+                if apt_id in dicts.get('comercial', {}):
+                    popup_html += f"<div>Comercial: {dicts['comercial'][apt_id]}</div>"
+
+                if apt_id in dicts.get('serviciable', {}):
+                    serv_value = dicts['serviciable'][apt_id].title()
+                    popup_html += f"<div>Serviciable: {serv_value}</div>"
+
+            popup_html += "</div></div>"
+
+            # Crear marcador
+            folium.Marker(
+                location=[lat, lon],
+                popup=folium.Popup(popup_html, max_width=300),
+                tooltip=f"🏠 {apt_id}",
+                icon=folium.Icon(color=color, icon="home", prefix="fa")
+            ).add_to(layer)
+
+            markers_added += 1
+
+            # Límite de rendimiento
+            if markers_added >= 1000:
+                st.warning("⚠️ Mostrando primeros 1000 puntos por rendimiento")
+                break
+
+        # Renderizar mapa
+        map_data = st_folium(
+            m,
+            height=600,
+            width='stretch',
+            returned_objects=["last_object_clicked_tooltip", "bounds", "zoom"]
+        )
+
+        # Manejar clic en marcador
+        if map_data and map_data.get("last_object_clicked_tooltip"):
+            mostrar_info_detallada(
+                map_data["last_object_clicked_tooltip"],
+                datos_filtrados,
+                comercial_filtradas,
+                dicts
+            )
+
+    # ===== ACCIONES RÁPIDAS =====
+    col_a1, col_a2, col_a3 = st.columns(3)
+
+    with col_a1:
+        if st.button("🔄 Actualizar Vista", width='stretch'):
+            st.cache_data.clear()
+            st.rerun()
+
+    with col_a2:
+        if st.button("📍 Ver Todos", width='stretch', key="ver_todos_btn"):
+            # Limpiar caché y recargar para mostrar todos
+            st.cache_data.clear()
+            st.rerun()
+
+    with col_a3:
+        # Exportar datos
+        if not datos_filtrados.empty:
+            csv = datos_filtrados.to_csv(index=False, sep=';')
+            st.download_button(
+                label="📥 Exportar CSV",
+                data=csv,
+                file_name=f"mapa_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                width='stretch',
+                key="exportar_csv_btn"
+            )
+
+
+# Funciones de compatibilidad
+def limpiar_mapa():
+    """Función placeholder para mantener compatibilidad"""
+    pass
+
+
+def cargar_datos_uis():
+    """Función original para mantener compatibilidad"""
+    return cargar_datos_limitados()
+
+
+def mostrar_info_rapida(apartment_id: str, datos_filtrados: pd.DataFrame,
+                        comercial_filtradas: pd.DataFrame, dicts: Dict):
+    """Función original para mantener compatibilidad - usar mostrar_info_detallada en su lugar"""
+    mostrar_info_detallada(apartment_id, datos_filtrados, comercial_filtradas, dicts)
+
+
+def mostrar_info_apartamento(apartment_id, datos_df, comercial_rafa_df):
+    """Función original para mantener compatibilidad - usar mostrar_info_detallada en su lugar"""
+    dicts = crear_diccionarios_optimizados(comercial_rafa_df)
+    mostrar_info_detallada(apartment_id, datos_df, comercial_rafa_df, dicts)
 
 
 def guardar_comentario(apartment_id, comentario, tabla):
@@ -868,17 +1362,17 @@ def viabilidades_seccion():
                 return
 
         # Agregamos columna de duplicados
-        viabilidades_df['is_duplicate'] = viabilidades_df['apartment_id'].duplicated(keep=False)
-        # ✅ Agregamos columna que indica si tiene presupuesto asociado
+        viabilidades_df.loc[:, 'is_duplicate'] = viabilidades_df['apartment_id'].duplicated(keep=False)
+
+        # ✅ CORRECCIÓN 2: Agregar columna que indica si tiene presupuesto asociado
         try:
             conn = obtener_conexion()
             presupuestos_df = pd.read_sql("SELECT DISTINCT ticket FROM presupuestos_viabilidades", conn)
             conn.close()
-
-            viabilidades_df['tiene_presupuesto'] = viabilidades_df['ticket'].isin(presupuestos_df['ticket'])
-
+            # Usar .loc para una asignación segura
+            viabilidades_df.loc[:, 'tiene_presupuesto'] = viabilidades_df['ticket'].isin(presupuestos_df['ticket'])
         except Exception as e:
-            viabilidades_df['tiene_presupuesto'] = False
+            viabilidades_df.loc[:, 'tiene_presupuesto'] = False
 
         def highlight_duplicates(val):
             if isinstance(val, str) and val in viabilidades_df[viabilidades_df['is_duplicate']]['apartment_id'].values:
@@ -894,7 +1388,7 @@ def viabilidades_seccion():
             if 'ticket' in cols:
                 cols.remove('ticket')
                 cols = ['ticket'] + cols
-            df_reordered = viabilidades_df[cols]
+            df_reordered = viabilidades_df[cols].copy()
 
             # Preparamos la configuración con filtros y anchos
             gb = GridOptionsBuilder.from_dataframe(df_reordered)
@@ -908,7 +1402,7 @@ def viabilidades_seccion():
             )
 
             # Resaltado de duplicados
-            dup_ids = viabilidades_df.loc[viabilidades_df['is_duplicate'], 'apartment_id'].unique().tolist()
+            dup_ids = viabilidades_df.loc[viabilidades_df['is_duplicate'], 'apartment_id'].copy().unique().tolist()
 
             gb.configure_column(
                 'apartment_id',
@@ -989,7 +1483,7 @@ def viabilidades_seccion():
             if st.session_state.get("selected_ticket"):
                 ticket_str = str(st.session_state["selected_ticket"]).strip()
                 mask = viabilidades_df["ticket"].astype(str).str.strip() == ticket_str
-                filtered = viabilidades_df.loc[mask]
+                filtered = viabilidades_df.loc[mask].copy()
                 if not filtered.empty:
                     selected_viabilidad = filtered.iloc[0].copy()
 
@@ -1220,7 +1714,8 @@ def viabilidades_seccion():
                     destinatarios_posibles = {
                         "Rafa Sanz": "rafasanz9@gmail.com",
                         "Juan AsturPhone": "admin@asturphone.com",
-                        "Correo para pruebas": "patricia@verdetuoperador.com"
+                        "Correo para pruebas": "patricia@verdetuoperador.com",
+                        "Juan Pablo": "jpterrel@verdetuoperador.com"
                     }
 
                     seleccionados = st.multiselect("👥 Selecciona destinatarios", list(destinatarios_posibles.keys()))
@@ -1315,7 +1810,7 @@ def viabilidades_seccion():
                     st.info("No se han registrado envíos de presupuesto aún.")
                 else:
                     df_historial["fecha_envio"] = pd.to_datetime(df_historial["fecha_envio"]).dt.strftime("%d/%m/%Y %H:%M")
-                    st.dataframe(df_historial, use_container_width=True)
+                    st.dataframe(df_historial, width='stretch')
 
             except Exception as e:
                 st.toast(f"❌ Error al cargar el historial de envíos: {e}")
@@ -1486,12 +1981,22 @@ def viabilidades_seccion():
                 # Filtrar la lista
                 usuarios_filtrados = [u for u in lista_usuarios if u.lower() not in excluir]
 
-                # Usar la lista filtrada en el selectbox
-                comercial = st.selectbox("🧑‍💼 Comercial responsable", options=usuarios_filtrados)
+                # Agregar opción vacía al inicio y usar index=0 para selección por defecto
+                usuarios_con_opcion_vacia = [""] + usuarios_filtrados
+                comercial = st.selectbox("🧑‍💼 Comercial responsable *",
+                                         options=usuarios_con_opcion_vacia,
+                                         placeholder="Selecciona un comercial...",
+                                         index=None,
+                                         help="Selecciona un comercial responsable. Este campo es obligatorio.")
 
                 submit = st.form_submit_button("Enviar Formulario")
 
                 if submit:
+                    # Validar que se haya seleccionado un comercial
+                    if not comercial or comercial == "":
+                        st.error("❌ Por favor, selecciona un comercial responsable. Este campo es obligatorio.")
+                        st.stop()  # Detiene la ejecución para evitar guardar datos incompletos
+
                     # Generar ticket único
                     ticket = generar_ticket()
 
@@ -1510,7 +2015,7 @@ def viabilidades_seccion():
                         nombre_cliente,
                         telefono,
                         comercial,
-                        f"{id_olt}. {nombre_olt}", # nuevo campo
+                        f"{id_olt}. {nombre_olt}",  # nuevo campo
                         apartment_id  # nuevo campo
                     ))
 
@@ -1998,18 +2503,40 @@ def mostrar_formulario(click_data):
 
     if submit:
         try:
+            # ============================================
+            # 1. VALIDACIÓN DE CAMPOS OBLIGATORIOS
+            # ============================================
+            campos_obligatorios = [
+                ("cto_admin", "CTO Admin"),
+                ("id_cto", "ID CTO"),
+                ("serviciable", "Serviciable"),
+                ("resultado", "Resultado"),
+                ("justificacion", "Justificación")
+            ]
+
+            campos_faltantes = []
+            current_data = st.session_state[f"form_data_{ticket}"]
+
+            for campo_key, campo_nombre in campos_obligatorios:
+                if not current_data.get(campo_key) or str(current_data[campo_key]).strip() == "":
+                    campos_faltantes.append(campo_nombre)
+
+            if campos_faltantes:
+                st.error(f"❌ Campos obligatorios faltantes: {', '.join(campos_faltantes)}")
+                st.stop()
+
+            # ============================================
+            # 2. CONEXIÓN A BASE DE DATOS Y ACTUALIZACIÓN
+            # ============================================
             conn = obtener_conexion()
             cursor = conn.cursor()
-
-            # Obtener datos actualizados del session_state
-            current_data = st.session_state[f"form_data_{ticket}"]
 
             # Limpiar apartment_id
             apartment_id_clean = ",".join(
                 [aid.strip() for aid in (current_data["apartment_id"] or "").split(",") if aid.strip()]
             )
 
-            # Actualización completa
+            # Actualización completa de la viabilidad
             cursor.execute("""
                 UPDATE viabilidades SET
                     latitud=?, longitud=?, provincia=?, municipio=?, poblacion=?, vial=?, numero=?, letra=?, cp=?, comentario=?,
@@ -2058,19 +2585,334 @@ def mostrar_formulario(click_data):
             ))
 
             conn.commit()
+
+            # ============================================
+            # 3. ENVIAR NOTIFICACIÓN AL COMERCIAL ASIGNADO (SIN REGISTRO EN BD)
+            # ============================================
+            try:
+                # Verificar si hay un comercial asignado
+                comercial_asignado = current_data["usuario"]
+
+                if comercial_asignado and comercial_asignado.strip():
+                    # Obtener el email del comercial desde la tabla usuarios
+                    cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_asignado,))
+                    row = cursor.fetchone()
+                    correo_comercial = row[0] if row else None
+
+                    if correo_comercial:
+                        # Importar la función de notificaciones
+                        try:
+                            from notificaciones import correo_respuesta_comercial
+
+                            # Preparar el comentario para la notificación
+                            comentario_notificacion = (
+                                    current_data.get("respuesta_comercial") or
+                                    current_data.get("comentarios_comercial") or
+                                    f"""
+                                <strong>Actualización de viabilidad - Ticket {ticket}</strong><br><br>
+                                <strong>Resultado:</strong> {current_data.get('resultado', 'N/A')}<br>
+                                <strong>Serviciable:</strong> {current_data.get('serviciable', 'N/A')}<br>
+                                <strong>Estado:</strong> {current_data.get('estado', 'N/A')}<br>
+                                <strong>Comentarios:</strong> {current_data.get('comentarios_comercial', 'Sin comentarios')}
+                                """
+                            )
+
+                            # Enviar correo de notificación al comercial
+                            correo_respuesta_comercial(
+                                destinatario=correo_comercial,
+                                ticket_id=ticket,
+                                nombre_comercial=comercial_asignado,
+                                comentario=comentario_notificacion
+                            )
+
+                            st.toast(f"📧 Notificación enviada al comercial {comercial_asignado}")
+
+                        except ImportError:
+                            st.toast("⚠️ Módulo 'notificaciones' no encontrado. La notificación no se envió.")
+                    else:
+                        st.toast(f"⚠️ No se encontró el correo del comercial {comercial_asignado}")
+                else:
+                    st.toast("ℹ️ No hay comercial asignado para notificar")
+            except Exception as e:
+                st.toast(f"⚠️ Error al enviar notificación: {str(e)}")
+                # Continuar con el flujo aunque falle la notificación
+
             conn.close()
-            st.toast(f"✅ Cambios guardados correctamente para el ticket {ticket}")
+
+            # ============================================
+            # 4. MENSAJE DE CONFIRMACIÓN Y LIMPIEZA
+            # ============================================
+            st.success(f"✅ Cambios guardados correctamente para el ticket {ticket}")
+
             # Limpiar el session_state para forzar recarga de datos
             if f"form_data_{ticket}" in st.session_state:
                 del st.session_state[f"form_data_{ticket}"]
+
+            # Añadir pequeño delay visual antes del rerun
+            import time
+            time.sleep(1.5)
             st.rerun()
 
         except Exception as e:
-            st.toast(f"❌ Error al guardar los cambios: {e}")
+            st.error(f"❌ Error al guardar los cambios: {str(e)}")
+            st.toast(f"❌ Error detallado: {str(e)}")
 
 def obtener_apartment_ids_existentes(cursor):
     cursor.execute("SELECT apartment_id FROM datos_uis")
     return {row[0] for row in cursor.fetchall()}
+
+
+def mostrar_ofertas_comerciales():
+    """Función optimizada para mostrar y gestionar ofertas comerciales"""
+    st.info("ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales.")
+
+    # Limpiar sesión si existe
+    st.session_state.pop("df", None)
+
+    # Cargar datos
+    with st.spinner("⏳ Cargando ofertas comerciales..."):
+        try:
+            conn = obtener_conexion()
+            query = "SELECT * FROM comercial_rafa WHERE serviciable IS NOT NULL"
+            df_ofertas = pd.read_sql(query, conn)
+            conn.close()
+
+            if df_ofertas.empty:
+                st.toast("❌ No se encontraron ofertas realizadas por los comerciales.")
+                return
+
+        except Exception as e:
+            st.error(f"❌ Error al cargar datos de la base de datos: {e}")
+            return
+
+    # Guardar en sesión
+    st.session_state["df"] = df_ofertas
+
+    # Configurar y mostrar AgGrid
+    gb = GridOptionsBuilder.from_dataframe(df_ofertas)
+    gb.configure_default_column(
+        filter=True,
+        floatingFilter=True,
+        sortable=True,
+        resizable=True,
+        minWidth=120,
+        flex=1
+    )
+    grid_options = gb.build()
+
+    AgGrid(
+        df_ofertas,
+        gridOptions=grid_options,
+        enable_enterprise_modules=True,
+        update_mode=GridUpdateMode.NO_UPDATE,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+        fit_columns_on_grid_load=False,
+        height=500,
+        theme='alpine-dark',
+        reload_data=False
+    )
+
+    # Sección de visualización de imagen
+    mostrar_imagen_oferta(df_ofertas)
+
+    # Sección de descarga de Excel
+    descargar_excel_ofertas(df_ofertas)
+
+    # Sección de eliminación de oferta
+    eliminar_oferta_comercial(df_ofertas)
+
+    # Sección de descarga de imágenes
+    descargar_imagenes_ofertas(df_ofertas)
+
+
+def mostrar_imagen_oferta(df_ofertas):
+    """Muestra imagen de una oferta seleccionada"""
+    st.markdown("---")
+    st.subheader("🖼️ Visualizar Imagen de Oferta")
+
+    # Filtrar solo ofertas con imágenes válidas
+    ofertas_con_imagen = df_ofertas[
+        df_ofertas["fichero_imagen"].notna() &
+        (df_ofertas["fichero_imagen"].str.strip() != "")
+        ]
+
+    if ofertas_con_imagen.empty:
+        st.warning("No hay ofertas con imágenes disponibles.")
+        return
+
+    seleccion_id = st.selectbox(
+        "Selecciona un Apartment ID para ver su imagen:",
+        ofertas_con_imagen["apartment_id"].unique(),
+        key="select_imagen_oferta"
+    )
+
+    if seleccion_id:
+        imagen_url = ofertas_con_imagen[
+            ofertas_con_imagen["apartment_id"] == seleccion_id
+            ].iloc[0]["fichero_imagen"]
+
+        try:
+            st.image(
+                imagen_url,
+                caption=f"Imagen de la oferta {seleccion_id}",
+                width='stretch'
+            )
+        except Exception:
+            st.warning(f"❌ No se pudo cargar la imagen para {seleccion_id}")
+
+
+def descargar_excel_ofertas(df_ofertas):
+    """Genera y permite descargar Excel con las ofertas"""
+    st.markdown("---")
+    st.subheader("📊 Descargar Datos")
+
+    towrite = io.BytesIO()
+    with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+        df_ofertas.to_excel(writer, index=False, sheet_name='Ofertas')
+
+    st.download_button(
+        label="📥 Descargar todas las ofertas (Excel)",
+        data=towrite.getvalue(),
+        file_name="ofertas_comerciales.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Descarga todas las ofertas en formato Excel"
+    )
+
+
+def eliminar_oferta_comercial(df_ofertas):
+    """Elimina una oferta comercial seleccionada"""
+    st.markdown("---")
+    st.subheader("🗑️ Eliminar Oferta Comercial")
+
+    # Usar un formulario para la eliminación
+    with st.form("form_eliminar_oferta"):
+        selected_apartment_id = st.selectbox(
+            "Selecciona el Apartment ID de la oferta a eliminar:",
+            ["-- Seleccione --"] + sorted(df_ofertas['apartment_id'].unique().tolist()),
+            key="select_eliminar_oferta"
+        )
+
+        submitted = st.form_submit_button("Eliminar Oferta",
+                                          type="primary",
+                                          width='stretch')
+
+        if submitted and selected_apartment_id != "-- Seleccione --":
+            try:
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+
+                # Usar parámetros para prevenir SQL injection
+                cursor.execute(
+                    "DELETE FROM comercial_rafa WHERE apartment_id = ?",
+                    (selected_apartment_id,)
+                )
+
+                conn.commit()
+                conn.close()
+
+                st.success(f"✅ Oferta {selected_apartment_id} eliminada exitosamente.")
+                st.toast(f"Oferta {selected_apartment_id} eliminada", icon="✅")
+
+                # Forzar recarga de la página
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"❌ Error al eliminar la oferta: {e}")
+
+
+def descargar_imagenes_ofertas(df_ofertas):
+    """Gestiona la descarga de imágenes de ofertas"""
+    st.markdown("---")
+    st.subheader("🖼️ Descargar Imágenes")
+
+    # Filtrar ofertas con imágenes existentes
+    ofertas_con_imagen = []
+    for _, row in df_ofertas.iterrows():
+        img_path = row.get("fichero_imagen")
+        if (isinstance(img_path, str) and
+                img_path.strip() != "" and
+                os.path.exists(img_path)):
+            ofertas_con_imagen.append({
+                "apartment_id": row["apartment_id"],
+                "path": img_path,
+                "filename": os.path.basename(img_path)
+            })
+
+    if not ofertas_con_imagen:
+        st.info("No hay ofertas con imágenes disponibles para descargar.")
+        return
+
+    # Descarga individual
+    st.markdown("##### Descargar imagen individual")
+
+    selected_offer = st.selectbox(
+        "Selecciona una oferta:",
+        ["-- Seleccione --"] + [f"{o['apartment_id']} - {o['filename']}"
+                                for o in ofertas_con_imagen],
+        key="select_descarga_imagen"
+    )
+
+    if selected_offer != "-- Seleccione --":
+        # Extraer apartment_id de la selección
+        apt_id = selected_offer.split(" - ")[0]
+        oferta = next(o for o in ofertas_con_imagen if o["apartment_id"] == apt_id)
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            try:
+                st.image(oferta["path"], width='stretch')
+            except Exception:
+                st.warning("No se pudo cargar la vista previa")
+
+        with col2:
+            # Determinar MIME type
+            ext = os.path.splitext(oferta["path"].lower())[1]
+            mime_types = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.gif': 'image/gif',
+                '.bmp': 'image/bmp'
+            }
+            mime = mime_types.get(ext, 'application/octet-stream')
+
+            with open(oferta["path"], "rb") as f:
+                st.download_button(
+                    label=f"Descargar {oferta['filename']}",
+                    data=f.read(),
+                    file_name=oferta['filename'],
+                    mime=mime,
+                    width='stretch'
+                )
+
+    # Descarga múltiple
+    st.markdown("##### Descargar todas las imágenes")
+
+    # Opción para seleccionar qué imágenes descargar
+    imagenes_seleccionadas = st.multiselect(
+        "Selecciona las imágenes a descargar:",
+        [f"{o['apartment_id']} - {o['filename']}" for o in ofertas_con_imagen],
+        default=[f"{o['apartment_id']} - {o['filename']}" for o in ofertas_con_imagen],
+        key="multiselect_imagenes"
+    )
+
+    if imagenes_seleccionadas and st.button("📦 Descargar selección como ZIP"):
+        with st.spinner("Creando archivo ZIP..."):
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for item in imagenes_seleccionadas:
+                    apt_id = item.split(" - ")[0]
+                    oferta = next(o for o in ofertas_con_imagen
+                                  if o["apartment_id"] == apt_id)
+                    zip_file.write(oferta["path"], oferta["filename"])
+
+            st.download_button(
+                label=f"📥 Descargar {len(imagenes_seleccionadas)} imágenes",
+                data=zip_buffer.getvalue(),
+                file_name="imagenes_ofertas.zip",
+                mime="application/zip",
+                width='stretch'
+            )
 
 # Función principal de la app (Dashboard de administración)
 def admin_dashboard():
@@ -2198,7 +3040,7 @@ def admin_dashboard():
 
                 st.toast("✅ Has cerrado sesión correctamente. Redirigiendo al login...")
                 # Limpiar parámetros de la URL
-                st.experimental_set_query_params()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
+                st.query_params.clear()  # Limpiamos la URL (opcional, si hay parámetros en la URL)
                 st.rerun()
 
     # Opción: Visualizar datos de la tabla datos_uis
@@ -2660,10 +3502,10 @@ def admin_dashboard():
                     data=towrite,
                     file_name="datos_completos_mejorado.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    width='stretch'
                 )
             with col2:
-                if st.button("📧 Enviar excel completo", use_container_width=True):
+                if st.button("📧 Enviar excel completo", width='stretch'):
                     with st.spinner("Enviando Excel..."):
                         try:
                             correo_excel_control(
@@ -2870,7 +3712,7 @@ def admin_dashboard():
                             cols = st.multiselect("Filtra columnas a mostrar", existing.columns,
                                                   default=existing.columns,
                                                   key="cols_existing")
-                            st.dataframe(existing[cols], use_container_width=True)
+                            st.dataframe(existing[cols], width='stretch')
                     except Exception as e:
                         st.toast(f"❌ Error al cargar registros existentes: {e}")
 
@@ -3139,7 +3981,7 @@ def admin_dashboard():
                         data=csv,
                         file_name="tirc_filtrado.csv",
                         mime="text/csv",
-                        use_container_width=True
+                        width='stretch'
                     )
 
                 with col2:
@@ -3155,7 +3997,7 @@ def admin_dashboard():
                         data=output,
                         file_name="tirc_completo.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
+                        width='stretch'
                     )
 
                 with col3:
@@ -3169,7 +4011,7 @@ def admin_dashboard():
                             data=csv_sin_viab,
                             file_name="tirc_sin_viabilidad.csv",
                             mime="text/csv",
-                            use_container_width=True
+                            width='stretch'
                         )
 
                 # --- 🔟 INFORMACIÓN ADICIONAL ---
@@ -3180,13 +4022,13 @@ def admin_dashboard():
                         st.write("**Distribución por estado de viabilidad:**")
                         if 'estado' in df_tirc_enriquecido.columns:
                             estado_counts = df_tirc_enriquecido['estado'].value_counts()
-                            st.dataframe(estado_counts, use_container_width=True)
+                            st.dataframe(estado_counts, width='stretch')
 
                     with col2:
                         st.write("**Distribución por serviciable:**")
                         if 'serviciable' in df_tirc_enriquecido.columns:
                             serviciable_counts = df_tirc_enriquecido['serviciable'].value_counts()
-                            st.dataframe(serviciable_counts, use_container_width=True)
+                            st.dataframe(serviciable_counts, width='stretch')
 
                     # Mostrar algunos ejemplos de TIRC sin viabilidad
                     tirc_sin_viab_ejemplos = df_tirc_enriquecido[
@@ -3233,373 +4075,12 @@ def admin_dashboard():
                     "font-weight": "bold",
                 }
             })
+        # Uso en el código principal
         if sub_seccion == "Ver Ofertas":
-            st.info("ℹ️ En esta sección puedes visualizar las ofertas registradas por los comerciales.")
+            mostrar_ofertas_comerciales()
 
-            if "df" in st.session_state:
-                del st.session_state["df"]
-
-            with st.spinner("⏳ Cargando ofertas comerciales..."):
-                try:
-                    conn = obtener_conexion()
-                    # Consultar ambas tablas
-                    query_comercial_rafa = "SELECT * FROM comercial_rafa"
-
-                    comercial_rafa_data = pd.read_sql(query_comercial_rafa, conn)
-                    conn.close()
-
-                    if comercial_rafa_data.empty:
-                        st.toast("❌ No se encontraron ofertas realizadas por los comerciales.")
-                        return
-
-                    # Filtrar comercial_rafa para mostrar registros con datos en 'serviciable'
-                    comercial_rafa_data_filtrada = comercial_rafa_data[comercial_rafa_data['serviciable'].notna()]
-
-                    # Unir ambas tablas en un solo DataFrame
-                    if not comercial_rafa_data_filtrada.empty:
-                        combined_data = pd.concat([comercial_rafa_data_filtrada], ignore_index=True)
-
-                except Exception as e:
-                    st.toast(f"❌ Error al cargar datos de la base de datos: {e}")
-                    return
-
-            if combined_data.empty:
-                st.warning("⚠️ No se encontraron ofertas comerciales finalizadas.")
-                return
-
-            # Eliminar columnas duplicadas si las hay
-            if combined_data.columns.duplicated().any():
-                st.toast("¡Se encontraron columnas duplicadas! Se eliminarán las duplicadas.")
-                combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
-
-            # Guardar en sesión de Streamlit
-            st.session_state["df"] = combined_data
-
-            columnas = combined_data.columns.tolist()
-
-            # Configuramos AgGrid con filtros en cabecera y anchos amplios
-            gb = GridOptionsBuilder.from_dataframe(combined_data[columnas])
-            gb.configure_default_column(
-                filter=True,
-                floatingFilter=True,
-                sortable=True,
-                resizable=True,
-                minWidth=120,  # ancho mínimo
-                flex=1  # reparte espacio extra
-            )
-            gridOptions = gb.build()
-
-            AgGrid(
-                combined_data[columnas],
-                gridOptions=gridOptions,
-                enable_enterprise_modules=True,
-                update_mode=GridUpdateMode.NO_UPDATE,
-                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                fit_columns_on_grid_load=False,
-                height=500,
-                theme='alpine-dark'
-            )
-
-            seleccion_id = st.selectbox("🖼️ Selecciona un Apartment ID para ver su imagen:",
-                                        combined_data["apartment_id"].unique())
-
-            # Filtrar la oferta seleccionada
-            oferta_seleccionada = combined_data[combined_data["apartment_id"] == seleccion_id]
-
-            if not oferta_seleccionada.empty:
-                imagen_url = oferta_seleccionada.iloc[0]["fichero_imagen"]
-
-                if pd.notna(imagen_url) and imagen_url.strip() != "":
-                    st.image(
-                        imagen_url,
-                        caption=f"Imagen de la oferta {seleccion_id}",
-                        use_container_width=True  # <-- aquí se actualizó
-                    )
-                else:
-                    st.warning("❌ Esta oferta no tiene una imagen asociada.")
-
-            # 🔽 Solo descarga Excel, sin radio
-            towrite = io.BytesIO()
-            with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                combined_data[columnas].to_excel(writer, index=False, sheet_name='Ofertas')
-            towrite.seek(0)
-
-            with st.spinner("Preparando archivo Excel..."):
-                st.download_button(
-                    label="📥 Descargar Excel",
-                    data=towrite,
-                    file_name="ofertas_comerciales.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-                # Ver los Apartment IDs disponibles
-            st.markdown("##### Eliminar Oferta Comercial")
-
-            # Desplegable para seleccionar el Apartment ID de la oferta a eliminar
-            apartment_ids = combined_data['apartment_id'].tolist()
-
-            selected_apartment_id = st.selectbox(
-                "Selecciona el Apartment ID de la oferta a eliminar:",
-                ["-- Seleccione --"] + apartment_ids
-            )
-
-            # Verificar la selección
-            st.write(f"Apartment ID seleccionado: {selected_apartment_id}")  # Verificación de la selección
-
-            # Mostrar botón de eliminar solo si un Apartment ID ha sido seleccionado
-            if selected_apartment_id != "-- Seleccione --":
-                if st.button("Eliminar Oferta"):
-                    try:
-                        # Conexión a la base de datos
-                        conn = obtener_conexion()
-
-                        # Ejecutar la eliminación en ambas tablas (comercial_rafa)
-                        query_delete_comercial = f"DELETE FROM comercial_rafa WHERE apartment_id = '{selected_apartment_id}'"
-
-                        # Ejecutar las consultas
-                        conn.execute(query_delete_comercial)
-
-                        # Confirmar eliminación
-                        conn.commit()
-                        conn.close()
-
-                        st.toast(f"✅ La oferta con Apartment ID {selected_apartment_id} ha sido eliminada exitosamente.")
-
-                    except Exception as e:
-                        st.toast(f"❌ Error al eliminar la oferta: {e}")
-
-            # Desplegable para ofertas con imagen
-            offers_with_image = []
-            for idx, row in combined_data.iterrows():
-                fichero_imagen = row.get("fichero_imagen", None)
-                if fichero_imagen and isinstance(fichero_imagen, str) and os.path.exists(fichero_imagen):
-                    offers_with_image.append((row["apartment_id"], fichero_imagen))
-
-            if offers_with_image:
-                st.markdown("##### Descarga de imágenes de ofertas")
-
-                # Desplegable para seleccionar una oferta
-                option = st.selectbox(
-                    "Selecciona el Apartment ID de la oferta para descargar su imagen:",
-                    ["-- Seleccione --"] + [offer[0] for offer in offers_with_image]
-                )
-
-                if option != "-- Seleccione --":
-                    # Buscar la oferta seleccionada
-                    selected_offer = next((offer for offer in offers_with_image if offer[0] == option), None)
-                    if selected_offer:
-                        fichero_imagen = selected_offer[1]
-                        st.image(fichero_imagen, width=200)
-
-                        # Determinar el tipo de imagen
-                        mime = "image/jpeg"
-                        if fichero_imagen.lower().endswith(".png"):
-                            mime = "image/png"
-                        elif fichero_imagen.lower().endswith((".jpg", ".jpeg")):
-                            mime = "image/jpeg"
-
-                        # Enlace de descarga individual
-                        with open(fichero_imagen, "rb") as file:
-                            file_data = file.read()
-                        st.download_button(
-                            label="Descargar imagen",
-                            data=file_data,
-                            file_name=os.path.basename(fichero_imagen),
-                            mime=mime
-                        )
-
-                # Botón para descargar todas las imágenes en un archivo ZIP
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-                    for apt_id, img_path in offers_with_image:
-                        zip_file.write(img_path, arcname=os.path.basename(img_path))
-                zip_buffer.seek(0)
-
-                st.download_button(
-                    label="Descargar todas las imágenes",
-                    data=zip_buffer,
-                    file_name="imagenes_ofertas.zip",
-                    mime="application/zip"
-                )
         elif sub_seccion == "Certificación":
-            with st.spinner("⏳ Cargando y procesando datos..."):
-                try:
-                    conn = obtener_conexion()
-                    if conn is None:
-                        st.toast("❌ No se pudo establecer conexión con la base de datos.")
-                        st.stop()
-
-                    # Paso 1: Cargar ofertas unificadas con info de datos_uis
-                    query_completa = """
-                    SELECT 
-                        ofertas_unificadas.*,
-                        datos.cto_id,
-                        datos.olt,
-                        datos.cto
-                    FROM (
-                        SELECT * FROM comercial_rafa WHERE contrato IS NULL OR LOWER(TRIM(contrato)) != 'pendiente'
-                    ) AS ofertas_unificadas
-                    LEFT JOIN datos_uis datos ON ofertas_unificadas.apartment_id = datos.apartment_id
-                    """
-                    df_ofertas = pd.read_sql(query_completa, conn)
-
-                    # Paso 2: Calcular resumen por CTO
-                    query_ctos = """
-                    WITH visitas AS (
-                        SELECT DISTINCT apartment_id
-                        FROM (
-                            SELECT apartment_id FROM comercial_rafa
-                        )
-                    )
-                    SELECT
-                        d.cto,
-                        COUNT(DISTINCT d.apartment_id) AS total_apartments_en_cto,
-                        SUM(CASE WHEN v.apartment_id IS NOT NULL THEN 1 ELSE 0 END) AS apartments_visitados
-                    FROM datos_uis d
-                    LEFT JOIN visitas v ON d.apartment_id = v.apartment_id
-                    WHERE d.cto IS NOT NULL
-                    GROUP BY d.cto
-                    ORDER BY total_apartments_en_cto DESC
-                    """
-                    cursor = conn.cursor()
-                    cursor.execute(query_ctos)
-                    rows = cursor.fetchall()
-                    cursor.close()
-                    conn.close()
-
-                    df_ctos = pd.DataFrame(rows, columns=["cto", "Total Apartments en CTO", "Apartments Visitados"])
-
-                    # Paso 3: Unir la tabla de ofertas con el resumen por CTO
-                    df_final = df_ofertas.merge(df_ctos, how="left", on="cto")
-
-                    if df_final.empty:
-                        st.warning("⚠️ No se encontraron datos para mostrar.")
-                        st.stop()
-
-                    # ——— Categorías enriquecidas y unificadas para observaciones ———
-                    categorias = {
-                        "Cliente con otro operador": [
-                            "movistar", "adamo", "digi", "vodafone", "orange", "jazztel",
-                            "euskaltel", "netcan", "o2", "yoigo", "masmovil", "másmóvil",
-                            "otro operador", "no se quiere cambiar",
-                            "con el móvil se arreglan", "datos ilimitados de su móvil",
-                            "se apaña con los datos", "se apaña con el móvil",
-                        ],
-                        "Segunda residencia / vacía / cerrada": [
-                            "segunda residencia", "casa vacía", "casa cerrada", "vacacional",
-                            "deshabitada", "abandonada", "cabaña cerrada", "nave cerrada",
-                            "campo de fútbol", "pabellón cerrado", "cerrada", "cerrado", "abandonado", "abandonada",
-                            "Casa en ruinas", "Cabaña en ruinas", "No hay nadie", "Casa secundaria?", "No viven",
-                            "guardar el coche"
-                        ],
-                        "No interesado / no necesita fibra": [
-                            "no quiere", "no le interesa", "no interesado",
-                            "no contratar", "decide no contratar", "hablado con el cliente decide",
-                            "anciano", "persona mayor",
-                            "sin internet", "no necesita fibra", "no necesita internet",
-                            "no necesitan fibra", "consultorio médico", "estación de tren",
-                            "nave", "ganado", "ganadería", "almacén", "cese de actividad",
-                            "negocio cerrado", "bolería cerrada", "casa deshabitada",
-                            "casa en obras", "en obras", "obras", "estación de tren", "ermita",
-                            "estabulación", "estabulacion", "prao", "prado", "no vive nadie", "consultorio",
-                            "patatas", "almacen", "ya no viven", "hace tiempo", "no estan en casa", "no están en casa", "no tiene interes",
-                            "no tiene interés", "casa a vender", "casa a la venta", "boleria cerrada", "bolera cerrada", "NO ESTA INTERESADA",
-                            "HABLADO CON SU HERMANA ME COMENTA Q DE MOMENTO NO ESTA INTERESADA"
-                        ],
-                        "Pendiente / seguimiento": [
-                            "pendiente visita", "pendiente", "dejado contacto", "dejada info",
-                            "dejado folleto", "presentada oferta", "hablar con hijo",
-                            "volver más adelante", "quedar", "me llamará", "pasar mas adelante", "Lo tiene que pensar", "Dejada oferta",
-                            "Explicada la oferta"
-                        ],
-                        "Cliente Verde": [
-                            "contratado con verde", "cliente de verde", "ya es cliente de verde", "verde", "otro comercial"
-                        ],
-                        "Reformas / obra": [
-                            "reforma", "obra", "reformando", "rehabilitando", "en obras"
-                        ],
-                        "Venta / Contrato realizado": [
-                            "venta realizada", "vendido", "venta hecha",
-                            "contrata fibra", "contrato solo fibra", "contrata tarifa", "contrata",
-                            "contrata fibra 1000", "contrata tarifa avanza"
-                        ],
-                        "Sin observaciones": [
-                            ""
-                        ]
-                    }
-
-                    def clasificar_observacion(texto):
-                        # 1) Si no es string o está vacío -> Sin observaciones
-                        if not isinstance(texto, str) or texto.strip() == "":
-                            return "Sin observaciones"
-                        txt = texto.lower()
-
-                        # 2) Match exacto por substring
-                        for cat, claves in categorias.items():
-                            for clave in claves:
-                                if clave and clave in txt:
-                                    return cat
-
-                        # 3) Fuzzy matching
-                        for cat, claves in categorias.items():
-                            for clave in claves:
-                                if clave and fuzz.partial_ratio(clave, txt) > 85:
-                                    return cat
-
-                        return "Otros / sin clasificar"
-
-                    df_final["Categoría Observación"] = df_final["observaciones"].apply(clasificar_observacion)
-
-                    with st.expander("🗂️ Información sobre las observaciones", expanded=False):
-                        st.info("""
-                        ℹ️ Se muestran automáticamente clasificadas por **categorías**, todas las observaciones realizadas por los comerciales.  
-                        Aquellas que no logran corresponder a una categoría concreta aparecen **sin clasificar**.
-                        """)
-                    # ——————————————————————————————
-
-                    st.session_state["df"] = df_final
-
-                    columnas = st.multiselect(
-                        "📊 Selecciona las columnas a mostrar:",
-                        df_final.columns.tolist(),
-                        default=df_final.columns.tolist()
-                    )
-                    st.dataframe(df_final[columnas], use_container_width=True)
-
-                    # Exportar a Excel
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                        df_final.to_excel(writer, index=False, sheet_name="Certificación")
-                        workbook = writer.book
-                        worksheet = writer.sheets["Certificación"]
-
-                        header_format = workbook.add_format({
-                            "bold": True, "text_wrap": True, "valign": "top",
-                            "fg_color": "#D7E4BC", "border": 1
-                        })
-                        normal_format = workbook.add_format({
-                            "text_wrap": False, "valign": "top", "border": 1
-                        })
-
-                        # Encabezados
-                        for col_num, val in enumerate(df_final.columns):
-                            worksheet.write(0, col_num, val, header_format)
-
-                        # Filas
-                        for row in range(1, len(df_final) + 1):
-                            for col in range(len(df_final.columns)):
-                                v = df_final.iat[row - 1, col]
-                                worksheet.write(row, col, "" if pd.isna(v) else v, normal_format)
-
-                    st.download_button(
-                        label="📥 Obtener certificación",
-                        data=output.getvalue(),
-                        file_name="certificacion_ofertas.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-
-                except Exception as e:
-                    st.toast(f"❌ Error al generar la certificación completa: {e}")
+            mostrar_certificacion()
 
     elif opcion == "Viabilidades":
         st.header("Viabilidades")
@@ -3632,16 +4113,26 @@ def admin_dashboard():
     elif opcion == "Mapa UUIIs":
         with st.expander("📊 Guía de uso del panel de datos cruzados AMS / Ofertas", expanded=False):
             st.info("""
-            ℹ️ En esta sección puedes **visualizar todos los datos cruzados entre AMS y las ofertas de los comerciales**, junto con su estado actual.  
+                ℹ️ En esta sección puedes **visualizar geográficamente todos los datos cruzados entre AMS y las ofertas de los comerciales**, mostrando su estado actual en el mapa interactivo.
 
-            🔍 **Filtros disponibles:**  
-            - **Búsqueda por Apartment ID:** filtra directamente por un identificador concreto.  
-            - **Búsqueda por ubicación:** permite filtrar por **Provincia, Municipio y Población**.  
+                🔍 **Modos de búsqueda disponibles:**  
+                - **Búsqueda por Apartment ID:** Filtra por identificador específico (modo exacto o parcial)  
+                - **Búsqueda por ubicación:** Filtra progresivamente por **Provincia → Municipio → Población**  
 
-            ⚠️ **Importante:**  
-            Si usas el filtro por *Apartment ID* y después deseas aplicar los filtros por ubicación, **asegúrate de borrar primero el campo de Apartment ID**.  
-            De lo contrario, los demás filtros permanecerán inactivos.
-            """)
+                ⚙️ **Configuración adicional en "Filtros Avanzados":**
+                - **Filtrar por estado:** Serviciable, No serviciable, Contratado, Incidencia, No interesado, No visitado
+                - **Personalizar mapa:** Activar/desactivar clusters, leyenda y ajustar zoom inicial
+
+                📊 **Funcionalidades del mapa:**
+                - Vista satélite de Google Maps con zoom completo
+                - Información detallada al hacer clic en cualquier punto
+                - Exportación de los datos filtrados
+                - Estadísticas en tiempo real
+
+                ⚠️ **Nota importante:**  
+                Los filtros de **ubicación (Provincia, Municipio, Población) solo están activos cuando NO se ha ingresado un Apartment ID**.  
+                Para usar filtros geográficos, asegúrate de que el campo de ID esté vacío.
+                """)
         mapa_seccion()
 
     # Opción: Generar Informes
@@ -3705,7 +4196,7 @@ def admin_dashboard():
         if sub_seccion == "Listado de usuarios":
             st.info("ℹ️ Desde esta sección puedes consultar usuarios registrados en el sistema.")
             if not df_usuarios.empty:
-                st.dataframe(df_usuarios, use_container_width=True, height=540)
+                st.dataframe(df_usuarios, width='stretch', height=540)
             else:
                 st.warning("No hay usuarios registrados.")
 
@@ -4309,7 +4800,7 @@ def admin_dashboard():
 
                     columnas = st.multiselect("Selecciona las columnas a mostrar", trazabilidad_data.columns.tolist(),
                                               default=trazabilidad_data.columns.tolist())
-                    st.dataframe(trazabilidad_data[columnas], use_container_width=True)
+                    st.dataframe(trazabilidad_data[columnas], width='stretch')
 
                     # ✅ Solo botón de descarga Excel
                     towrite = io.BytesIO()
@@ -4386,6 +4877,485 @@ def admin_dashboard():
     elif opcion == "Control de versiones":
         log_trazabilidad(st.session_state["username"], "Control de versiones", "El admin accedió a la sección de control de versiones.")
         mostrar_control_versiones()
+
+
+def mostrar_leyenda_en_streamlit():
+    """Muestra la leyenda directamente en Streamlit (no en el mapa)"""
+    with st.expander("📍 Leyenda del Mapa", expanded=True):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("""
+            **Colores de los marcadores:**
+            - 🟢 **Verde:** Serviciable
+            - 🔴 **Rojo:** No serviciable  
+            - 🟠 **Naranja:** Contrato Sí
+            """)
+
+        with col2:
+            st.markdown("""
+            **Continuación:**
+            - ⚫ **Gris:** No interesado
+            - 🟣 **Morado:** Incidencia
+            - 🔵 **Azul:** No Visitado
+            """)
+
+def mostrar_certificacion():
+    """Muestra el panel de certificación con análisis de ofertas y observaciones"""
+    st.info("📋 **Certificación de Ofertas** - Análisis completo de visitas comerciales y estado de CTOs")
+
+    with st.spinner("⏳ Cargando y procesando datos de certificación..."):
+        try:
+            # Cargar datos principales
+            conn = obtener_conexion()
+            if conn is None:
+                st.error("❌ No se pudo conectar a la base de datos")
+                return
+
+            # Primero, obtener las columnas disponibles de comercial_rafa
+            cursor = conn.cursor()
+
+            # Método 1: Usar PRAGMA para SQLite
+            cursor.execute("PRAGMA table_info(comercial_rafa)")
+            columnas_comercial_rafa = [row[1] for row in cursor.fetchall()]
+
+            # Método alternativo: Usar consulta SELECT con LIMIT 0
+            # cursor.execute("SELECT * FROM comercial_rafa LIMIT 0")
+            # columnas_comercial_rafa = [desc[0] for desc in cursor.description]
+
+            st.toast(f"📊 Columnas en comercial_rafa: {len(columnas_comercial_rafa)} encontradas")
+
+            # Verificar columnas específicas
+            columnas_a_incluir = []
+            columnas_base = [
+                'apartment_id', 'comercial', 'serviciable', 'incidencia',
+                'Tipo_Vivienda', 'observaciones', 'contrato', 'fichero_imagen'
+            ]
+
+            # Buscar variaciones de fecha
+            posibles_nombres_fecha = ['fecha_visita', 'fecha', 'fecha_visita_comercial',
+                                      'visita_fecha', 'fecha_visita_1', 'fecha_visita_2']
+
+            nombre_fecha = None
+            for nombre in posibles_nombres_fecha:
+                if nombre in columnas_comercial_rafa:
+                    nombre_fecha = nombre
+                    st.toast(f"✅ Columna de fecha encontrada: {nombre_fecha}")
+                    break
+
+            # Construir consulta dinámicamente
+            columnas_seleccionadas = []
+
+            # Columnas de comercial_rafa
+            for col in columnas_base:
+                if col in columnas_comercial_rafa:
+                    columnas_seleccionadas.append(f"cr.{col}")
+                else:
+                    st.toast(f"⚠️ Columna '{col}' no encontrada en comercial_rafa")
+
+            # Añadir columna de fecha si existe
+            if nombre_fecha:
+                columnas_seleccionadas.append(f"cr.{nombre_fecha}")
+
+            # Si no hay suficientes columnas, usar todas
+            if len(columnas_seleccionadas) < 5:
+                st.warning("⚠️ Pocas columnas encontradas, usando SELECT *")
+                columnas_seleccionadas = ["cr.*"]
+
+            # Consulta dinámica
+            columnas_str = ", ".join(columnas_seleccionadas)
+
+            query_ofertas = f"""
+            SELECT 
+                {columnas_str},
+                du.cto,
+                du.olt,
+                du.provincia AS provincia_du,
+                du.municipio AS municipio_du,
+                du.poblacion AS poblacion_du,
+                du.vial AS vial_du,
+                du.numero AS numero_du
+            FROM comercial_rafa cr
+            LEFT JOIN datos_uis du ON cr.apartment_id = du.apartment_id
+            WHERE (cr.contrato IS NULL OR LOWER(TRIM(COALESCE(cr.contrato, ''))) != 'pendiente')
+            AND cr.serviciable IS NOT NULL
+            """
+
+            # Mostrar consulta para depuración
+            with st.expander("🔍 Ver consulta SQL", expanded=False):
+                st.code(query_ofertas)
+
+            df_ofertas = pd.read_sql(query_ofertas, conn)
+
+            if df_ofertas.empty:
+                st.warning("⚠️ No se encontraron ofertas válidas para certificación.")
+                conn.close()
+                return
+
+            # Paso 2: Calcular estadísticas por CTO
+            query_ctos = """
+            WITH visitas_realizadas AS (
+                SELECT DISTINCT apartment_id 
+                FROM comercial_rafa 
+                WHERE observaciones IS NOT NULL 
+                AND TRIM(COALESCE(observaciones, '')) != ''
+            )
+            SELECT
+                du.cto,
+                COUNT(DISTINCT du.apartment_id) AS total_viviendas_cto,
+                COUNT(DISTINCT vr.apartment_id) AS viviendas_visitadas
+            FROM datos_uis du
+            LEFT JOIN visitas_realizadas vr ON du.apartment_id = vr.apartment_id
+            WHERE du.cto IS NOT NULL AND du.cto != ''
+            GROUP BY du.cto
+            """
+
+            df_ctos = pd.read_sql(query_ctos, conn)
+            conn.close()
+
+            if df_ctos.empty:
+                st.warning("⚠️ No se encontraron datos de CTOs.")
+                return
+
+            # Calcular porcentaje
+            df_ctos['porcentaje_visitado'] = (
+                        df_ctos['viviendas_visitadas'] / df_ctos['total_viviendas_cto'] * 100).round(2)
+
+            # Paso 3: Unir datos
+            if 'cto' in df_ofertas.columns:
+                df_final = pd.merge(
+                    df_ofertas,
+                    df_ctos,
+                    on='cto',
+                    how='left',
+                    suffixes=('', '_cto_stats')
+                )
+            else:
+                # Si no hay columna cto, no podemos hacer merge
+                st.error("❌ No se encontró la columna 'cto' para unir estadísticas")
+                df_final = df_ofertas.copy()
+                df_final['total_viviendas_cto'] = None
+                df_final['viviendas_visitadas'] = None
+                df_final['porcentaje_visitado'] = None
+
+            # Renombrar columnas para claridad
+            rename_map = {}
+            if 'provincia_du' in df_final.columns:
+                rename_map['provincia_du'] = 'provincia'
+            if 'municipio_du' in df_final.columns:
+                rename_map['municipio_du'] = 'municipio'
+            if 'poblacion_du' in df_final.columns:
+                rename_map['poblacion_du'] = 'poblacion'
+            if 'vial_du' in df_final.columns:
+                rename_map['vial_du'] = 'vial'
+            if 'numero_du' in df_final.columns:
+                rename_map['numero_du'] = 'numero'
+
+            if rename_map:
+                df_final = df_final.rename(columns=rename_map)
+
+            # Mostrar información sobre el DataFrame
+            with st.expander("📊 Información del DataFrame", expanded=False):
+                st.write(f"**Filas:** {len(df_final)}")
+                st.write(f"**Columnas:** {len(df_final.columns)}")
+                st.write("**Columnas disponibles:**", list(df_final.columns))
+                st.write("**Primeras filas:**")
+                st.dataframe(df_final.head())
+
+            # Clasificar observaciones
+            df_final = clasificar_observaciones(df_final)
+
+            # Mostrar resultados
+            mostrar_resultados_certificacion(df_final)
+
+        except Exception as e:
+            st.error(f"❌ Error en el proceso de certificación: {str(e)}")
+            import traceback
+            with st.expander("🔍 Ver detalles del error", expanded=False):
+                st.code(traceback.format_exc())
+            st.toast("Error al generar la certificación", icon="❌")
+
+
+def clasificar_observaciones(df):
+    """Clasifica automáticamente las observaciones en categorías"""
+
+    # Verificar si existe la columna observaciones
+    if 'observaciones' not in df.columns:
+        st.warning("⚠️ No se encontró la columna 'observaciones'")
+        df['categoria_observacion'] = 'Sin observaciones'
+        return df
+
+    # Definir categorías
+    CATEGORIAS = {
+        "Cliente con otro operador": [
+            "movistar", "adamo", "digi", "vodafone", "orange", "jazztel",
+            "euskaltel", "netcan", "o2", "yoigo", "masmovil", "másmóvil",
+            "otro operador", "no se quiere cambiar",
+            "con el móvil se arreglan", "datos ilimitados"
+        ],
+        "Segunda residencia / vacía": [
+            "segunda residencia", "casa vacía", "casa cerrada", "vacacional",
+            "deshabitada", "abandonada", "cerrada", "cerrado", "no vive nadie",
+            "casa en ruinas", "abandonado", "abandonada"
+        ],
+        "No interesado": [
+            "no quiere", "no le interesa", "no interesado",
+            "no contratar", "decide no contratar", "anciano", "persona mayor",
+            "sin internet", "no necesita fibra", "no necesita internet",
+            "no tiene interes", "no tiene interés", "no estan en casa"
+        ],
+        "Pendiente / seguimiento": [
+            "pendiente visita", "pendiente", "dejado contacto", "dejada info",
+            "dejado folleto", "presentada oferta", "hablar con hijo",
+            "volver más adelante", "me llamará", "lo tiene que pensar"
+        ],
+        "Cliente Verde": [
+            "contratado con verde", "cliente de verde", "ya es cliente de verde",
+            "verde", "otro comercial"
+        ],
+        "Reformas / obra": [
+            "reforma", "obra", "reformando", "rehabilitando", "en obras"
+        ],
+        "Venta / Contrato realizado": [
+            "venta realizada", "vendido", "venta hecha",
+            "contrata fibra", "contrato solo fibra", "contrata tarifa"
+        ]
+    }
+
+    def asignar_categoria(observacion):
+        if not isinstance(observacion, str) or observacion.strip() == "":
+            return "Sin observaciones"
+
+        texto = observacion.lower()
+
+        for categoria, palabras_clave in CATEGORIAS.items():
+            for palabra in palabras_clave:
+                if palabra in texto:
+                    return categoria
+
+        return "Otros / sin clasificar"
+
+    df['categoria_observacion'] = df['observaciones'].apply(asignar_categoria)
+    return df
+
+
+def mostrar_resultados_certificacion(df):
+    """Muestra los resultados de la certificación"""
+
+    # Mostrar información sobre columnas disponibles
+    with st.expander("📋 Columnas disponibles en los datos", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total de registros", f"{len(df):,}")
+            st.metric("Total de columnas", f"{len(df.columns)}")
+        with col2:
+            if 'comercial' in df.columns:
+                comerciales_unicos = df['comercial'].nunique()
+                st.metric("Comerciales únicos", f"{comerciales_unicos}")
+            if 'cto' in df.columns:
+                ctos_unicos = df['cto'].nunique()
+                st.metric("CTOs únicos", f"{ctos_unicos}")
+
+        st.write("**Lista de columnas:**")
+        for i, col in enumerate(df.columns, 1):
+            st.write(f"{i}. {col} ({df[col].dtype})")
+
+    st.markdown("---")
+
+    # KPIs principales
+    st.subheader("📊 Métricas Principales")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        total_ofertas = len(df)
+        st.metric("Ofertas Analizadas", f"{total_ofertas:,}")
+
+    with col2:
+        if 'cto' in df.columns:
+            ctos_unicos = df['cto'].nunique()
+            st.metric("CTOs Diferentes", f"{ctos_unicos}")
+        else:
+            st.metric("CTOs Diferentes", "N/A")
+
+    with col3:
+        if 'porcentaje_visitado' in df.columns:
+            porcentaje_promedio = df['porcentaje_visitado'].mean()
+            st.metric("% Promedio Visitado", f"{porcentaje_promedio:.1f}%")
+        else:
+            st.metric("% Promedio Visitado", "N/A")
+
+    with col4:
+        if 'serviciable' in df.columns:
+            serviciables = (df['serviciable'] == 'Sí').sum()
+            st.metric("Serviciables", f"{serviciables}")
+        else:
+            st.metric("Serviciables", "N/A")
+
+    st.markdown("---")
+
+    # Análisis de observaciones
+    if 'categoria_observacion' in df.columns:
+        st.subheader("📋 Análisis de Observaciones")
+
+        with st.expander("ℹ️ Información sobre las categorías", expanded=False):
+            st.info("""
+            Las observaciones se clasifican automáticamente en categorías predefinidas.
+            - **Cliente con otro operador**: Ya tiene servicio con otra compañía
+            - **Segunda residencia / vacía**: Vivienda no habitada permanentemente
+            - **No interesado**: Cliente no muestra interés en el servicio
+            - **Pendiente / seguimiento**: Requiere seguimiento futuro
+            - **Cliente Verde**: Ya es cliente de Verde
+            - **Reformas / obra**: Vivienda en obras o reformas
+            - **Venta / Contrato realizado**: Venta exitosa
+            - **Sin observaciones**: No hay comentarios registrados
+            """)
+
+        # Resumen por categoría
+        resumen = df['categoria_observacion'].value_counts().reset_index()
+        resumen.columns = ['Categoría', 'Cantidad']
+        resumen['Porcentaje'] = (resumen['Cantidad'] / len(df) * 100).round(1)
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            # Gráfico de barras
+            try:
+                import plotly.express as px
+                fig = px.bar(
+                    resumen,
+                    x='Categoría',
+                    y='Cantidad',
+                    title='Distribución por Categoría',
+                    color='Categoría'
+                )
+                fig.update_layout(height=400, showlegend=False)
+                st.plotly_chart(fig, config={'width': 'stretch', 'theme': 'streamlit'})
+            except:
+                st.dataframe(resumen)
+
+        with col2:
+            st.dataframe(
+                resumen,
+                width='stretch',
+                height=400
+            )
+    else:
+        st.warning("⚠️ No se pudo clasificar las observaciones")
+
+    st.markdown("---")
+
+    # Tabla de datos
+    st.subheader("📋 Datos Detallados")
+
+    # Filtrar columnas que realmente existen en el DataFrame
+    columnas_disponibles = df.columns.tolist()
+
+    # Definir columnas por defecto basadas en las disponibles
+    posibles_columnas = [
+        'apartment_id', 'comercial', 'provincia', 'municipio',
+        'cto', 'serviciable', 'categoria_observacion',
+        'observaciones'
+    ]
+
+    # Buscar columna de fecha
+    posibles_fechas = [col for col in df.columns if 'fecha' in col.lower() or 'visita' in col.lower()]
+    if posibles_fechas:
+        posibles_columnas.append(posibles_fechas[0])
+
+    columnas_default = [col for col in posibles_columnas if col in columnas_disponibles]
+
+    # Si no hay columnas por defecto, usar las primeras 5
+    if not columnas_default and len(columnas_disponibles) > 0:
+        columnas_default = columnas_disponibles[:5]
+
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        columnas_seleccionadas = st.multiselect(
+            "Selecciona columnas a mostrar:",
+            columnas_disponibles,
+            default=columnas_default,
+            key="cert_cols_selector"
+        )
+
+    with col2:
+        # Filtro por comercial si existe
+        if 'comercial' in df.columns:
+            comerciales = ['Todos'] + sorted(df['comercial'].dropna().unique().tolist())
+            comercial_filtro = st.selectbox("Filtrar por comercial:", comerciales)
+        else:
+            comercial_filtro = 'Todos'
+
+    # Aplicar filtro si es necesario
+    df_filtrado = df.copy()
+    if comercial_filtro != 'Todos' and 'comercial' in df.columns:
+        df_filtrado = df_filtrado[df_filtrado['comercial'] == comercial_filtro]
+        st.info(f"Mostrando {len(df_filtrado)} registros del comercial: {comercial_filtro}")
+
+    if columnas_seleccionadas:
+        st.dataframe(
+            df_filtrado[columnas_seleccionadas],
+            width='stretch',
+            height=500
+        )
+    else:
+        st.warning("Por favor, selecciona al menos una columna para mostrar")
+
+    # Exportación
+    st.markdown("---")
+    st.subheader("📥 Exportar Datos")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        # Exportar a Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Certificación')
+        output.seek(0)
+
+        st.download_button(
+            label="📥 Excel Completo",
+            data=output,
+            file_name="certificacion_ofertas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width='stretch'
+        )
+
+    with col2:
+        # Exportar datos filtrados
+        output_filtrado = io.BytesIO()
+        with pd.ExcelWriter(output_filtrado, engine='xlsxwriter') as writer:
+            df_filtrado.to_excel(writer, index=False, sheet_name='Datos_Filtrados')
+        output_filtrado.seek(0)
+
+        st.download_button(
+            label="📊 Datos Filtrados",
+            data=output_filtrado,
+            file_name="certificacion_filtrada.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width='stretch'
+        )
+
+    with col3:
+        # Exportar resumen
+        if 'categoria_observacion' in df.columns:
+            resumen = df['categoria_observacion'].value_counts().reset_index()
+            resumen.columns = ['Categoría', 'Cantidad']
+
+            output_resumen = io.BytesIO()
+            with pd.ExcelWriter(output_resumen, engine='xlsxwriter') as writer:
+                resumen.to_excel(writer, index=False, sheet_name='Resumen')
+            output_resumen.seek(0)
+
+            st.download_button(
+                label="📈 Resumen",
+                data=output_resumen,
+                file_name="resumen_certificacion.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width='stretch'
+            )
 
 def generar_informe(fecha_inicio, fecha_fin):
     # Conectar a la base de datos y realizar cada consulta
@@ -4472,7 +5442,7 @@ def generar_informe(fecha_inicio, fecha_fin):
                                      textinfo='percent+label',
                                      marker=dict(colors=['#66b3ff', '#ff9999']))])
         fig.update_layout(title="Distribución de Visitas y Ventas", title_x=0, plot_bgcolor='white', showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, config={'width': 'stretch', 'theme': 'streamlit'})
 
     with col2:
         labels_incidencias = ['Incidencias', 'Visitas']
@@ -4482,7 +5452,7 @@ def generar_informe(fecha_inicio, fecha_fin):
                                                  marker=dict(colors=['#ff6666', '#99cc99']))])
         fig_incidencias.update_layout(title="Distribución de Visitas e Incidencias", title_x=0, plot_bgcolor='white',
                                       showlegend=False)
-        st.plotly_chart(fig_incidencias, use_container_width=True)
+        st.plotly_chart(fig_incidencias, config={'width': 'stretch', 'theme': 'streamlit'})
 
     with col3:
         labels_serviciables = ['No Serviciables', 'Serviciables']
@@ -4504,7 +5474,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             xaxis=dict(tickangle=0),
             height=450
         )
-        st.plotly_chart(fig_serviciables, use_container_width=True)
+        st.plotly_chart(fig_serviciables, config={'width': 'stretch', 'theme': 'streamlit'})
 
     # Resumen de los resultados
     resumen = f"""
@@ -4632,7 +5602,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             height=300  # Ajusta la altura aquí (por ejemplo, 300px)
         )
 
-        st.plotly_chart(fig_mov, use_container_width=True)
+        st.plotly_chart(fig_mov, config={'width': 'stretch', 'theme': 'streamlit'})
 
     with col_t2:
         st.markdown("<div style='margin-top:40px;'>", unsafe_allow_html=True)
@@ -4722,7 +5692,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             title_x=0.1,
             showlegend=False
         )
-        st.plotly_chart(fig_s, use_container_width=True)
+        st.plotly_chart(fig_s, config={'width': 'stretch', 'theme': 'streamlit'})
 
     with colv2:
         fig_e = go.Figure(data=[go.Bar(
@@ -4738,7 +5708,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             yaxis_title="Número de Viabilidades",
             height=400
         )
-        st.plotly_chart(fig_e, use_container_width=True)
+        st.plotly_chart(fig_e, config={'width': 'stretch', 'theme': 'streamlit'})
 
     colv3, colv4 = st.columns(2)
     with colv3:
@@ -4755,7 +5725,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             yaxis_title="Número de Casos",
             height=400
         )
-        st.plotly_chart(fig_r, use_container_width=True)
+        st.plotly_chart(fig_r, config={'width': 'stretch', 'theme': 'streamlit'})
 
     with colv4:
         st.metric(label="💬 Viabilidades con Comentarios del Gestor",
@@ -4839,22 +5809,25 @@ def generar_informe(fecha_inicio, fecha_fin):
 
     # Visualizaciones Precontratos
     colp1, colp2 = st.columns(2)
+
     with colp1:
         if not df_precontratos_comercial.empty:
-            fig_prec_comercial = go.Figure(data=[go.Bar(
+            fig_prec_comercial2 = go.Figure(data=[go.Bar(
                 x=df_precontratos_comercial['comercial'],
                 y=df_precontratos_comercial['total'],
                 text=df_precontratos_comercial['total'],
                 textposition='outside',
                 marker_color='#4CAF50'
             )])
-            fig_prec_comercial.update_layout(
+            fig_prec_comercial2.update_layout(
                 title="Precontratos por Comercial",
                 xaxis_title="Comercial",
                 yaxis_title="Número de Precontratos",
                 height=400
             )
-            st.plotly_chart(fig_prec_comercial, use_container_width=True)
+            # Corrección 1: Pasar el parámetro 'key' único
+            st.plotly_chart(fig_prec_comercial2, config={'width': 'stretch', 'theme': 'streamlit'},
+                            key="precontratos_comercial_bar")
 
     with colp2:
         if not df_precontratos_tarifa.empty:
@@ -4869,7 +5842,9 @@ def generar_informe(fecha_inicio, fecha_fin):
                 title="Distribución por Tarifa",
                 showlegend=True
             )
-            st.plotly_chart(fig_prec_tarifa, use_container_width=True)
+            # Corrección 2: Usar la figura CORRECTA (fig_prec_tarifa) y un 'key' único
+            st.plotly_chart(fig_prec_tarifa, config={'width': 'stretch', 'theme': 'streamlit'},
+                            key="precontratos_tarifa_pie")
 
     # Métricas Precontratos
     col_met1, col_met2, col_met3 = st.columns(3)
@@ -4969,7 +5944,7 @@ def generar_informe(fecha_inicio, fecha_fin):
                 yaxis_title="Número de Contratos",
                 height=400
             )
-            st.plotly_chart(fig_cont_estado, use_container_width=True)
+            st.plotly_chart(fig_cont_estado, config={'width': 'stretch', 'theme': 'streamlit'})
 
     with colc2:
         if not df_contratos_comercial.empty:
@@ -4984,7 +5959,7 @@ def generar_informe(fecha_inicio, fecha_fin):
                 title="Distribución por Comercial",
                 showlegend=True
             )
-            st.plotly_chart(fig_cont_comercial, use_container_width=True)
+            st.plotly_chart(fig_cont_comercial, config={'width': 'stretch', 'theme': 'streamlit'})
 
     # Métricas Contratos
     col_metc1, col_metc2, col_metc3, col_metc4 = st.columns(4)
@@ -5081,140 +6056,294 @@ def mostrar_control_versiones():
     except Exception as e:
         st.toast(f"Ha ocurrido un error al cargar el control de versiones: {e}")
 
+
+
+
+
 # Función para crear el gráfico interactivo de Serviciabilidad
-def create_serviciable_graph():
-    # Conectar y obtener datos de la primera tabla
-    conn = obtener_conexion()
-    cursor = conn.cursor()
+def create_serviciable_graph(cursor) -> go.Figure:
+    """Crea gráfico de distribución de serviciabilidad"""
+    cursor.execute("""
+        SELECT serviciable, COUNT(*) as count
+        FROM comercial_rafa
+        WHERE serviciable IN ('Sí', 'No')
+        GROUP BY serviciable
+        ORDER BY serviciable DESC
+    """)
 
-    cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE serviciable = 'Sí';")
-    datos_uis_count = cursor.fetchone()[0]  # Obtener el valor numérico
-    conn.close()
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["serviciable", "count"])
 
-    # Conectar y obtener datos de la segunda tabla
-    conn = obtener_conexion()
-    cursor = conn.cursor()
+    # Asegurar que siempre existan ambas categorías
+    categories = {"Sí": 0, "No": 0}
+    for _, row in df.iterrows():
+        categories[row["serviciable"]] = row["count"]
 
-    cursor.execute("SELECT COUNT(*) FROM comercial_rafa WHERE serviciable = 'No';")
-    ofertas_comercial_count = cursor.fetchone()[0]  # Obtener el valor numérico
-    conn.close()
+    df = pd.DataFrame({
+        "serviciable": list(categories.keys()),
+        "count": list(categories.values())
+    })
 
-    # Crear DataFrame manualmente
-    data = [
-        {"serviciable": "Sí", "count": datos_uis_count},
-        {"serviciable": "No", "count": ofertas_comercial_count}
-    ]
-    df = pd.DataFrame(data)
+    fig = px.bar(
+        df,
+        x="serviciable",
+        y="count",
+        title="Distribución de Serviciabilidad",
+        labels={"serviciable": "Serviciable", "count": "Cantidad"},
+        color="serviciable",
+        color_discrete_map={"Sí": "#2E7D32", "No": "#C62828"}
+    )
 
-    # Crear gráfico de barras con Plotly
-    fig = px.bar(df, x="serviciable", y="count", title="Distribución de Serviciabilidad",
-                 labels={"serviciable": "Serviciable", "count": "Cantidad"},
-                 color="serviciable", color_discrete_sequence=["green", "red"])
-    fig.update_layout(barmode='group', height=400)
+    fig.update_layout(
+        barmode='group',
+        height=400,
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+
+    # Añadir etiquetas de valor
+    fig.update_traces(
+        texttemplate='%{y}',
+        textposition='outside'
+    )
 
     return fig
 
+
 # Función para crear el gráfico interactivo de Incidencias por Provincia
-def create_incidencias_graph(cursor):
+def create_incidencias_graph(cursor) -> go.Figure:
+    """Crea gráfico de incidencias por provincia"""
     cursor.execute("""
-        SELECT provincia, COUNT(*) AS total_incidencias
+        SELECT 
+            COALESCE(provincia, 'No especificada') as provincia,
+            COUNT(*) AS total_incidencias
         FROM comercial_rafa
-        WHERE incidencia = 'Sí'
-        GROUP BY provincia;
+        WHERE LOWER(COALESCE(incidencia, '')) = 'sí'
+        GROUP BY provincia
+        ORDER BY total_incidencias DESC
+        LIMIT 10
     """)
+
     data = cursor.fetchall()
     df = pd.DataFrame(data, columns=["provincia", "count"])
 
-    # Crear gráfico interactivo de barras con Plotly
-    fig = px.bar(df, x="provincia", y="count", title="Incidencias por Provincia",
-                 labels={"provincia": "Provincia", "count": "Cantidad"},
-                 color="provincia", color_discrete_sequence=px.colors.qualitative.Pastel)
-    fig.update_layout(barmode='group', height=400)
-    fig.update_xaxes(tickangle=45)  # Rotar las etiquetas de los ejes X
-    return fig
-
-# Gráfico Distribución de Tipos de Vivienda
-def create_tipo_vivienda_distribution_graph():
-    conn = obtener_conexion()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT Tipo_Vivienda, COUNT(*) FROM comercial_rafa GROUP BY Tipo_Vivienda;")
-    comercial_rafa_data = cursor.fetchall()  # Obtener todos los resultados
-    conn.close()
-
-    # Convertir los datos de ambas tablas en DataFrames
-    df_comercial_rafa = pd.DataFrame(comercial_rafa_data, columns=["Tipo_Vivienda", "Count_comercial_rafa"])
-
-    # Reemplazar los valores nulos o vacíos con "Asignado - No visitado" en la tabla comercial_rafa
-    # Usamos `fillna` para poner 'Asignado - No visitado' en los tipos de vivienda que no tengan datos en la tabla comercial_rafa
-    df_comercial_rafa['Tipo_Vivienda'] = df_comercial_rafa['Tipo_Vivienda'].fillna('Asignado - No visitado')
-
-    df = df_comercial_rafa.copy()
-
-    # Si hay valores en 'Count_comercial_rafa' como 0, los cambiamos a 'Asignado - No visitado'
-    df['Tipo_Vivienda'] = df['Tipo_Vivienda'].apply(
-        lambda x: 'Asignado - No visitado' if x == 0 else x
+    fig = px.bar(
+        df,
+        x="provincia",
+        y="count",
+        title="Top 10 - Incidencias por Provincia",
+        labels={"provincia": "Provincia", "count": "Cantidad"},
+        color="provincia",
+        color_discrete_sequence=px.colors.qualitative.Pastel
     )
 
-    # Crear gráfico de barras con Plotly
-    fig = px.bar(df, x="Tipo_Vivienda", y=["Count_comercial_rafa"],
-                 title="Distribución de Tipo de Vivienda",
-                 labels={"Tipo_Vivienda": "Tipo de Vivienda", "value": "Cantidad"},
-                 color="Tipo_Vivienda", barmode="group", height=400)
-
-    fig.update_layout(barmode='group', height=400)
+    fig.update_layout(
+        barmode='group',
+        height=400,
+        showlegend=False,
+        xaxis_tickangle=45,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
 
     return fig
 
-# Gráfico de Viabilidades por Municipio
-def create_viabilities_by_municipio_graph(cursor):
+
+# Gráfico Distribución de Tipos de Vivienda
+def create_tipo_vivienda_distribution_graph(cursor) -> go.Figure:
+    """Crea gráfico de distribución de tipos de vivienda"""
     cursor.execute("""
-        SELECT municipio, COUNT(*) 
+        SELECT 
+            COALESCE(NULLIF(Tipo_Vivienda, ''), 'No especificado') as Tipo_Vivienda,
+            COUNT(*) as count
+        FROM comercial_rafa 
+        GROUP BY Tipo_Vivienda
+        ORDER BY count DESC
+        LIMIT 8
+    """)
+
+    data = cursor.fetchall()
+    df = pd.DataFrame(data, columns=["Tipo_Vivienda", "count"])
+
+    # Crear gráfico de barras horizontales para mejor lectura
+    fig = px.bar(
+        df,
+        x="count",
+        y="Tipo_Vivienda",
+        title="Top 8 - Distribución de Tipos de Vivienda",
+        labels={"Tipo_Vivienda": "Tipo de Vivienda", "count": "Cantidad"},
+        color="Tipo_Vivienda",
+        orientation='h',
+        color_discrete_sequence=px.colors.sequential.Blues
+    )
+
+    fig.update_layout(
+        height=400,
+        showlegend=False,
+        yaxis={'categoryorder': 'total ascending'},
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+
+    # Añadir etiquetas de valor
+    fig.update_traces(
+        texttemplate='%{x}',
+        textposition='outside'
+    )
+
+    return fig
+
+
+# Gráfico de Viabilidades por Municipio
+def create_viabilities_by_municipio_graph(cursor) -> go.Figure:
+    """Crea gráfico de viabilidades por municipio"""
+    cursor.execute("""
+        SELECT 
+            COALESCE(municipio, 'No especificado') as municipio,
+            COUNT(*) as count
         FROM viabilidades
         GROUP BY municipio
+        ORDER BY count DESC
+        LIMIT 8
     """)
+
     data = cursor.fetchall()
     df = pd.DataFrame(data, columns=["municipio", "count"])
 
-    # Crear gráfico interactivo de barras con Plotly
-    fig = px.bar(df, x="municipio", y="count", title="Viabilidades por Municipio",
-                 labels={"municipio": "Municipio", "count": "Cantidad de Viabilidades"})
-    fig.update_layout(height=400)
-    fig.update_xaxes(tickangle=45)  # Rotar etiquetas de ejes X
+    # Usar gráfico de donut para mejor visualización
+    fig = px.pie(
+        df,
+        values="count",
+        names="municipio",
+        title="Top 8 - Viabilidades por Municipio",
+        hole=0.4,
+        color_discrete_sequence=px.colors.sequential.RdBu
+    )
+
+    fig.update_layout(
+        height=400,
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5
+        ),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+
+    fig.update_traces(
+        textposition='inside',
+        textinfo='percent+label',
+        hovertemplate='<b>%{label}</b><br>Viabilidades: %{value}<br>Porcentaje: %{percent}'
+    )
+
     return fig
 
-# Función principal de la página
-def home_page():
-    st.title("Resumen de datos relevantes")
 
-    # Obtener la conexión y el cursor
+# Función para crear métricas KPI
+def create_kpi_metrics(cursor) -> None:
+    """Crea y muestra métricas KPI principales"""
+    kpi_queries = {
+        "Total Registros": "SELECT COUNT(*) FROM comercial_rafa",
+        "Serviciables": "SELECT COUNT(*) FROM comercial_rafa WHERE serviciable = 'Sí'",
+        "Incidencias": "SELECT COUNT(*) FROM comercial_rafa WHERE LOWER(COALESCE(incidencia, '')) = 'sí'",
+        "Viabilidades Totales": "SELECT COUNT(*) FROM viabilidades"
+    }
+
+    kpi_values = {}
+    for name, query in kpi_queries.items():
+        try:
+            cursor.execute(query)
+            kpi_values[name] = cursor.fetchone()[0]
+        except:
+            kpi_values[name] = 0
+
+    # Mostrar métricas en 4 columnas
+    cols = st.columns(4)
+    kpi_config = {
+        "Total Registros": {"icon": "📊", "color": "#4A90E2"},
+        "Serviciables": {"icon": "✅", "color": "#2E7D32"},
+        "Incidencias": {"icon": "⚠️", "color": "#FF9800"},
+        "Viabilidades Totales": {"icon": "📋", "color": "#9C27B0"}
+    }
+
+    for (kpi_name, kpi_val), col in zip(kpi_values.items(), cols):
+        config = kpi_config.get(kpi_name, {})
+        col.metric(
+            label=f"{config.get('icon', '📈')} {kpi_name}",
+            value=f"{kpi_val:,}",
+            delta=None
+        )
+
+
+# Función principal de la página optimizada
+def home_page():
+    """Página principal con resumen de datos relevantes"""
+
+    # Obtener la conexión
     conn = obtener_conexion()
     cursor = conn.cursor()
 
     try:
+        # Mostrar KPIs principales
+        create_kpi_metrics(cursor)
+        st.markdown("---")
+
         # Organizar los gráficos en columnas
         col1, col2 = st.columns(2)
 
         # Gráfico de Serviciabilidad
         with col1:
-            st.plotly_chart(create_serviciable_graph())
-
-        # Gráfico de Incidencias por Provincia
+            # Corrección aplicada aquí
+            st.plotly_chart(create_serviciable_graph(cursor), config={'width': 'stretch'})
         with col2:
-            st.plotly_chart(create_incidencias_graph(cursor))
-
-        # Gráfico de Distribución de Tipos de Vivienda
+            # Corrección aplicada aquí
+            st.plotly_chart(create_incidencias_graph(cursor), config={'width': 'stretch'})
         with col1:
-            st.plotly_chart(create_tipo_vivienda_distribution_graph())
-
-        # Gráfico de Viabilidades por Municipio
+            # Corrección aplicada aquí
+            st.plotly_chart(create_tipo_vivienda_distribution_graph(cursor), config={'width': 'stretch'})
         with col2:
-            st.plotly_chart(create_viabilities_by_municipio_graph(cursor))
+            # Corrección aplicada aquí
+            st.plotly_chart(create_viabilities_by_municipio_graph(cursor), config={'width': 'stretch'})
+
+        # Opcional: Mostrar tabla de datos detallados
+        with st.expander("📋 Ver datos detallados", expanded=False):
+            cursor.execute("""
+                SELECT 
+                    provincia,
+                    municipio,
+                    serviciable,
+                    incidencia,
+                    Tipo_Vivienda,
+                    COUNT(*) as total
+                FROM comercial_rafa
+                GROUP BY provincia, municipio, serviciable, incidencia, Tipo_Vivienda
+                ORDER BY total DESC
+                LIMIT 20
+            """)
+            detalle_data = cursor.fetchall()
+            df_detalle = pd.DataFrame(detalle_data,
+                                      columns=["Provincia", "Municipio", "Serviciable", "Incidencia", "Tipo_Vivienda",
+                                               "Total"])
+            st.dataframe(df_detalle, width='stretch')
 
     except Exception as e:
-        st.toast(f"Hubo un error al cargar los gráficos: {e}")
+        st.error(f"❌ Error al cargar los gráficos: {str(e)}")
+        st.toast(f"Hubo un error al cargar los gráficos: {e}", icon="⚠️")
+
     finally:
-        conn.close()  # No olvides cerrar la conexión al final
+        cursor.close()
+        conn.close()
+
+
+# Si necesitas mantener compatibilidad con la versión anterior
+def obtener_conexion():
+    """Wrapper para mantener compatibilidad"""
+    return get_db_connection()  # Asumiendo que existe esta función
 
 
 if __name__ == "__main__":

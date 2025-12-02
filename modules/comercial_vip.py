@@ -631,7 +631,7 @@ def comercial_dashboard_vip():
                 st.warning(f"⚠️ No hay ofertas con contrato activo para el comercial '{comercial_usuario}'.")
             else:
                 st.subheader("📋 Tabla de Visitas/Ofertas")
-                st.dataframe(df_ofertas, use_container_width=True)
+                st.dataframe(df_ofertas, width='stretch')
 
             # Verificar si hay datos para mostrar en la segunda tabla (viabilidades)
             # Mostrar segunda tabla (viabilidades)
@@ -639,7 +639,7 @@ def comercial_dashboard_vip():
                 st.warning(f"⚠️ No hay viabilidades disponibles para el comercial '{comercial_usuario}'.")
             else:
                 st.subheader("📋 Tabla de Viabilidades")
-                st.dataframe(df_viabilidades, use_container_width=True)
+                st.dataframe(df_viabilidades, width='stretch')
 
                 # Filtrar viabilidades críticas por justificación
                 justificaciones_criticas = ["MAS PREVENTA", "PDTE. RAFA FIN DE OBRA"]
