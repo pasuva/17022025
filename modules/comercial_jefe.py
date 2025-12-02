@@ -1386,7 +1386,7 @@ def mostrar_viabilidades():
                        provincia, municipio, poblacion,
                        vial, numero, letra,
                        latitud, longitud,
-                       serviciable,
+                       serviciable, resultado, justificacion, respuesta_comercial,
                        usuario AS comercial_reporta,
                        confirmacion_rafa
                 FROM viabilidades
@@ -1402,7 +1402,7 @@ def mostrar_viabilidades():
                            provincia, municipio, poblacion,
                            vial, numero, letra,
                            latitud, longitud,
-                           serviciable,
+                           serviciable, resultado, justificacion, respuesta_comercial
                            usuario AS comercial_reporta,
                            confirmacion_rafa
                     FROM viabilidades
@@ -1416,7 +1416,7 @@ def mostrar_viabilidades():
                        provincia, municipio, poblacion,
                        vial, numero, letra,
                        latitud, longitud,
-                       serviciable,
+                       serviciable, resultado, justificacion, respuesta_comercial
                        usuario AS comercial_reporta,
                        confirmacion_rafa
                 FROM viabilidades
@@ -1518,7 +1518,9 @@ def mostrar_viabilidades():
                 ):
                     st.markdown(
                         f"**Comercial que la envió:** {row.comercial_reporta}<br>"
-                        f"**Serviciable:** {row.serviciable or 'Sin dato'}",
+                        f"**Resultado:** {row.resultado or 'Sin dato'}<br>"
+                        f"**Justificación:** {row.justificacion or 'Sin justificación'}<br>"
+                        f"**Respuesta Oficina:** {row.respuesta_comercial or 'Sin respuesta'}<br>",
                         unsafe_allow_html=True
                     )
 

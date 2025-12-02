@@ -24,6 +24,7 @@ import warnings
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+import ftfy
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -3879,52 +3880,185 @@ def admin_dashboard():
                     key="upload_uu",
                     label_visibility="collapsed"
                 )
+
                 if uploaded_file is not None:
                     try:
                         with st.spinner("⏳ Cargando archivo..."):
+                            # Intentar importar ftfy
+                            try:
+                                USE_FTFY = True
+                            except ImportError:
+                                USE_FTFY = False
+                                st.toast("⚠️ Para mejor corrección de caracteres, instala: pip install ftfy")
+
+                            # Función para limpiar texto usando ftfy si está disponible
+                            def limpiar_texto(texto):
+                                if texto is None or not isinstance(texto, str):
+                                    return texto
+                                if USE_FTFY:
+                                    return ftfy.fix_text(texto)
+                                return texto
+
+                            # Función para limpiar nombres de columnas
+                            def limpiar_nombre_columna(nombre):
+                                if not isinstance(nombre, str):
+                                    return nombre
+                                nombre = limpiar_texto(nombre)
+                                # Simplificar: convertir a minúsculas y reemplazar espacios/guiones
+                                nombre = nombre.strip().lower()
+                                nombre = nombre.replace(' ', '_').replace('-', '_')
+                                # Eliminar caracteres especiales excepto guión bajo
+                                nombre = ''.join(c for c in nombre if c.isalnum() or c == '_')
+                                return nombre
+
                             if uploaded_file.name.endswith(".xlsx"):
-                                data = pd.read_excel(uploaded_file)
+                                # Para Excel, usar engine openpyxl
+                                data = pd.read_excel(uploaded_file, engine='openpyxl')
+                                # Limpiar nombres de columnas
+                                data.columns = [limpiar_nombre_columna(col) for col in data.columns]
+
                             elif uploaded_file.name.endswith(".csv"):
-                                data = pd.read_csv(uploaded_file)
-                        # Diccionario para mapear columnas del Excel a las de la base de datos
-                        mapeo_columnas = {
-                            "id_ams": "id_ams",
-                            "apartment_id": "apartment_id",
-                            "address_id": "address_id",
-                            "provincia": "provincia",
-                            "municipio": "municipio",
-                            "poblacion": "poblacion",
-                            "vial": "vial",
-                            "numero": "numero",
-                            "parcela_catastral": "parcela_catastral",
-                            "letra": "letra",
-                            "cp": "cp",
-                            "site_operational_state": "site_operational_state",
-                            "apartment_operational_state": "apartment_operational_state",
-                            "cto_id": "cto_id",
-                            "olt": "olt",
-                            "cto": "cto",
-                            "lat": "latitud",
-                            "lng": "longitud",
-                            "TIPO OLT RENTAL": "tipo_olt_rental",
-                            "CERTIFICABLE": "CERTIFICABLE",
-                            "COMERCIAL": "comercial",
-                            "ZONA": "zona",
-                            "FECHA": "fecha",
-                            "SERVICIABLE": "serviciable",
-                            "MOTIVO": "motivo",
-                            "contrato_uis": "contrato_uis"
-                        }
-                        columnas_faltantes = [col for col in mapeo_columnas if col not in data.columns]
+                                # Para CSV, probar diferentes encodings
+                                encodings_to_try = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-8-sig']
 
-                        if columnas_faltantes:
-                            st.toast(
-                                f"❌ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
-                        else:
-                            data_filtrada = data[list(mapeo_columnas.keys())].copy()
-                            data_filtrada.rename(columns=mapeo_columnas, inplace=True)
+                                for encoding in encodings_to_try:
+                                    try:
+                                        uploaded_file.seek(0)  # Resetear puntero
+                                        data = pd.read_csv(uploaded_file, encoding=encoding, on_bad_lines='warn')
+                                        st.toast(f"✅ Archivo leído con encoding: {encoding}")
+                                        break
+                                    except Exception:
+                                        continue
+                                else:
+                                    # Si fallan todos, intentar con reemplazo de errores
+                                    uploaded_file.seek(0)
+                                    data = pd.read_csv(uploaded_file, encoding='utf-8', on_bad_lines='warn',
+                                                       errors='replace')
+                                    st.toast("⚠️ Se usó reemplazo de caracteres para leer el archivo")
 
-                            # Convertir lat y lng a float
+                                # Limpiar nombres de columnas
+                                data.columns = [limpiar_nombre_columna(col) for col in data.columns]
+
+                            # Diccionario para mapear columnas (con variantes permitidas)
+                            mapeo_columnas_base = {
+                                "id_ams": "id_ams",
+                                "apartment_id": "apartment_id",
+                                "address_id": "address_id",
+                                "provincia": "provincia",
+                                "municipio": "municipio",
+                                "poblacion": "poblacion",
+                                "vial": "vial",
+                                "numero": "numero",
+                                "parcela_catastral": "parcela_catastral",
+                                "letra": "letra",
+                                "cp": "cp",
+                                "site_operational_state": "site_operational_state",
+                                "apartment_operational_state": "apartment_operational_state",
+                                "cto_id": "cto_id",
+                                "olt": "olt",
+                                "cto": "cto",
+                                "lat": "latitud",
+                                "lng": "longitud",
+                                "tipo_olt_rental": "tipo_olt_rental",
+                                "certificable": "CERTIFICABLE",
+                                "comercial": "comercial",
+                                "zona": "zona",
+                                "fecha": "fecha",
+                                "serviciable": "serviciable",
+                                "motivo": "motivo",
+                                "contrato_uis": "contrato_uis"
+                            }
+
+                            # Crear mapeo con variantes comunes
+                            mapeo_columnas = {}
+                            variantes_comunes = {
+                                "poblacion": ["poblacion", "población", "localidad"],
+                                "provincia": ["provincia", "provincia", "prov"],
+                                "municipio": ["municipio", "municipio", "ciudad"],
+                                "cp": ["cp", "codigo_postal", "codigopostal", "código_postal"],
+                                "lat": ["lat", "latitud", "latitude"],
+                                "lng": ["lng", "longitud", "longitude", "long"],
+                                "fecha": ["fecha", "date", "fecha_actualizacion"],
+                                "comercial": ["comercial", "vendedor", "agente"]
+                            }
+
+                            # Buscar columnas que coincidan
+                            columnas_encontradas = {}
+                            columnas_faltantes = []
+
+                            for col_db, col_excel in mapeo_columnas_base.items():
+                                encontrada = False
+
+                                # Buscar la columna exacta o variantes
+                                posibles_nombres = [col_excel]
+                                if col_excel in variantes_comunes:
+                                    posibles_nombres.extend(variantes_comunes[col_excel])
+
+                                for posible_nombre in posibles_nombres:
+                                    if posible_nombre in data.columns:
+                                        columnas_encontradas[col_db] = posible_nombre
+                                        encontrada = True
+                                        break
+
+                                if not encontrada:
+                                    columnas_faltantes.append(col_excel)
+
+                            if columnas_faltantes:
+                                st.toast(f"❌ Columnas faltantes: {', '.join(columnas_faltantes)}")
+                                st.toast(f"📋 Columnas encontradas en el archivo: {', '.join(data.columns[:10])}")
+                                return
+
+                            # Renombrar columnas y limpiar datos
+                            data = data.rename(columns={v: k for k, v in columnas_encontradas.items()})
+
+                            # Limpiar contenido de columnas de texto
+                            columnas_texto = [
+                                'provincia', 'municipio', 'poblacion', 'vial', 'letra',
+                                'site_operational_state', 'apartment_operational_state',
+                                'olt', 'cto', 'tipo_olt_rental', 'comercial', 'zona',
+                                'motivo', 'contrato_uis'
+                            ]
+
+                            for col in columnas_texto:
+                                if col in data.columns:
+                                    data[col] = data[col].astype(str).apply(limpiar_texto)
+
+                            # Seleccionar solo las columnas necesarias
+                            columnas_necesarias = list(mapeo_columnas_base.keys())
+                            columnas_disponibles = [col for col in columnas_necesarias if col in data.columns]
+
+                            data_filtrada = data[columnas_disponibles].copy()
+
+                            # Renombrar columnas según el esquema final
+                            data_filtrada.rename(columns={
+                                'lat': 'latitud',
+                                'lng': 'longitud',
+                                'certificable': 'CERTIFICABLE'
+                            }, inplace=True)
+
+                            # Asegurar que tenemos todas las columnas finales
+                            columnas_finales = [
+                                "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
+                                "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
+                                "apartment_operational_state", "cto_id", "olt", "cto", "latitud", "longitud",
+                                "tipo_olt_rental", "CERTIFICABLE", "comercial", "zona", "fecha",
+                                "serviciable", "motivo", "contrato_uis"
+                            ]
+
+                            # Añadir columnas faltantes con valores por defecto
+                            for col in columnas_finales:
+                                if col not in data_filtrada.columns:
+                                    if col in ['CERTIFICABLE', 'serviciable']:
+                                        data_filtrada[col] = None
+                                    elif col == 'fecha':
+                                        data_filtrada[col] = pd.Timestamp.now().strftime("%Y-%m-%d")
+                                    else:
+                                        data_filtrada[col] = ''
+
+                            # Ordenar columnas
+                            data_filtrada = data_filtrada[columnas_finales]
+
+                            # Convertir coordenadas
                             data_filtrada["latitud"] = pd.to_numeric(
                                 data_filtrada["latitud"].astype(str).str.replace(",", "."), errors="coerce"
                             ).round(7)
@@ -3933,34 +4067,29 @@ def admin_dashboard():
                                 data_filtrada["longitud"].astype(str).str.replace(",", "."), errors="coerce"
                             ).round(7)
 
-                            columnas_finales = [
-                                "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
-                                "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
-                                "apartment_operational_state", "cto_id", "olt", "cto", "latitud", "longitud",
-                                "tipo_olt_rental", "CERTIFICABLE", "comercial", "zona", "fecha",
-                                "serviciable", "motivo", "contrato_uis"
-                            ]
-                            data_filtrada = data_filtrada[columnas_finales]
-
+                            # Procesar fecha
                             if "fecha" in data_filtrada.columns:
                                 data_filtrada["fecha"] = pd.to_datetime(data_filtrada["fecha"], errors="coerce")
-                                data_filtrada["fecha"] = data_filtrada["fecha"].dt.strftime(
-                                    "%Y-%m-%d")  # convierte fechas a texto
-                                data_filtrada["fecha"] = data_filtrada["fecha"].where(pd.notnull(data_filtrada["fecha"]), None)
+                                data_filtrada["fecha"] = data_filtrada["fecha"].dt.strftime("%Y-%m-%d")
+                                data_filtrada["fecha"] = data_filtrada["fecha"].where(
+                                    pd.notnull(data_filtrada["fecha"]), None)
 
                             # Leer datos anteriores
                             conn = obtener_conexion()
                             df_antiguos = pd.read_sql("SELECT * FROM datos_uis", conn)
                             st.write(
                                 "✅ Datos filtrados correctamente. Procediendo a reemplazar los datos en la base de datos...")
+
                             cursor = conn.cursor()
                             cursor.execute("DELETE FROM datos_uis")
                             cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
                             conn.commit()
+
                             total_registros = len(data_filtrada)
                             insert_values = data_filtrada.values.tolist()
                             chunk_size = 500
                             num_chunks = (total_registros + chunk_size - 1) // chunk_size
+
                             query = """
                                 INSERT INTO datos_uis (
                                     id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero,
@@ -3969,8 +4098,8 @@ def admin_dashboard():
                                     zona, fecha, serviciable, motivo, contrato_uis
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """
-                            progress_bar = st.progress(0)
 
+                            progress_bar = st.progress(0)
                             for i in range(num_chunks):
                                 chunk = insert_values[i * chunk_size: (i + 1) * chunk_size]
                                 cursor.executemany(query, chunk)
@@ -3999,7 +4128,7 @@ def admin_dashboard():
                                 """, (provincia, municipio, poblacion, comercial))
                                 asignados_ids = {fila[0] for fila in cursor.fetchall()}
 
-                                # Puntos disponibles en datos_uis para esa zona (sin usar la columna 'zona')
+                                # Puntos disponibles en datos_uis para esa zona
                                 cursor.execute("""
                                     SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
                                     FROM datos_uis
@@ -4020,7 +4149,8 @@ def admin_dashboard():
                                         INSERT INTO comercial_rafa
                                         (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial, 'Pendiente'))
+                                    """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial,
+                                          'Pendiente'))
 
                                 if nuevos_para_asignar:
                                     st.toast(
@@ -4028,7 +4158,8 @@ def admin_dashboard():
                                     )
 
                                     # 🔹 Notificación al comercial
-                                    cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial.lower(),))
+                                    cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?",
+                                                   (comercial.lower(),))
                                     resultado = cursor.fetchone()
                                     if resultado:
                                         email = resultado[0]
@@ -4061,7 +4192,7 @@ def admin_dashboard():
                                                 poblacion=poblacion,
                                                 nuevos_puntos=len(nuevos_para_asignar)
                                             )
-                                            st.write(
+                                            st.toast(
                                                 f"📧 Notificación enviada a administrador ({email_admin}) por nuevos puntos en zona existente")
                                         except Exception as e:
                                             st.toast(f"❌ Error enviando correo a admin ({email_admin}): {e}")
@@ -4073,6 +4204,7 @@ def admin_dashboard():
                             apt_nuevos = set(data_filtrada['apartment_id'].unique())
                             nuevos_apartment_id = apt_nuevos - apt_antiguos
                             df_nuevos_filtrados = data_filtrada[data_filtrada['apartment_id'].isin(nuevos_apartment_id)]
+
                             try:
                                 df_nuevos_filtrados["comercial"] = df_nuevos_filtrados["comercial"].astype(str)
                                 df_nuevos_filtrados["poblacion"] = df_nuevos_filtrados["poblacion"].astype(str)
@@ -4090,10 +4222,9 @@ def admin_dashboard():
                                 total_nuevos = row["total_nuevos"]
                                 poblaciones_nuevas = row["poblaciones_nuevas"]
 
-                                # Normalizamos a minúsculas para comparar con usuarios.username
                                 comercial_normalizado = comercial.lower()
-
-                                cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?", (comercial_normalizado,))
+                                cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?",
+                                               (comercial_normalizado,))
                                 resultado = cursor.fetchone()
 
                                 if resultado:
@@ -4126,8 +4257,13 @@ def admin_dashboard():
                                     st.write(f"📧 Notificación enviada a administrador ({email_admin})")
                                 except Exception as e:
                                     st.toast(f"❌ Error enviando correo a admin ({email_admin}): {e}")
+
+                            st.success("✅ Archivo procesado correctamente y datos actualizados en la base de datos")
+
                     except Exception as e:
-                        st.toast(f"❌ Error al cargar el archivo: {e}")
+                        st.error(f"❌ Error al cargar el archivo: {e}")
+                        import traceback
+                        st.error(f"Detalles: {traceback.format_exc()}")
 
 
     # Opción: Trazabilidad y logs

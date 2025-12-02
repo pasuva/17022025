@@ -7,10 +7,10 @@ from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
 from modules.cloudinary import upload_image_to_cloudinary
-from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial, \
-    correo_envio_presupuesto_manual
+from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial
 from streamlit_option_menu import option_menu
-from streamlit_cookies_controller import CookieController  # Se importa localmente
+from streamlit_cookies_controller import CookieController
+from streamlit_javascript import st_javascript
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -870,6 +870,7 @@ def enviar_notificaciones_viabilidad(ticket, comercial_usuario, comentario):
 
     except Exception as e:
         st.warning(f"⚠️ Error al enviar notificaciones: {e}")
+
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
     conn = get_db_connection()
@@ -998,23 +999,90 @@ def obtener_viabilidades():
 
 def viabilidades_section():
     st.title("Viabilidades")
+    mostrar_leyenda()
+    mostrar_instrucciones()
+
+    inicializar_estado_sesion()
+
+    # Obtener viabilidades con caché
+    viabilidades = obtener_viabilidades_cache()
+
+    # Crear y mostrar mapa
+    map_data = crear_y_mostrar_mapa(viabilidades)
+
+    # Manejar interacción con el mapa
+    manejar_interaccion_mapa(map_data)
+
+    # Mostrar formulario si hay marcador nuevo
+    mostrar_formulario_si_aplica()
+
+
+def mostrar_leyenda():
+    """Muestra la leyenda de colores de los marcadores"""
     st.markdown("""**Leyenda:**
                  ⚫ Viabilidad ya existente
                  🔵 Viabilidad nueva aún sin estudio
                  🟢 Viabilidad serviciable y con Apartment ID ya asociado
                  🔴 Viabilidad no serviciable
                 """)
+
+
+def mostrar_instrucciones():
+    """Muestra instrucciones para el usuario"""
     st.info("ℹ️ Haz click en el mapa para agregar un marcador que represente el punto de viabilidad.")
 
-    # Inicializar estados de sesión si no existen
-    if "viabilidad_marker" not in st.session_state:
-        st.session_state.viabilidad_marker = None
-    if "map_center" not in st.session_state:
-        st.session_state.map_center = (43.463444, -3.790476)  # Ubicación inicial predeterminada
-    if "map_zoom" not in st.session_state:
-        st.session_state.map_zoom = 12  # Zoom inicial
 
-    # Crear el mapa centrado en la última ubicación guardada
+def inicializar_estado_sesion():
+    """Inicializa las variables de estado en session_state si no existen"""
+    defaults = {
+        "viabilidad_marker": None,
+        "map_center": (43.463444, -3.790476),
+        "map_zoom": 12
+    }
+
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def obtener_viabilidades_cache():
+    """Obtiene viabilidades con caché para mejorar rendimiento"""
+    return obtener_viabilidades()
+
+
+def determinar_color_marcador(serviciable, apartment_id):
+    """Determina el color del marcador basado en los datos"""
+    if serviciable is None or str(serviciable).strip() == "":
+        return "black"
+
+    serv = str(serviciable).strip()
+    apt = str(apartment_id).strip() if apartment_id is not None else ""
+
+    if serv == "No":
+        return "red"
+    elif serv == "Sí" and apt not in ["", "N/D"]:
+        return "green"
+    else:
+        return "black"
+
+
+def agregar_marcadores_existentes(mapa, viabilidades):
+    """Agrega los marcadores de viabilidades existentes al mapa"""
+    for v in viabilidades:
+        lat, lon, ticket, serviciable, apartment_id = v
+        marker_color = determinar_color_marcador(serviciable, apartment_id)
+
+        folium.Marker(
+            [lat, lon],
+            icon=folium.Icon(color=marker_color),
+            popup=f"Ticket: {ticket}"
+        ).add_to(mapa)
+
+
+def crear_y_mostrar_mapa(viabilidades):
+    """Crea y muestra el mapa con todos los marcadores"""
+    # Crear mapa
     m = folium.Map(
         location=st.session_state.map_center,
         zoom_start=st.session_state.map_zoom,
@@ -1022,33 +1090,10 @@ def viabilidades_section():
         attr="Google"
     )
 
-    # Agregar marcadores de viabilidades guardadas (solo las del usuario logueado)
-    # Se asume que obtener_viabilidades() retorna registros con:
-    # (latitud, longitud, ticket, serviciable, apartment_id)
-    viabilidades = obtener_viabilidades()
-    for v in viabilidades:
-        lat, lon, ticket, serviciable, apartment_id = v
+    # Agregar marcadores existentes
+    agregar_marcadores_existentes(m, viabilidades)
 
-        # Determinar el color del marcador según las condiciones
-        if serviciable is not None and str(serviciable).strip() != "":
-            serv = str(serviciable).strip()
-            apt = str(apartment_id).strip() if apartment_id is not None else ""
-            if serv == "No":
-                marker_color = "red"
-            elif serv == "Sí" and apt not in ["", "N/D"]:
-                marker_color = "green"
-            else:
-                marker_color = "black"
-        else:
-            marker_color = "black"
-
-        folium.Marker(
-            [lat, lon],
-            icon=folium.Icon(color=marker_color),
-            popup=f"Ticket: {ticket}"
-        ).add_to(m)
-
-    # Si hay un marcador nuevo, agregarlo al mapa en azul
+    # Agregar marcador nuevo si existe
     if st.session_state.viabilidad_marker:
         lat = st.session_state.viabilidad_marker["lat"]
         lon = st.session_state.viabilidad_marker["lon"]
@@ -1057,144 +1102,202 @@ def viabilidades_section():
             icon=folium.Icon(color="blue")
         ).add_to(m)
 
-    # Mostrar el mapa y capturar clics
+    # Agregar geocoder y mostrar mapa
     Geocoder().add_to(m)
-    map_data = st_folium(m, height=680, width="100%")
+    return st_folium(m, height=680, width="100%")
 
-    # Detectar el clic para agregar el marcador nuevo
+
+def manejar_interaccion_mapa(map_data):
+    """Maneja la interacción con el mapa (clics, etc.)"""
+    # Detectar clic para agregar nuevo marcador
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         click = map_data["last_clicked"]
         st.session_state.viabilidad_marker = {"lat": click["lat"], "lon": click["lng"]}
-        st.session_state.map_center = (click["lat"], click["lng"])  # Guardar la nueva vista
-        st.session_state.map_zoom = map_data["zoom"]  # Actualizar el zoom también
-        st.rerun()  # Actualizamos cuando se coloca un marcador
+        st.session_state.map_center = (click["lat"], click["lng"])
+        st.session_state.map_zoom = map_data["zoom"]
+        st.rerun()
 
-    # Botón para eliminar el marcador y crear uno nuevo
+    # Botón para eliminar marcador
     if st.session_state.viabilidad_marker:
         if st.button("Eliminar marcador y crear uno nuevo"):
-            st.session_state.viabilidad_marker = None
-            st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
+            resetear_marcador()
             st.rerun()
 
-    # Mostrar el formulario si hay un marcador nuevo
-    if st.session_state.viabilidad_marker:
-        lat = st.session_state.viabilidad_marker["lat"]
-        lon = st.session_state.viabilidad_marker["lon"]
 
-        st.subheader("Completa los datos del punto de viabilidad")
-        with st.form("viabilidad_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.text_input("📍 Latitud", value=str(lat), disabled=True)
-            with col2:
-                st.text_input("📍 Longitud", value=str(lon), disabled=True)
+def resetear_marcador():
+    """Resetea el marcador y centra el mapa en la ubicación inicial"""
+    st.session_state.viabilidad_marker = None
+    st.session_state.map_center = (43.463444, -3.790476)
 
-            col3, col4, col5 = st.columns(3)
-            with col3:
-                provincia = st.text_input("🏞️ Provincia")
-            with col4:
-                municipio = st.text_input("🏘️ Municipio")
-            with col5:
-                poblacion = st.text_input("👥 Población")
 
-            col6, col7, col8, col9 = st.columns([3, 1, 1, 2])
-            with col6:
-                vial = st.text_input("🛣️ Vial")
-            with col7:
-                numero = st.text_input("🔢 Número")
-            with col8:
-                letra = st.text_input("🔤 Letra")
-            with col9:
-                cp = st.text_input("📮 Código Postal")
+def mostrar_formulario_si_aplica():
+    """Muestra el formulario si hay un marcador nuevo"""
+    if not st.session_state.viabilidad_marker:
+        return
 
-            col10, col11 = st.columns(2)
-            with col10:
-                nombre_cliente = st.text_input("👤 Nombre Cliente")
-            with col11:
-                telefono = st.text_input("📞 Teléfono")
-            # ✅ NUEVOS CAMPOS
-            col12, col13 = st.columns(2)
-            # Conexión para cargar los OLT desde la tabla
+    lat = st.session_state.viabilidad_marker["lat"]
+    lon = st.session_state.viabilidad_marker["lon"]
+
+    st.subheader("Completa los datos del punto de viabilidad")
+    procesar_formulario(lat, lon)
+
+
+def procesar_formulario(lat, lon):
+    """Procesa el formulario de viabilidad"""
+    with st.form("viabilidad_form"):
+        # Campos del formulario
+        datos = mostrar_campos_formulario(lat, lon)
+
+        if st.form_submit_button("Enviar Formulario"):
+            guardar_viabilidad_completa(datos, lat, lon)
+
+
+def mostrar_campos_formulario(lat, lon):
+    """Muestra todos los campos del formulario y retorna los datos"""
+    col1, col2 = st.columns(2)
+    with col1:
+        st.text_input("📍 Latitud", value=str(lat), disabled=True)
+    with col2:
+        st.text_input("📍 Longitud", value=str(lon), disabled=True)
+
+    col3, col4, col5 = st.columns(3)
+    with col3:
+        provincia = st.text_input("🏞️ Provincia")
+    with col4:
+        municipio = st.text_input("🏘️ Municipio")
+    with col5:
+        poblacion = st.text_input("👥 Población")
+
+    col6, col7, col8, col9 = st.columns([3, 1, 1, 2])
+    with col6:
+        vial = st.text_input("🛣️ Vial")
+    with col7:
+        numero = st.text_input("🔢 Número")
+    with col8:
+        letra = st.text_input("🔤 Letra")
+    with col9:
+        cp = st.text_input("📮 Código Postal")
+
+    col10, col11 = st.columns(2)
+    with col10:
+        nombre_cliente = st.text_input("👤 Nombre Cliente")
+    with col11:
+        telefono = st.text_input("📞 Teléfono")
+
+    # OLT con caché
+    col12, col13 = st.columns(2)
+    with col12:
+        olt = st.selectbox("🏢 OLT", options=obtener_lista_olt_cache())
+    with col13:
+        apartment_id = st.text_input("🏘️ Apartment ID")
+
+    comentario = st.text_area("📝 Comentario")
+
+    # Subida de imágenes
+    imagenes_viabilidad = st.file_uploader(
+        "Adjunta fotos (PNG, JPG, JPEG). Puedes seleccionar varias.",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"imagenes_viabilidad_{lat}_{lon}"
+    )
+
+    return {
+        "lat": lat,
+        "lon": lon,
+        "provincia": provincia,
+        "municipio": municipio,
+        "poblacion": poblacion,
+        "vial": vial,
+        "numero": numero,
+        "letra": letra,
+        "cp": cp,
+        "nombre_cliente": nombre_cliente,
+        "telefono": telefono,
+        "olt": olt,
+        "apartment_id": apartment_id,
+        "comentario": comentario,
+        "imagenes": imagenes_viabilidad
+    }
+
+
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def obtener_lista_olt_cache():
+    """Obtiene lista de OLTs con caché"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY nombre_olt")
+    lista_olt = [f"{fila[0]}. {fila[1]}" for fila in cursor.fetchall()]
+    conn.close()
+    return lista_olt
+
+
+def guardar_viabilidad_completa(datos, lat, lon):
+    """Guarda la viabilidad completa con imágenes"""
+    # Generar ticket
+    ticket = generar_ticket()
+
+    # Guardar datos principales
+    guardar_viabilidad((
+        datos["lat"],
+        datos["lon"],
+        datos["provincia"],
+        datos["municipio"],
+        datos["poblacion"],
+        datos["vial"],
+        datos["numero"],
+        datos["letra"],
+        datos["cp"],
+        datos["comentario"],
+        ticket,
+        datos["nombre_cliente"],
+        datos["telefono"],
+        st.session_state["username"],
+        datos["olt"],
+        datos["apartment_id"]
+    ))
+
+    # Guardar imágenes si existen
+    if datos["imagenes"]:
+        guardar_imagenes_viabilidad(datos["imagenes"], ticket)
+
+    # Mostrar mensaje de éxito
+    st.toast(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
+
+    # Resetear estado
+    resetear_marcador()
+    st.rerun()
+
+
+def guardar_imagenes_viabilidad(imagenes, ticket):
+    """Guarda las imágenes asociadas a una viabilidad"""
+    st.toast("📤 Subiendo imágenes...")
+
+    for imagen in imagenes:
+        try:
+            archivo_bytes = imagen.getvalue()
+            nombre_archivo = imagen.name
+
+            # Subir a Cloudinary
+            url = upload_image_to_cloudinary(
+                archivo_bytes,
+                nombre_archivo,
+                folder="viabilidades"
+            )
+
+            # Guardar en base de datos
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY nombre_olt")
-            lista_olt = [f"{fila[0]}. {fila[1]}" for fila in cursor.fetchall()]
+            cursor.execute("""
+                INSERT INTO imagenes_viabilidad (ticket, archivo_nombre, archivo_url)
+                VALUES (?, ?, ?)
+            """, (ticket, nombre_archivo, url))
+            conn.commit()
             conn.close()
 
-            with col12:
-                olt = st.selectbox("🏢 OLT", options=lista_olt)
-            with col13:
-                apartment_id = st.text_input("🏘️ Apartment ID")
-            comentario = st.text_area("📝 Comentario")
-            # ------------------- SUBIDA DE IMÁGENES -------------------
-            imagenes_viabilidad = st.file_uploader(
-                "Adjunta fotos (PNG, JPG, JPEG). Puedes seleccionar varias.",
-                type=["png", "jpg", "jpeg"],
-                accept_multiple_files=True,
-                key=f"imagenes_viabilidad_{lat}_{lon}"
-            )
-            submit = st.form_submit_button("Enviar Formulario")
+        except Exception as e:
+            st.warning(f"⚠️ No se pudo subir la imagen {nombre_archivo}: {e}")
 
-            if submit:
-                # Generar ticket único
-                ticket = generar_ticket()
-
-                # Insertar en la base de datos.
-                # Se añade el usuario logueado (st.session_state["username"]) al final de la tupla.
-                guardar_viabilidad((
-                    lat,
-                    lon,
-                    provincia,
-                    municipio,
-                    poblacion,
-                    vial,
-                    numero,
-                    letra,
-                    cp,
-                    comentario,
-                    ticket,
-                    nombre_cliente,
-                    telefono,
-                    st.session_state["username"],
-                    olt,  # nuevo campo
-                    apartment_id  # nuevo campo
-                ))
-                # ------------------- GUARDAR IMÁGENES -------------------
-                if imagenes_viabilidad:
-                    st.toast("📤 Subiendo imágenes...")
-                    for imagen in imagenes_viabilidad:
-                        try:
-                            archivo_bytes = imagen.getvalue()
-                            nombre_archivo = imagen.name
-
-                            # Aquí puedes subir a Cloudinary o a tu sistema de almacenamiento
-                            url = upload_image_to_cloudinary(archivo_bytes,
-                                                     nombre_archivo, folder="incidencias")  # Necesitas implementar esta función
-
-                            # Guardar URL y ticket en base de datos
-                            conn = get_db_connection()
-                            cursor = conn.cursor()
-                            cursor.execute("""
-                                INSERT INTO imagenes_viabilidad (ticket, archivo_nombre, archivo_url)
-                                VALUES (?, ?, ?)
-                            """, (ticket, nombre_archivo, url))
-                            conn.commit()
-                            conn.close()
-
-                        except Exception as e:
-                            st.warning(f"⚠️ No se pudo subir la imagen {nombre_archivo}: {e}")
-
-                    st.toast("✅ Imágenes guardadas correctamente.")
-
-                st.toast(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
-
-                # Resetear marcador para permitir nuevas viabilidades
-                st.session_state.viabilidad_marker = None
-                st.session_state.map_center = (43.463444, -3.790476)  # Vuelve a la ubicación inicial
-                st.rerun()
-
-
-from streamlit_javascript import st_javascript
+    st.toast("✅ Imágenes guardadas correctamente.")
 
 def get_user_location():
     result = st_javascript(

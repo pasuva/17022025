@@ -131,26 +131,36 @@ def validar_email(email):
     return True, "Email válido"
 
 
+import re
+
+
 def validar_codigo_postal(cp):
-    """Validar código postal español con verificaciones específicas"""
+    """Validar código postal español con mejores verificaciones y retrocompatibilidad"""
     if not cp:
         return False, "El código postal no puede estar vacío"
 
-    cp_limpio = cp.replace(' ', '').replace('-', '')
+    # Limpiar y normalizar
+    cp_limpio = cp.strip().upper().replace(' ', '').replace('-', '')
 
-    # Verificar formato básico (5 dígitos)
+    # Verificar formato básico
     if not re.match(r'^[0-9]{5}$', cp_limpio):
-        return False, "Código postal inválido. Debe tener exactamente 5 dígitos"
+        # Intentar corregir formatos como "28 001" o "28-001"
+        match = re.match(r'^([0-9]{2})[ -]?([0-9]{3})$', cp.strip())
+        if match:
+            cp_limpio = match.group(1) + match.group(2)
+        else:
+            return False, "Formato inválido. Debe tener 5 dígitos (ej: 28001)"
+
+    # Validar rango general
+    codigo_num = int(cp_limpio)
+    if codigo_num < 1000 or codigo_num > 52999:
+        return False, "Código postal fuera del rango válido (01000-52999)"
 
     primer_digito = cp_limpio[0]
     codigo_provincia = cp_limpio[:2]
 
-    # Validar que el primer dígito esté entre 0-5 (España peninsular + Baleares)
-    if primer_digito not in '012345':
-        return False, "Código postal inválido. El primer dígito debe estar entre 0-5"
-
-    # Validar códigos de provincia específicos
-    provincias_validas = {
+    # Diccionario de provincias
+    provincias = {
         '01': 'Álava', '02': 'Albacete', '03': 'Alicante', '04': 'Almería', '05': 'Ávila',
         '06': 'Badajoz', '07': 'Baleares', '08': 'Barcelona', '09': 'Burgos', '10': 'Cáceres',
         '11': 'Cádiz', '12': 'Castellón', '13': 'Ciudad Real', '14': 'Córdoba', '15': 'Coruña',
@@ -164,45 +174,103 @@ def validar_codigo_postal(cp):
         '50': 'Zaragoza', '51': 'Ceuta', '52': 'Melilla'
     }
 
-    if codigo_provincia not in provincias_validas:
-        return False, f"Código postal inválido. '{codigo_provincia}' no corresponde a ninguna provincia española"
+    # Validar provincia
+    if codigo_provincia not in provincias:
+        # Detectar errores comunes
+        error_msg = f"Código postal inválido"
 
-    # Validaciones específicas por rangos
+        if codigo_provincia in ['00', '53', '54', '55', '56', '57', '58', '59']:
+            error_msg += ". Los códigos empiezan por 01-52"
+        elif codigo_provincia[0] in '6789':
+            error_msg += ". Los códigos españoles empiezan por 0-5"
+        elif codigo_provincia in ['60', '61', '62', '63', '64', '65', '66', '67', '68', '69']:
+            error_msg += ". ¿Quizás es un código de otro país?"
+        elif codigo_provincia in ['00', '0O', 'O0', 'O1', 'O2', 'O3', 'O4', 'O5']:
+            error_msg += ". ¿Ha confundido el número 0 con la letra O?"
+
+        return False, error_msg
+
+    # Validaciones específicas por zona
+    provincia = provincias[codigo_provincia]
     primer_digito_int = int(primer_digito)
 
+    # Mapa de consistencia entre primer dígito y provincia
     if primer_digito_int == 0:
-        # Códigos que empiezan por 0 (Álava, Albacete, etc.)
         if not ('01' <= codigo_provincia <= '09'):
-            return False, "Código postal con formato inválido para el rango 01-03"
+            return False, f"Inconsistencia. Códigos que empiezan por 0 son para provincias 01-09, no {codigo_provincia}"
 
     elif primer_digito_int == 1:
-        # Códigos que empiezan por 1 (Madrid principalmente)
-        if not ('28' <= codigo_provincia <= '29'):
-            return False, "Código postal con formato inválido para el rango 28-29"
+        provincias_1 = ['10', '11', '12', '13', '14', '15', '16', '17', '28', '29']
+        if codigo_provincia not in provincias_1:
+            return False, f"Inconsistencia. Para {provincia} el código debería empezar por otro dígito"
 
     elif primer_digito_int == 2:
-        # Códigos que empiezan por 2 (Barcelona, etc.)
-        if not ('08' <= codigo_provincia <= '09'):
-            return False, "Código postal con formato inválido para el rango 08-09"
+        provincias_2 = ['20', '21', '22', '23', '24', '25', '26', '27', '28', '29']
+        if codigo_provincia not in provincias_2:
+            return False, f"Inconsistencia. Para {provincia} el código debería empezar por otro dígito"
 
     elif primer_digito_int == 3:
-        # Códigos que empiezan por 3 (Islas Baleares, Valencia, etc.)
-        if not ('07' <= codigo_provincia <= '46'):
-            return False, "Código postal con formato inválido para el rango 07-46"
+        provincias_3 = ['30', '31', '32', '33', '34', '35', '36', '37', '38', '39']
+        if codigo_provincia not in provincias_3:
+            return False, f"Inconsistencia. Para {provincia} el código debería empezar por otro dígito"
 
     elif primer_digito_int == 4:
-        # Códigos que empiezan por 4 (Sevilla, Málaga, etc.)
-        if not ('41' <= codigo_provincia <= '41'):
-            return False, "Código postal con formato inválido para el rango 41"
+        provincias_4 = ['40', '41', '42', '43', '44', '45', '46', '47', '48', '49']
+        if codigo_provincia not in provincias_4:
+            return False, f"Inconsistencia. Para {provincia} el código debería empezar por otro dígito"
 
     elif primer_digito_int == 5:
-        # Códigos que empiezan por 5 (Canarias, Ceuta, Melilla)
-        if not ('35' <= codigo_provincia <= '52'):
-            return False, "Código postal con formato inválido para el rango 35-52"
+        provincias_5 = ['50', '51', '52']
+        if codigo_provincia not in provincias_5:
+            return False, f"Inconsistencia. Para {provincia} el código debería empezar por otro dígito"
 
-    # Información adicional útil
-    provincia = provincias_validas[codigo_provincia]
-    return True, f"Código postal válido - Provincia: {provincia}"
+    # Validaciones adicionales útiles
+    if codigo_provincia == '28':  # Madrid
+        if not (28001 <= codigo_num <= 28999):
+            return False, "Código postal de Madrid fuera de rango (28001-28999)"
+
+    elif codigo_provincia == '08':  # Barcelona
+        if not (8001 <= int(cp_limpio[2:]) <= 8999):
+            return False, "Código postal de Barcelona fuera de rango (08001-08999)"
+
+    elif codigo_provincia in ['35', '38']:  # Canarias
+        if codigo_provincia == '35' and not (35000 <= codigo_num <= 35999):
+            return False, "Las Palmas: rango 35000-35999"
+        elif codigo_provincia == '38' and not (38000 <= codigo_num <= 38999):
+            return False, "Santa Cruz de Tenerife: rango 38000-38999"
+
+    elif codigo_provincia in ['51', '52']:  # Ceuta y Melilla
+        if codigo_provincia == '51' and not (51000 <= codigo_num <= 51099):
+            return False, "Ceuta: rango 51000-51099"
+        elif codigo_provincia == '52' and not (52000 <= codigo_num <= 52099):
+            return False, "Melilla: rango 52000-52099"
+
+    # Éxito - devolver mensaje informativo
+    cp_formateado = f"{cp_limpio[:2]} {cp_limpio[2:]}"
+    return True, f"Válido ({cp_formateado}) - {provincia}"
+
+
+# Función opcional para validación más estricta (mantener retrocompatibilidad)
+def validar_cp_con_provincia(cp, provincia_usuario=None):
+    """
+    Validar CP y además verificar coincidencia con provincia proporcionada
+    """
+    es_valido, mensaje = validar_codigo_postal(cp)
+
+    if es_valido and provincia_usuario:
+        # Extraer provincia del mensaje de éxito
+        if " - " in mensaje:
+            provincia_cp = mensaje.split(" - ")[-1]
+
+            # Normalizar nombres para comparación
+            def normalizar(texto):
+                return texto.lower().replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace(
+                    'ú', 'u')
+
+            if normalizar(provincia_cp) != normalizar(provincia_usuario):
+                return False, f"El CP no corresponde a {provincia_usuario}. Es de {provincia_cp}"
+
+    return es_valido, mensaje
 
 
 def validar_iban(iban):
