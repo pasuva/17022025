@@ -3260,7 +3260,7 @@ def admin_dashboard():
                 ].copy()
 
                 with st.expander("📋 Ver contratos sin apartment_id", expanded=True):
-                    st.dataframe(df_sin_id, use_container_width=True, height=300)
+                    st.dataframe(df_sin_id, width='stretch', height=300)
 
             # Mostrar contratos con ID pero no en maestra
             if num_ids_no_en_maestra > 0:
@@ -3289,7 +3289,7 @@ def admin_dashboard():
                         st.write("No hay IDs válidos para mostrar")
 
                     # Mostrar tabla de contratos
-                    st.dataframe(df_no_en_maestra, use_container_width=True, height=400)
+                    st.dataframe(df_no_en_maestra, width='stretch', height=400)
 
                     # Descargar análisis
                     csv = df_no_en_maestra.to_csv(index=False).encode('utf-8')
@@ -3332,7 +3332,7 @@ def admin_dashboard():
                         st.dataframe(
                             duplicados_con_id[['apartment_id', 'apartment_id_normalizado', 'num_contrato', 'cliente',
                                                'estado']].sort_values('apartment_id_normalizado'),
-                            use_container_width=True,
+                            width='stretch',
                             height=300
                         )
                     else:
@@ -3354,20 +3354,20 @@ def admin_dashboard():
                     "Eficiencia de cruce"
                 ],
                 "Valor": [
-                    total_contratos,
-                    contratos_con_id,
-                    contratos_sin_id,
-                    num_ids_unicos,
-                    contratos_en_maestra,
-                    contratos_no_cruzados_real,
-                    num_ids_no_en_maestra,
-                    duplicados_count,
+                    str(total_contratos),
+                    str(contratos_con_id),
+                    str(contratos_sin_id),
+                    str(num_ids_unicos),
+                    str(contratos_en_maestra),
+                    str(contratos_no_cruzados_real),
+                    str(num_ids_no_en_maestra),
+                    str(duplicados_count),
                     f"{eficiencia_real:.1f}%"
                 ]
             }
 
             df_resumen = pd.DataFrame(resumen_data)
-            st.dataframe(df_resumen, use_container_width=True, hide_index=True)
+            st.dataframe(df_resumen, width='stretch', hide_index=True)
 
             # PREPARAR DATOS FINALES - VERSIÓN SIMPLIFICADA
             st.toast("🔄 Preparando datos finales...")
@@ -3489,12 +3489,12 @@ def admin_dashboard():
                     data=towrite,
                     file_name=f"datos_completos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
+                    width='stretch',
                     help="Incluye datos consolidados, análisis y resumen"
                 )
 
             with col2:
-                if st.button("📧 Enviar por correo", use_container_width=True, type="secondary"):
+                if st.button("📧 Enviar por correo", width='stretch', type="secondary"):
                     with st.spinner("Enviando Excel por correo..."):
                         try:
                             correo_excel_control(
