@@ -5665,88 +5665,387 @@ def mostrar_kpis_seguimiento_contratos():
             # ============================
 
             if 'fecha_inicio_contrato' in df_contratos.columns:
-                st.subheader("📅 Evolución Temporal de Contratos")
 
-                # Crear pestañas para diferentes vistas temporales
-                tab1, tab2, tab3 = st.tabs(["📈 Mensual", "📅 Semanal", "📋 Últimos Contratos"])
+                # ============================
+                # EVOLUCIÓN TEMPORAL - REAGRUPADO
+                # ============================
 
-                with tab1:
-                    # Evolución mensual
-                    st.markdown("#### Evolución Mensual")
+                if 'fecha_inicio_contrato' in df_contratos.columns:
+                    st.subheader("📅 Evolución Temporal de Contratos")
 
-                    # Crear columna de mes
-                    df_contratos['mes_inicio'] = df_contratos['fecha_inicio_contrato'].dt.to_period('M')
-                    mensual = df_contratos.groupby('mes_inicio').size().reset_index()
-                    mensual.columns = ['Mes', 'Contratos']
-                    mensual['Mes'] = mensual['Mes'].astype(str)
+                    # CORREGIDO: Ahora con 5 pestañas
+                    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+                        "📈 Mensual",
+                        "📅 Semanal",
+                        "👥 Por Comercial",
+                        "📊 Comparativa",
+                        "📋 Últimos Contratos"
+                    ])
 
-                    col1, col2 = st.columns([2, 1])
+                    with tab1:
+                        # Evolución mensual
+                        st.markdown("#### Evolución Mensual")
 
-                    with col1:
-                        try:
-                            import plotly.express as px
-                            fig = px.line(
-                                mensual,
-                                x='Mes',
-                                y='Contratos',
-                                title='Contratos por Mes',
-                                markers=True
-                            )
-                            fig.update_layout(height=400)
-                            st.plotly_chart(fig, config={'responsive': True})
-                        except:
-                            st.dataframe(mensual)
+                        # Crear columna de mes
+                        df_contratos['mes_inicio'] = df_contratos['fecha_inicio_contrato'].dt.to_period('M')
+                        mensual = df_contratos.groupby('mes_inicio').size().reset_index()
+                        mensual.columns = ['Mes', 'Contratos']
+                        mensual['Mes'] = mensual['Mes'].astype(str)
 
-                    with col2:
-                        # Estadísticas mensuales
-                        st.markdown("**Estadísticas Mensuales**")
-                        st.metric("Promedio mensual", f"{mensual['Contratos'].mean():.1f}")
-                        st.metric("Máximo mensual", f"{mensual['Contratos'].max()}")
-                        st.metric("Mínimo mensual", f"{mensual['Contratos'].min()}")
+                        col1, col2 = st.columns([2, 1])
 
-                with tab2:
-                    # Evolución semanal
-                    st.markdown("#### Evolución Semanal")
+                        with col1:
+                            try:
+                                import plotly.express as px
+                                fig = px.line(
+                                    mensual,
+                                    x='Mes',
+                                    y='Contratos',
+                                    title='Contratos por Mes',
+                                    markers=True
+                                )
+                                fig.update_layout(height=400)
+                                st.plotly_chart(fig, config={'responsive': True})
+                            except:
+                                st.dataframe(mensual)
 
-                    # Crear columna de semana (formato: Año-Semana)
-                    df_contratos['semana_inicio'] = df_contratos['fecha_inicio_contrato'].dt.strftime('%Y-W%U')
+                        with col2:
+                            # Estadísticas mensuales
+                            st.markdown("**Estadísticas Mensuales**")
+                            st.metric("Promedio mensual", f"{mensual['Contratos'].mean():.1f}")
+                            st.metric("Máximo mensual", f"{mensual['Contratos'].max()}")
+                            st.metric("Mínimo mensual", f"{mensual['Contratos'].min()}")
 
-                    # Agrupar por semana
-                    semanal = df_contratos.groupby('semana_inicio').size().reset_index()
-                    semanal.columns = ['Semana', 'Contratos']
+                            # Último mes vs anterior
+                            if len(mensual) >= 2:
+                                ultimo = mensual['Contratos'].iloc[-1]
+                                anterior = mensual['Contratos'].iloc[-2]
+                                variacion = ((ultimo - anterior) / anterior * 100) if anterior > 0 else 0
+                                st.metric("Último mes vs anterior", f"{ultimo}", f"{variacion:+.1f}%")
 
-                    # Ordenar por semana
-                    semanal = semanal.sort_values('Semana')
+                    with tab2:
+                        # Evolución semanal
+                        st.markdown("#### Evolución Semanal")
 
-                    # Mostrar estadísticas de la última semana
-                    if not semanal.empty:
-                        ultima_semana = semanal.iloc[-1]
-                        st.metric(f"Última semana ({ultima_semana['Semana']})", ultima_semana['Contratos'])
+                        # Crear columna de semana (formato: Año-Semana)
+                        df_contratos['semana_inicio'] = df_contratos['fecha_inicio_contrato'].dt.strftime('%Y-W%U')
 
-                    col1, col2 = st.columns([2, 1])
+                        # Agrupar por semana
+                        semanal = df_contratos.groupby('semana_inicio').size().reset_index()
+                        semanal.columns = ['Semana', 'Contratos']
 
-                    with col1:
-                        try:
-                            import plotly.express as px
-                            fig = px.line(
-                                semanal,
-                                x='Semana',
-                                y='Contratos',
-                                title='Contratos por Semana',
-                                markers=True
-                            )
-                            fig.update_layout(height=400)
-                            fig.update_xaxes(tickangle=45)
-                            st.plotly_chart(fig, config={'responsive': True})
-                        except:
-                            st.dataframe(semanal)
+                        # Ordenar por semana
+                        semanal = semanal.sort_values('Semana')
 
-                    with col2:
-                        # Top 5 semanas con más contratos
-                        st.markdown("**Top 5 Semanas**")
-                        top_semanas = semanal.sort_values('Contratos', ascending=False).head(5)
-                        for idx, row in top_semanas.iterrows():
-                            st.write(f"**{row['Semana']}**: {row['Contratos']} contratos")
+                        # Mostrar estadísticas de la última semana
+                        if not semanal.empty:
+                            ultima_semana = semanal.iloc[-1]
+                            st.metric(f"Última semana ({ultima_semana['Semana']})", ultima_semana['Contratos'])
+
+                        col1, col2 = st.columns([2, 1])
+
+                        with col1:
+                            try:
+                                import plotly.express as px
+                                fig = px.line(
+                                    semanal,
+                                    x='Semana',
+                                    y='Contratos',
+                                    title='Contratos por Semana',
+                                    markers=True
+                                )
+                                fig.update_layout(height=400)
+                                fig.update_xaxes(tickangle=45)
+                                st.plotly_chart(fig, config={'responsive': True})
+                            except:
+                                st.dataframe(semanal)
+
+                        with col2:
+                            # Top 5 semanas con más contratos
+                            st.markdown("**Top 5 Semanas**")
+                            top_semanas = semanal.sort_values('Contratos', ascending=False).head(5)
+                            for idx, row in top_semanas.iterrows():
+                                st.write(f"**{row['Semana']}**: {row['Contratos']} contratos")
+
+                            # Mejor semana del año
+                            if not semanal.empty:
+                                mejor_semana = semanal.loc[semanal['Contratos'].idxmax()]
+                                st.metric("Mejor semana", f"{mejor_semana['Contratos']}", mejor_semana['Semana'])
+
+                    with tab3:
+                        # NUEVA PESTAÑA: Evolución por comercial
+                        st.markdown("#### Evolución por Comercial")
+
+                        # Crear pestañas para vista mensual/semanal por comercial
+                        sub_tab1, sub_tab2 = st.tabs(["📅 Mensual por Comercial", "📊 Semanal por Comercial"])
+
+                        with sub_tab1:
+                            st.markdown("##### Evolución Mensual por Comercial")
+
+                            if 'comercial' in df_contratos.columns:
+                                # Preparar datos mensuales por comercial
+                                df_mensual_comercial = df_contratos.copy()
+                                df_mensual_comercial['mes'] = df_mensual_comercial[
+                                    'fecha_inicio_contrato'].dt.to_period('M')
+
+                                # Agrupar por mes y comercial
+                                mensual_comercial = df_mensual_comercial.groupby(
+                                    ['mes', 'comercial']).size().reset_index()
+                                mensual_comercial.columns = ['Mes', 'Comercial', 'Contratos']
+                                mensual_comercial['Mes'] = mensual_comercial['Mes'].astype(str)
+
+                                # Filtrar comerciales con más actividad
+                                comercial_totals = mensual_comercial.groupby('Comercial')['Contratos'].sum()
+                                top_comerciales = comercial_totals.nlargest(8).index.tolist()
+                                df_top = mensual_comercial[mensual_comercial['Comercial'].isin(top_comerciales)]
+
+                                # Selector de comerciales
+                                comerciales_disponibles = sorted(df_mensual_comercial['comercial'].dropna().unique())
+                                comerciales_seleccionados = st.multiselect(
+                                    "Selecciona comerciales:",
+                                    options=comerciales_disponibles,
+                                    default=top_comerciales[:3] if top_comerciales else comerciales_disponibles[:3],
+                                    key="comerciales_mensual"
+                                )
+
+                                if comerciales_seleccionados:
+                                    df_filtrado = mensual_comercial[
+                                        mensual_comercial['Comercial'].isin(comerciales_seleccionados)]
+
+                                    col1, col2 = st.columns([2, 1])
+
+                                    with col1:
+                                        # Gráfico de líneas por comercial
+                                        try:
+                                            import plotly.express as px
+                                            fig = px.line(
+                                                df_filtrado,
+                                                x='Mes',
+                                                y='Contratos',
+                                                color='Comercial',
+                                                title='Contratos Mensuales por Comercial',
+                                                markers=True
+                                            )
+                                            fig.update_layout(height=400, xaxis_tickangle=45)
+                                            st.plotly_chart(fig, config={'responsive': True})
+                                        except Exception as e:
+                                            st.error(f"Error al generar gráfico: {e}")
+                                            st.dataframe(df_filtrado)
+
+                                    with col2:
+                                        # Tabla de resumen por comercial
+                                        st.markdown("**Resumen por Comercial**")
+                                        resumen_comercial = df_filtrado.groupby('Comercial')['Contratos'].agg(
+                                            ['sum', 'mean', 'max']).round(1)
+                                        resumen_comercial.columns = ['Total', 'Promedio', 'Máximo']
+                                        resumen_comercial = resumen_comercial.sort_values('Total', ascending=False)
+
+                                        st.dataframe(resumen_comercial, height=300)
+
+                                        # KPIs rápidos
+                                        if not resumen_comercial.empty:
+                                            top_comercial = resumen_comercial.iloc[0]
+                                            st.metric("Top comercial", resumen_comercial.index[0],
+                                                      f"{top_comercial['Total']} total")
+
+                                else:
+                                    st.info("Selecciona al menos un comercial para ver la evolución")
+                            else:
+                                st.warning("No hay datos de comercial disponibles")
+
+                        with sub_tab2:
+                            st.markdown("##### Evolución Semanal por Comercial")
+
+                            if 'comercial' in df_contratos.columns:
+                                # Preparar datos semanales por comercial
+                                df_semanal_comercial = df_contratos.copy()
+                                df_semanal_comercial['semana'] = df_semanal_comercial[
+                                    'fecha_inicio_contrato'].dt.strftime('%Y-W%U')
+
+                                # Agrupar por semana y comercial
+                                semanal_comercial = df_semanal_comercial.groupby(
+                                    ['semana', 'comercial']).size().reset_index()
+                                semanal_comercial.columns = ['Semana', 'Comercial', 'Contratos']
+                                semanal_comercial = semanal_comercial.sort_values('Semana')
+
+                                # Selector de comerciales
+                                comerciales_disponibles = sorted(df_semanal_comercial['comercial'].dropna().unique())
+                                comerciales_seleccionados = st.multiselect(
+                                    "Selecciona comerciales:",
+                                    options=comerciales_disponibles,
+                                    default=comerciales_disponibles[:3] if comerciales_disponibles else [],
+                                    key="comerciales_semanal"
+                                )
+
+                                if comerciales_seleccionados:
+                                    df_filtrado = semanal_comercial[
+                                        semanal_comercial['Comercial'].isin(comerciales_seleccionados)]
+
+                                    col1, col2 = st.columns([2, 1])
+
+                                    with col1:
+                                        # Gráfico de líneas
+                                        try:
+                                            import plotly.express as px
+                                            fig = px.line(
+                                                df_filtrado,
+                                                x='Semana',
+                                                y='Contratos',
+                                                color='Comercial',
+                                                title='Contratos Semanales por Comercial',
+                                                markers=True
+                                            )
+                                            fig.update_layout(height=400, xaxis_tickangle=45)
+                                            st.plotly_chart(fig, config={'responsive': True})
+                                        except Exception as e:
+                                            st.error(f"Error al generar gráfico: {e}")
+                                            st.dataframe(df_filtrado)
+
+                                    with col2:
+                                        # Estadísticas de las últimas 4 semanas
+                                        st.markdown("**Últimas 4 semanas**")
+
+                                        # Obtener últimas 4 semanas únicas
+                                        ultimas_semanas = sorted(df_filtrado['Semana'].unique())[-4:]
+                                        df_ultimas = df_filtrado[df_filtrado['Semana'].isin(ultimas_semanas)]
+
+                                        if not df_ultimas.empty:
+                                            # Pivotear para tabla
+                                            pivot_ultimas = df_ultimas.pivot_table(
+                                                index='Comercial',
+                                                columns='Semana',
+                                                values='Contratos',
+                                                fill_value=0
+                                            )
+                                            st.dataframe(pivot_ultimas, height=300)
+
+                                            # Calcular crecimiento último mes
+                                            if len(ultimas_semanas) >= 2:
+                                                primero = ultimas_semanas[0]
+                                                ultimo = ultimas_semanas[-1]
+                                                st.caption(f"Crecimiento de {primero} a {ultimo}")
+
+                                else:
+                                    st.info("Selecciona al menos un comercial para ver la evolución")
+                            else:
+                                st.warning("No hay datos de comercial disponibles")
+
+                    with tab4:
+                        # NUEVA PESTAÑA: Comparativa entre comerciales
+                        st.markdown("#### Comparativa entre Comerciales")
+
+                        if 'comercial' in df_contratos.columns:
+                            # Selector de periodo
+                            periodo_opciones = ['Último mes', 'Últimos 3 meses', 'Últimos 6 meses', 'Todo el período']
+                            periodo_seleccionado = st.selectbox("Selecciona período:", periodo_opciones,
+                                                                key="periodo_comparativa")
+
+                            # Filtrar por periodo
+                            df_comparativa = df_contratos.copy()
+                            hoy = pd.Timestamp.now()
+
+                            if periodo_seleccionado == 'Último mes':
+                                fecha_limite = hoy - pd.Timedelta(days=30)
+                            elif periodo_seleccionado == 'Últimos 3 meses':
+                                fecha_limite = hoy - pd.Timedelta(days=90)
+                            elif periodo_seleccionado == 'Últimos 6 meses':
+                                fecha_limite = hoy - pd.Timedelta(days=180)
+                            else:
+                                fecha_limite = df_comparativa['fecha_inicio_contrato'].min()
+
+                            df_periodo = df_comparativa[df_comparativa['fecha_inicio_contrato'] >= fecha_limite]
+
+                            # Top comerciales del periodo
+                            top_comerciales_periodo = df_periodo['comercial'].value_counts().head(10).index.tolist()
+                            df_top_periodo = df_periodo[df_periodo['comercial'].isin(top_comerciales_periodo)]
+
+                            col1, col2 = st.columns(2)
+
+                            with col1:
+                                # Gráfico de barras por comercial
+                                try:
+                                    import plotly.express as px
+                                    comercial_counts = df_top_periodo['comercial'].value_counts().reset_index()
+                                    comercial_counts.columns = ['Comercial', 'Contratos']
+
+                                    fig = px.bar(
+                                        comercial_counts,
+                                        x='Comercial',
+                                        y='Contratos',
+                                        title=f'Top Comerciales - {periodo_seleccionado}',
+                                        color='Comercial',
+                                        text='Contratos'
+                                    )
+                                    fig.update_layout(height=400, showlegend=False, xaxis_tickangle=45)
+                                    st.plotly_chart(fig, config={'responsive': True})
+                                except Exception as e:
+                                    st.error(f"Error al generar gráfico: {e}")
+
+                            with col2:
+                                # Métricas por comercial
+                                st.markdown("**Métricas Clave**")
+
+                                if not df_top_periodo.empty:
+                                    # Calcular varias métricas
+                                    metrics_df = df_top_periodo.groupby('comercial').agg({
+                                        'apartment_id': 'count',
+                                        'fecha_inicio_contrato': ['min', 'max']
+                                    }).round(1)
+
+                                    metrics_df.columns = ['Contratos', 'Primer Contrato', 'Último Contrato']
+                                    metrics_df = metrics_df.sort_values('Contratos', ascending=False)
+
+                                    # Calcular días entre primer y último contrato
+                                    metrics_df['Días Activo'] = (
+                                                metrics_df['Último Contrato'] - metrics_df['Primer Contrato']).dt.days
+                                    metrics_df['Contratos/Día'] = (
+                                                metrics_df['Contratos'] / metrics_df['Días Activo']).round(2)
+
+                                    st.dataframe(metrics_df.head(8), height=400)
+
+                                    # Mejor ratio
+                                    if 'Contratos/Día' in metrics_df.columns:
+                                        mejor_ratio = metrics_df.loc[metrics_df['Contratos/Día'].idxmax()]
+                                        st.metric("Mejor ratio contratos/día",
+                                                  f"{mejor_ratio['Contratos/Día']}",
+                                                  mejor_ratio.name)
+                        else:
+                            st.warning("No hay datos de comercial disponibles")
+
+                    with tab5:
+                        # Mantener la pestaña original de últimos contratos
+                        st.markdown("#### Últimos Contratos Registrados")
+
+                        # Ordenar por fecha más reciente
+                        df_recent = df_contratos.sort_values('fecha_inicio_contrato', ascending=False).head(20)
+
+                        # Seleccionar columnas relevantes para mostrar
+                        columnas_mostrar = ['num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato', 'comercial']
+                        columnas_mostrar = [col for col in columnas_mostrar if col in df_recent.columns]
+
+                        # Añadir columnas nuevas si están disponibles
+                        nuevas_columnas = ['SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada']
+                        for col in nuevas_columnas:
+                            if col in df_recent.columns:
+                                columnas_mostrar.append(col)
+
+                        st.dataframe(
+                            df_recent[columnas_mostrar],
+                            height=400,
+                            width='stretch'
+                        )
+
+                        # Estadísticas de los últimos 30 días
+                        if not df_contratos.empty:
+                            from datetime import datetime, timedelta
+                            hoy = datetime.now()
+                            hace_30_dias = hoy - timedelta(days=30)
+
+                            contratos_30_dias = df_contratos[
+                                df_contratos['fecha_inicio_contrato'] >= hace_30_dias
+                                ].shape[0]
+
+                            st.metric("Contratos últimos 30 días", contratos_30_dias)
 
                 with tab3:
                     # Últimos contratos registrados
