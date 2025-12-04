@@ -5345,7 +5345,7 @@ def mostrar_kpis_seguimiento_contratos():
                             )
                             fig.update_layout(height=400, showlegend=False)
                             fig.update_xaxes(tickangle=45)
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, config={'responsive': True})
                         except:
                             st.dataframe(metodo_stats)
 
@@ -5398,7 +5398,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 )
                                 fig.update_layout(height=400)
                                 fig.update_xaxes(tickangle=45)
-                                st.plotly_chart(fig, width='stretch')
+                                st.plotly_chart(fig, config={'responsive': True})
                             except:
                                 st.dataframe(evolucion_mensual)
 
@@ -5477,7 +5477,7 @@ def mostrar_kpis_seguimiento_contratos():
                                     title='Distribución de Métodos por Comercial'
                                 )
                                 fig.update_layout(height=400)
-                                st.plotly_chart(fig, width='stretch')
+                                st.plotly_chart(fig, config={'responsive': True})
                             except:
                                 st.info("No se pudo generar el mapa de calor")
                         else:
@@ -5518,7 +5518,7 @@ def mostrar_kpis_seguimiento_contratos():
                                     labels={'value': 'Contratos', 'variable': 'Método de Entrada'}
                                 )
                                 fig.update_layout(height=400)
-                                st.plotly_chart(fig, width='stretch')
+                                st.plotly_chart(fig, config={'responsive': True})
                             except:
                                 st.dataframe(mes_metodo_stats)
 
@@ -5555,7 +5555,7 @@ def mostrar_kpis_seguimiento_contratos():
                             text='Cantidad'
                         )
                         fig.update_layout(height=400, showlegend=False)
-                        st.plotly_chart(fig, width='stretch')
+                        st.plotly_chart(fig, config={'responsive': True})
                     except:
                         st.dataframe(estado_stats)
 
@@ -5587,7 +5587,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 text='Cantidad'
                             )
                             fig.update_layout(height=400, showlegend=False)
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, config={'responsive': True})
                         except:
                             st.dataframe(sat_stats)
 
@@ -5619,7 +5619,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 text='Cantidad'
                             )
                             fig.update_layout(height=400, showlegend=False)
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, config={'responsive': True})
                         except:
                             st.dataframe(tecnico_stats)
 
@@ -5649,7 +5649,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 hole=0.3
                             )
                             fig.update_layout(height=400)
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, config={'responsive': True})
                         except:
                             st.dataframe(tipo_cliente_stats)
 
@@ -5693,7 +5693,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 markers=True
                             )
                             fig.update_layout(height=400)
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, config={'responsive': True})
                         except:
                             st.dataframe(mensual)
 
@@ -5737,7 +5737,7 @@ def mostrar_kpis_seguimiento_contratos():
                             )
                             fig.update_layout(height=400)
                             fig.update_xaxes(tickangle=45)
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, config={'responsive': True})
                         except:
                             st.dataframe(semanal)
 
