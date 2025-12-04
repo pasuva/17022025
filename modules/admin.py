@@ -216,12 +216,13 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
     except Exception as e:
         st.toast(f"❌ Error al actualizar la hoja de Google Sheets: {e}")
 
+
 def cargar_contratos_google():
     try:
         # --- Detectar entorno y elegir archivo de credenciales ---
         posibles_rutas = [
             "modules/carga-contratos-verde-c5068516c7cf.json",  # Render: secret file
-            "/etc/secrets/carga-contratos-verde-c5068516c7cf.json",      # Otra ruta posible en Render
+            "/etc/secrets/carga-contratos-verde-c5068516c7cf.json",  # Otra ruta posible en Render
             os.path.join(os.path.dirname(__file__), "carga-contratos-verde-c5068516c7cf.json"),  # Local
         ]
 
@@ -265,6 +266,7 @@ def cargar_contratos_google():
         df = pd.DataFrame(data)
 
         # --- Mapeo de columnas ---
+        # ACTUALIZADO: Incluir las nuevas columnas
         column_mapping = {
             'Nº CONTRATO': 'num_contrato',
             'APARTMENT ID': 'apartment_id',
@@ -276,9 +278,50 @@ def cargar_contratos_google():
             'FECHA INSTALACIÓN': 'fecha_instalacion',
             'FECHA FIN CONTRATO': 'fecha_fin_contrato',
             'FECHA INICIO CONTRATO': 'fecha_inicio_contrato',
-            'COMENTARIOS': 'comentarios'
+            'COMENTARIOS': 'comentarios',
+            'DIVISOR': 'divisor',
+            'PUERTO': 'puerto',
+            # NUEVAS COLUMNAS - mapear posibles nombres
+            'SAT': 'SAT',
+            'TIPO CLIENTE': 'Tipo_cliente',
+            'TIPO CLIENTES': 'Tipo_cliente',  # Posible variación
+            'TÉCNICO': 'tecnico',
+            'TECNICO': 'tecnico',  # Sin tilde
+            'MÉTODO ENTRADA': 'metodo_entrada',
+            'METODO ENTRADA': 'metodo_entrada',  # Sin tilde
+            'METODO DE ENTRADA': 'metodo_entrada',  # Otra variación
+            'BILLING': 'billing',
+            'BILL': 'billing',  # Posible variación corta
         }
+
+        # Primero, normalizar nombres de columnas del DataFrame (quitar espacios extra, convertir a mayúsculas)
+        df.columns = df.columns.map(lambda x: str(x).strip().upper() if x is not None else "")
+
+        # Aplicar el mapeo
+        for sheet_col, db_col in column_mapping.items():
+            if sheet_col in df.columns:
+                # Si la columna existe en el sheet, mantenerla
+                pass
+            else:
+                # Buscar variaciones (sin espacios, con/sin tildes, etc.)
+                normalized_sheet_col = sheet_col.replace(' ', '').replace('Á', 'A').replace('É', 'E').replace('Í',
+                                                                                                              'I').replace(
+                    'Ó', 'O').replace('Ú', 'U')
+                for actual_col in df.columns:
+                    normalized_actual_col = actual_col.replace(' ', '').replace('Á', 'A').replace('É', 'E').replace('Í',
+                                                                                                                    'I').replace(
+                        'Ó', 'O').replace('Ú', 'U')
+                    if normalized_sheet_col == normalized_actual_col:
+                        # Renombrar la columna actual al nombre esperado
+                        df.rename(columns={actual_col: sheet_col}, inplace=True)
+                        print(f"✅ Renombrada columna '{actual_col}' -> '{sheet_col}'")
+                        break
+
+        # Ahora aplicar el mapeo de nombres
         df.rename(columns=column_mapping, inplace=True)
+
+        # Verificar qué columnas se han mapeado correctamente
+        print("🔍 Columnas después del mapeo:", df.columns.tolist())
 
         # --- Normalizar fechas ---
         for date_col in ['fecha_inicio_contrato', 'fecha_ingreso', 'fecha_instalacion', 'fecha_fin_contrato']:
@@ -288,8 +331,36 @@ def cargar_contratos_google():
                 except Exception:
                     df[date_col] = df[date_col].astype(str)
 
+        # --- Normalizar nuevas columnas (asegurar tipos de datos) ---
+        new_columns_config = {
+            'SAT': str,
+            'Tipo_cliente': str,
+            'tecnico': str,
+            'metodo_entrada': str,
+            'billing': str
+        }
+
+        for col, dtype in new_columns_config.items():
+            if col in df.columns:
+                df[col] = df[col].fillna('').astype(dtype)
+                print(f"✅ Columna '{col}' normalizada: {len(df[df[col] != ''])} valores no vacíos")
+
         print("✅ Datos cargados. Columnas:", df.columns.tolist(), "Total filas:", len(df))
+
+        # Mostrar conteo de valores por nueva columna
+        new_cols = ['SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada', 'billing']
+        for col in new_cols:
+            if col in df.columns:
+                non_empty = len(df[df[col] != ''])
+                print(f"📊 Columna '{col}': {non_empty}/{len(df)} valores no vacíos")
+
         return df
+
+    except Exception as e:
+        print(f"❌ Error cargando contratos desde Google Sheets: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return pd.DataFrame()
 
     except Exception as e:
         print(f"❌ Error cargando contratos desde Google Sheets: {e}")
@@ -3507,85 +3578,187 @@ def admin_dashboard():
 
             st.toast("✅ Análisis completado y datos listos para exportación")
 
+
         elif sub_seccion == "Seguimiento de Contratos":
+
             st.info("ℹ️ Aquí puedes cargar contratos, mapear columnas, guardar en BD y sincronizar con datos UIS.")
 
             # Mapeo de columnas del Excel a la BD
 
             if st.button("🔄 Actualizar contratos"):
+
                 with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
+
                     try:
+
                         # 1. Cargar datos desde Google Sheets
+
                         df = cargar_contratos_google()
 
                         # Normalizar nombres de columnas INMEDIATAMENTE
+
                         df.columns = df.columns.map(lambda x: str(x).strip().lower() if x is not None else "")
 
                         # 2. Guardar en la base de datos
+
                         conn = obtener_conexion()
+
                         cur = conn.cursor()
 
                         # Borrar registros anteriores
+
                         cur.execute("DELETE FROM seguimiento_contratos")
+
                         conn.commit()
 
                         total = len(df)
+
                         progress = st.progress(0)
 
+                        # ACTUALIZADO: Incluir las nuevas columnas
+
                         insert_sql = '''INSERT INTO seguimiento_contratos (
+
                             num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
-                            comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+
+                            comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios,
+
+                            SAT, Tipo_cliente, tecnico, metodo_entrada, billing
+
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
                         inserted_divisor = 0
+
                         inserted_puerto = 0
+
                         inserted_fecha_fin = 0
 
+                        inserted_sat = 0
+
+                        inserted_tipo_cliente = 0
+
+                        inserted_tecnico = 0
+
+                        inserted_metodo_entrada = 0
+
+                        inserted_billing = 0
+
                         for i, row in df.iterrows():
+
                             # Obtener apartment_id y formatearlo
+
                             ap_id = row.get('apartment_id')
+
                             try:
+
                                 ap_id_int = int(ap_id)
+
                                 padded_id = 'P' + str(ap_id_int).zfill(10)
+
                             except (ValueError, TypeError):
+
                                 padded_id = None
 
                             # Obtener valores CORRECTAMENTE (después de la normalización)
+
                             fecha_instalacion = row.get('fecha_instalacion')
+
                             fecha_fin_contrato = row.get('fecha_fin_contrato')
 
                             # Obtener divisor y puerto usando los nombres NORMALIZADOS
+
                             divisor = row.get('divisor')
+
                             puerto = row.get('puerto')
 
+                            # Obtener las nuevas columnas (en minúsculas)
+
+                            sat = row.get('sat')
+
+                            tipo_cliente = row.get('tipo_cliente')
+
+                            tecnico = row.get('tecnico')
+
+                            metodo_entrada = row.get('metodo_entrada')
+
+                            billing = row.get('billing')
+
                             # Contar cuántos valores no nulos tenemos
+
                             if divisor is not None and divisor != '':
                                 inserted_divisor += 1
+
                             if puerto is not None and puerto != '':
                                 inserted_puerto += 1
+
                             if fecha_fin_contrato is not None and fecha_fin_contrato != '':
                                 inserted_fecha_fin += 1
 
+                            if sat is not None and sat != '':
+                                inserted_sat += 1
+
+                            if tipo_cliente is not None and tipo_cliente != '':
+                                inserted_tipo_cliente += 1
+
+                            if tecnico is not None and tecnico != '':
+                                inserted_tecnico += 1
+
+                            if metodo_entrada is not None and metodo_entrada != '':
+                                inserted_metodo_entrada += 1
+
+                            if billing is not None and billing != '':
+                                inserted_billing += 1
+
                             # Inserción
+
                             try:
+
                                 cur.execute(insert_sql, (
+
                                     row.get('num_contrato'),
+
                                     row.get('cliente'),
+
                                     row.get('coordenadas'),
+
                                     row.get('estado'),
+
                                     row.get('fecha_inicio_contrato'),
+
                                     row.get('fecha_ingreso'),
+
                                     row.get('comercial'),
+
                                     fecha_instalacion,
+
                                     padded_id,
+
                                     fecha_fin_contrato,
+
                                     divisor,
+
                                     puerto,
-                                    row.get('comentarios')
+
+                                    row.get('comentarios'),
+
+                                    sat,
+
+                                    tipo_cliente,
+
+                                    tecnico,
+
+                                    metodo_entrada,
+
+                                    billing
+
                                 ))
+
                             except Exception as e:
+
                                 st.toast(f"⚠️ Error al insertar fila {i}: {e}")
+
                                 st.write(
+
                                     f"Valores: divisor={divisor}, puerto={puerto}, fecha_fin_contrato={fecha_fin_contrato}")
 
                             progress.progress((i + 1) / total)
@@ -3593,117 +3766,253 @@ def admin_dashboard():
                         conn.commit()
 
                         # Mostrar estadísticas de inserción
+
                         st.info(f"📊 Divisores insertados: {inserted_divisor}/{total}")
+
                         st.info(f"📊 Puertos insertados: {inserted_puerto}/{total}")
+
                         st.info(f"📊 Fechas fin contrato insertadas: {inserted_fecha_fin}/{total}")
 
+                        st.info(f"📊 SAT insertados: {inserted_sat}/{total}")
+
+                        st.info(f"📊 Tipo cliente insertados: {inserted_tipo_cliente}/{total}")
+
+                        st.info(f"📊 Técnicos insertados: {inserted_tecnico}/{total}")
+
+                        st.info(f"📊 Método entrada insertados: {inserted_metodo_entrada}/{total}")
+
+                        st.info(f"📊 Billing insertados: {inserted_billing}/{total}")
+
                         # 3. Verificar qué se guardó realmente en la base de datos
+
                         cur.execute("""
+
                             SELECT COUNT(*) as total, 
+
                                    COUNT(divisor) as con_divisor, 
+
                                    COUNT(puerto) as con_puerto,
-                                   COUNT(fecha_fin_contrato) as con_fecha_fin 
+
+                                   COUNT(fecha_fin_contrato) as con_fecha_fin,
+
+                                   COUNT(SAT) as con_sat,
+
+                                   COUNT(Tipo_cliente) as con_tipo_cliente,
+
+                                   COUNT(tecnico) as con_tecnico,
+
+                                   COUNT(metodo_entrada) as con_metodo_entrada,
+
+                                   COUNT(billing) as con_billing
+
                             FROM seguimiento_contratos
+
                         """)
+
                         stats = cur.fetchone()
+
                         st.toast(
+
                             f"📊 En base de datos - Total: {stats[0]}, Con divisor: {stats[1]}, Con puerto: {stats[2]}, Con fecha_fin_contrato: {stats[3]}")
 
+                        st.toast(
+
+                            f"📊 SAT: {stats[4]}, Tipo cliente: {stats[5]}, Técnico: {stats[6]}, Método entrada: {stats[7]}, Billing: {stats[8]}")
+
                         # 4. Mostrar algunos ejemplos de lo que se guardó
+
                         cur.execute("""
-                            SELECT apartment_id, fecha_fin_contrato, divisor, puerto 
+
+                            SELECT apartment_id, fecha_fin_contrato, divisor, puerto, SAT, Tipo_cliente, tecnico 
+
                             FROM seguimiento_contratos 
-                            WHERE fecha_fin_contrato IS NOT NULL OR divisor IS NOT NULL OR puerto IS NOT NULL
+
+                            WHERE fecha_fin_contrato IS NOT NULL 
+
+                               OR divisor IS NOT NULL 
+
+                               OR puerto IS NOT NULL
+
+                               OR SAT IS NOT NULL
+
+                               OR Tipo_cliente IS NOT NULL
+
+                               OR tecnico IS NOT NULL
+
                             LIMIT 5
+
                         """)
 
+                        resultados = cur.fetchall()
+
+                        if resultados:
+
+                            st.info("📋 Ejemplos de registros insertados:")
+
+                            for resultado in resultados:
+                                st.write(f"- {resultado}")
+
                         # 5. Actualizar datos_uis (solo si hay datos)
+
                         if stats[0] > 0:
                             with obtener_conexion() as conn:
                                 cur = conn.cursor()
 
                                 # Actualizar divisor en datos_uis
+
                                 cur.execute("""
+
                                     UPDATE datos_uis
+
                                     SET divisor = (
+
                                         SELECT sc.divisor
+
                                         FROM seguimiento_contratos sc
+
                                         WHERE sc.apartment_id = datos_uis.apartment_id
+
                                         AND sc.divisor IS NOT NULL
+
                                         AND sc.divisor != ''
+
                                         LIMIT 1
+
                                     )
+
                                     WHERE apartment_id IN (
+
                                         SELECT apartment_id FROM seguimiento_contratos 
+
                                         WHERE divisor IS NOT NULL AND divisor != ''
+
                                     )
+
                                 """)
+
                                 updated_divisor = cur.rowcount
+
                                 conn.commit()
 
                                 # Actualizar puerto en datos_uis
+
                                 cur.execute("""
+
                                     UPDATE datos_uis
+
                                     SET puerto = (
+
                                         SELECT sc.puerto
+
                                         FROM seguimiento_contratos sc
+
                                         WHERE sc.apartment_id = datos_uis.apartment_id
+
                                         AND sc.puerto IS NOT NULL
+
                                         AND sc.puerto != ''
+
                                         LIMIT 1
+
                                     )
+
                                     WHERE apartment_id IN (
+
                                         SELECT apartment_id FROM seguimiento_contratos 
+
                                         WHERE puerto IS NOT NULL AND puerto != ''
+
                                     )
+
                                 """)
+
                                 updated_puerto = cur.rowcount
+
                                 conn.commit()
 
                                 # Actualizar fecha_fin_contrato en datos_uis
+
                                 cur.execute("""
+
                                     UPDATE datos_uis
+
                                     SET fecha_fin_contrato = (
+
                                         SELECT sc.fecha_fin_contrato
+
                                         FROM seguimiento_contratos sc
+
                                         WHERE sc.apartment_id = datos_uis.apartment_id
+
                                         AND sc.fecha_fin_contrato IS NOT NULL
+
                                         AND sc.fecha_fin_contrato != ''
+
                                         LIMIT 1
+
                                     )
+
                                     WHERE apartment_id IN (
+
                                         SELECT apartment_id FROM seguimiento_contratos 
+
                                         WHERE fecha_fin_contrato IS NOT NULL AND fecha_fin_contrato != ''
+
                                     )
+
                                 """)
+
                                 updated_fecha_fin = cur.rowcount
+
                                 conn.commit()
 
                                 st.toast(
+
                                     f"✅ Actualizados {updated_divisor} divisores, {updated_puerto} puertos y {updated_fecha_fin} fechas fin contrato en datos_uis")
 
                         # 6. Feedback final
+
                         st.toast("✅ Proceso completado correctamente.")
 
+
                     except Exception as e:
+
                         st.toast(f"❌ Error en el proceso: {e}")
+
                         import traceback
+
                         st.code(traceback.format_exc())
+
             # ✅ CHECKBOX RESTAURADO - Mostrar registros existentes
+
             if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
+
                 with st.spinner("Cargando registros de contratos..."):
+
                     try:
+
                         conn = obtener_conexion()
+
                         existing = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
+
                         conn.close()
+
                         if existing.empty:
+
                             st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
+
                         else:
+
                             cols = st.multiselect("Filtra columnas a mostrar", existing.columns,
+
                                                   default=existing.columns,
+
                                                   key="cols_existing")
+
                             st.dataframe(existing[cols], width='stretch')
+
                     except Exception as e:
+
                         st.toast(f"❌ Error al cargar registros existentes: {e}")
 
         if sub_seccion == "Precontratos":
@@ -4036,8 +4345,8 @@ def admin_dashboard():
     elif opcion == "Ofertas Comerciales":
         sub_seccion = option_menu(
             menu_title=None,
-            options=["Ver Ofertas", "Certificación"],
-            icons=["table", "file-earmark-check"],
+            options=["Ver Ofertas", "Certificación Visitas", "Certificación Contratos"],
+            icons=["table", "file-earmark-check", "file-earmark-check"],
             orientation="horizontal",
             styles={
                 "container": {
@@ -4069,8 +4378,10 @@ def admin_dashboard():
         if sub_seccion == "Ver Ofertas":
             mostrar_ofertas_comerciales()
 
-        elif sub_seccion == "Certificación":
+        elif sub_seccion == "Certificación Visitas":
             mostrar_certificacion()
+        elif sub_seccion == "Certificación Contratos":
+            mostrar_kpis_seguimiento_contratos()
 
     elif opcion == "Viabilidades":
         st.header("Viabilidades")
@@ -4889,6 +5200,691 @@ def mostrar_leyenda_en_streamlit():
             - 🟣 **Morado:** Incidencia
             - 🔵 **Azul:** No Visitado
             """)
+######kpis contratos####
+
+def mostrar_kpis_seguimiento_contratos():
+    """Muestra KPIs y análisis de la tabla seguimiento_contratos"""
+    st.info("📊 **KPIs Seguimiento de Contratos** - Análisis de estado de contratos e instalaciones")
+
+    with st.spinner("⏳ Cargando datos de seguimiento de contratos..."):
+        try:
+            # Cargar datos de seguimiento_contratos
+            conn = obtener_conexion()
+            if conn is None:
+                st.error("❌ No se pudo conectar a la base de datos")
+                return
+
+            cursor = conn.cursor()
+
+            # Verificar que la tabla existe
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='seguimiento_contratos'")
+            if not cursor.fetchone():
+                st.warning("⚠️ La tabla 'seguimiento_contratos' no existe en la base de datos")
+                conn.close()
+                return
+
+            # Cargar todos los datos de la tabla (INCLUYENDO NUEVAS COLUMNAS)
+            query = """
+            SELECT 
+                id, num_contrato, cliente, coordenadas, estado,
+                fecha_inicio_contrato, fecha_ingreso, comercial,
+                fecha_instalacion, apartment_id, fecha_estado,
+                fecha_fin_contrato, comentarios, divisor, puerto,
+                SAT, Tipo_cliente, tecnico, metodo_entrada, billing
+            FROM seguimiento_contratos
+            """
+
+            df_contratos = pd.read_sql(query, conn)
+            conn.close()
+
+            if df_contratos.empty:
+                st.warning("⚠️ No se encontraron registros en seguimiento_contratos")
+                return
+
+            # Procesar fechas
+            columnas_fecha = ['fecha_inicio_contrato', 'fecha_ingreso',
+                              'fecha_instalacion', 'fecha_estado', 'fecha_fin_contrato']
+
+            for col in columnas_fecha:
+                if col in df_contratos.columns:
+                    df_contratos[col] = pd.to_datetime(df_contratos[col], errors='coerce')
+
+            # Mostrar KPIs principales
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                total_contratos = len(df_contratos)
+                st.metric("Total Contratos", f"{total_contratos:,}")
+
+            with col2:
+                if 'estado' in df_contratos.columns:
+                    estados_unicos = df_contratos['estado'].nunique()
+                    st.metric("Estados Diferentes", f"{estados_unicos}")
+                else:
+                    st.metric("Estados Diferentes", "N/A")
+
+            with col3:
+                if 'comercial' in df_contratos.columns:
+                    comerciales_unicos = df_contratos['comercial'].nunique()
+                    st.metric("Comerciales", f"{comerciales_unicos}")
+                else:
+                    st.metric("Comerciales", "N/A")
+
+            with col4:
+                if 'tecnico' in df_contratos.columns:
+                    tecnicos_unicos = df_contratos['tecnico'].nunique()
+                    st.metric("Técnicos Únicos", f"{tecnicos_unicos}")
+                else:
+                    st.metric("Técnicos", "N/A")
+
+            # Segunda fila de KPIs
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                if 'SAT' in df_contratos.columns:
+                    sat_unicos = df_contratos['SAT'].nunique()
+                    st.metric("SAT Únicos", f"{sat_unicos}")
+                else:
+                    st.metric("SAT", "N/A")
+
+            with col2:
+                if 'Tipo_cliente' in df_contratos.columns:
+                    tipos_cliente = df_contratos['Tipo_cliente'].nunique()
+                    st.metric("Tipos Cliente", f"{tipos_cliente}")
+                else:
+                    st.metric("Tipos Cliente", "N/A")
+
+            with col3:
+                if 'metodo_entrada' in df_contratos.columns:
+                    metodos_entrada = df_contratos['metodo_entrada'].nunique()
+                    st.metric("Métodos Entrada", f"{metodos_entrada}")
+                else:
+                    st.metric("Métodos Entrada", "N/A")
+
+            with col4:
+                if 'billing' in df_contratos.columns:
+                    billing_unicos = df_contratos['billing'].nunique()
+                    st.metric("Billing Únicos", f"{billing_unicos}")
+                else:
+                    st.metric("Billing", "N/A")
+
+            # ============================
+            # ANÁLISIS POR MÉTODO DE ENTRADA
+            # ============================
+
+            if 'metodo_entrada' in df_contratos.columns:
+                st.subheader("🚪 Análisis por Método de Entrada")
+
+                # Crear pestañas para diferentes análisis
+                tab1, tab2, tab3, tab4 = st.tabs(["📊 Distribución", "📈 Evolución", "👥 Por Comercial", "📅 Por Mes"])
+
+                with tab1:
+                    # Distribución general
+                    # Limpiar valores vacíos o nulos
+                    df_metodos = df_contratos.copy()
+                    df_metodos['metodo_entrada'] = df_metodos['metodo_entrada'].fillna('No especificado')
+                    df_metodos['metodo_entrada'] = df_metodos['metodo_entrada'].replace('', 'No especificado')
+
+                    # Estadísticas por método
+                    metodo_stats = df_metodos['metodo_entrada'].value_counts().reset_index()
+                    metodo_stats.columns = ['Método de Entrada', 'Cantidad']
+                    metodo_stats['Porcentaje'] = (metodo_stats['Cantidad'] / len(df_metodos) * 100).round(2)
+
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        try:
+                            import plotly.express as px
+                            fig = px.bar(
+                                metodo_stats,
+                                x='Método de Entrada',
+                                y='Cantidad',
+                                title='Distribución por Método de Entrada',
+                                color='Método de Entrada',
+                                text='Cantidad'
+                            )
+                            fig.update_layout(height=400, showlegend=False)
+                            fig.update_xaxes(tickangle=45)
+                            st.plotly_chart(fig, width='stretch')
+                        except:
+                            st.dataframe(metodo_stats)
+
+                    with col2:
+                        st.dataframe(
+                            metodo_stats,
+                            height=400,
+                            width='stretch'
+                        )
+
+                        # KPIs rápidos
+                        metodo_principal = metodo_stats.iloc[0][
+                            'Método de Entrada'] if not metodo_stats.empty else "N/A"
+                        porcentaje_principal = metodo_stats.iloc[0]['Porcentaje'] if not metodo_stats.empty else 0
+
+                        st.metric("Método más común", metodo_principal)
+                        st.metric(f"% del total", f"{porcentaje_principal}%")
+
+                with tab2:
+                    # Evolución temporal por método
+                    if 'fecha_inicio_contrato' in df_contratos.columns:
+                        # Preparar datos para evolución mensual
+                        df_evolucion = df_contratos.copy()
+                        df_evolucion['metodo_entrada'] = df_evolucion['metodo_entrada'].fillna('No especificado')
+                        df_evolucion['metodo_entrada'] = df_evolucion['metodo_entrada'].replace('', 'No especificado')
+
+                        # Crear columna de mes
+                        df_evolucion['mes'] = df_evolucion['fecha_inicio_contrato'].dt.to_period('M')
+
+                        # Agrupar por mes y método
+                        evolucion_mensual = df_evolucion.groupby(['mes', 'metodo_entrada']).size().reset_index()
+                        evolucion_mensual.columns = ['Mes', 'Método de Entrada', 'Contratos']
+                        evolucion_mensual['Mes'] = evolucion_mensual['Mes'].astype(str)
+
+                        # Ordenar por mes
+                        evolucion_mensual = evolucion_mensual.sort_values('Mes')
+
+                        col1, col2 = st.columns([2, 1])
+
+                        with col1:
+                            try:
+                                import plotly.express as px
+                                fig = px.line(
+                                    evolucion_mensual,
+                                    x='Mes',
+                                    y='Contratos',
+                                    color='Método de Entrada',
+                                    title='Evolución Mensual por Método de Entrada',
+                                    markers=True
+                                )
+                                fig.update_layout(height=400)
+                                fig.update_xaxes(tickangle=45)
+                                st.plotly_chart(fig, width='stretch')
+                            except:
+                                st.dataframe(evolucion_mensual)
+
+                        with col2:
+                            # Métodos con tendencia creciente
+                            st.markdown("**Tendencias por Método**")
+
+                            # Calcular tendencia para cada método
+                            metodos_unicos = evolucion_mensual['Método de Entrada'].unique()
+                            for metodo in metodos_unicos[:5]:  # Mostrar solo los primeros 5
+                                df_metodo = evolucion_mensual[evolucion_mensual['Método de Entrada'] == metodo]
+                                if len(df_metodo) > 1:
+                                    crecimiento = df_metodo['Contratos'].iloc[-1] - df_metodo['Contratos'].iloc[0]
+                                    st.write(f"**{metodo}**: {crecimiento:+.0f} contratos")
+                    else:
+                        st.info("⚠️ No hay datos de fecha para análisis temporal")
+
+                with tab3:
+                    # Análisis por comercial y método
+                    if 'comercial' in df_contratos.columns:
+                        # Preparar datos
+                        df_comercial_metodo = df_contratos.copy()
+                        df_comercial_metodo['metodo_entrada'] = df_comercial_metodo['metodo_entrada'].fillna(
+                            'No especificado')
+                        df_comercial_metodo['metodo_entrada'] = df_comercial_metodo['metodo_entrada'].replace('',
+                                                                                                              'No especificado')
+
+                        # Filtrar comerciales con más de X contratos
+                        comercial_counts = df_comercial_metodo['comercial'].value_counts()
+                        comerciales_top = comercial_counts[comercial_counts >= 5].index.tolist()
+                        df_top = df_comercial_metodo[df_comercial_metodo['comercial'].isin(comerciales_top)]
+
+                        if not df_top.empty:
+                            # Crear tabla pivot
+                            pivot_table = pd.crosstab(
+                                df_top['comercial'],
+                                df_top['metodo_entrada'],
+                                margins=True,
+                                margins_name='Total'
+                            )
+
+                            # Calcular porcentajes por fila
+                            pivot_percent = pivot_table.div(pivot_table.sum(axis=1), axis=0) * 100
+                            pivot_percent = pivot_percent.round(1)
+
+                            col1, col2 = st.columns(2)
+
+                            with col1:
+                                st.markdown("**Cantidad de Contratos**")
+                                st.dataframe(
+                                    pivot_table,
+                                    height=300,
+                                    width='stretch'
+                                )
+
+                            with col2:
+                                st.markdown("**Porcentaje por Comercial**")
+                                st.dataframe(
+                                    pivot_percent,
+                                    height=300,
+                                    width='stretch'
+                                )
+
+                            # Gráfico de calor
+                            st.markdown("**Mapa de Calor - Métodos por Comercial**")
+                            try:
+                                import plotly.express as px
+
+                                # Preparar datos para el heatmap
+                                heatmap_data = pivot_table.drop('Total', axis=0).drop('Total', axis=1)
+
+                                fig = px.imshow(
+                                    heatmap_data,
+                                    text_auto=True,
+                                    aspect="auto",
+                                    title='Distribución de Métodos por Comercial'
+                                )
+                                fig.update_layout(height=400)
+                                st.plotly_chart(fig, width='stretch')
+                            except:
+                                st.info("No se pudo generar el mapa de calor")
+                        else:
+                            st.info("No hay suficientes datos para el análisis por comercial")
+                    else:
+                        st.info("⚠️ No hay datos de comercial para este análisis")
+
+                with tab4:
+                    # Método de entrada por mes
+                    if 'fecha_inicio_contrato' in df_contratos.columns:
+                        # Preparar datos
+                        df_mes_metodo = df_contratos.copy()
+                        df_mes_metodo['metodo_entrada'] = df_mes_metodo['metodo_entrada'].fillna('No especificado')
+                        df_mes_metodo['metodo_entrada'] = df_mes_metodo['metodo_entrada'].replace('', 'No especificado')
+
+                        # Crear columna de mes
+                        df_mes_metodo['mes'] = df_mes_metodo['fecha_inicio_contrato'].dt.strftime('%Y-%m')
+
+                        # Agrupar por mes y método
+                        mes_metodo_stats = pd.crosstab(
+                            df_mes_metodo['mes'],
+                            df_mes_metodo['metodo_entrada']
+                        )
+
+                        # Ordenar por mes
+                        mes_metodo_stats = mes_metodo_stats.sort_index()
+
+                        col1, col2 = st.columns([2, 1])
+
+                        with col1:
+                            try:
+                                import plotly.express as px
+
+                                # Gráfico de área apilada
+                                fig = px.area(
+                                    mes_metodo_stats,
+                                    title='Evolución Mensual por Método (Acumulado)',
+                                    labels={'value': 'Contratos', 'variable': 'Método de Entrada'}
+                                )
+                                fig.update_layout(height=400)
+                                st.plotly_chart(fig, width='stretch')
+                            except:
+                                st.dataframe(mes_metodo_stats)
+
+                        with col2:
+                            # Último mes análisis
+                            if not mes_metodo_stats.empty:
+                                ultimo_mes = mes_metodo_stats.iloc[-1]
+                                st.markdown(f"**Último mes: {mes_metodo_stats.index[-1]}**")
+
+                                for metodo, valor in ultimo_mes.nlargest(5).items():
+                                    if valor > 0:
+                                        st.write(f"**{metodo}**: {valor} contratos")
+                    else:
+                        st.info("⚠️ No hay datos de fecha para análisis mensual")
+
+            # Análisis por estado (mantener el existente)
+            if 'estado' in df_contratos.columns:
+                # Estadísticas por estado
+                estado_stats = df_contratos['estado'].value_counts().reset_index()
+                estado_stats.columns = ['Estado', 'Cantidad']
+                estado_stats['Porcentaje'] = (estado_stats['Cantidad'] / total_contratos * 100).round(2)
+
+                col1, col2 = st.columns([2, 1])
+
+                with col1:
+                    try:
+                        import plotly.express as px
+                        fig = px.bar(
+                            estado_stats,
+                            x='Estado',
+                            y='Cantidad',
+                            title='Contratos por Estado',
+                            color='Estado',
+                            text='Cantidad'
+                        )
+                        fig.update_layout(height=400, showlegend=False)
+                        st.plotly_chart(fig, width='stretch')
+                    except:
+                        st.dataframe(estado_stats)
+
+                with col2:
+                    st.dataframe(
+                        estado_stats,
+                        height=400,
+                        width='stretch'
+                    )
+
+            # Análisis por SAT (mantener el existente)
+            if 'SAT' in df_contratos.columns:
+                sat_stats = df_contratos['SAT'].value_counts().reset_index()
+                sat_stats.columns = ['SAT', 'Cantidad']
+                sat_stats = sat_stats[sat_stats['SAT'] != ''].head(10)
+
+                if not sat_stats.empty:
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        try:
+                            import plotly.express as px
+                            fig = px.bar(
+                                sat_stats,
+                                x='SAT',
+                                y='Cantidad',
+                                title='Top 10 SAT',
+                                color='SAT',
+                                text='Cantidad'
+                            )
+                            fig.update_layout(height=400, showlegend=False)
+                            st.plotly_chart(fig, width='stretch')
+                        except:
+                            st.dataframe(sat_stats)
+
+                    with col2:
+                        st.dataframe(
+                            sat_stats,
+                            height=400,
+                            width='stretch'
+                        )
+
+            # Análisis por técnico (mantener el existente)
+            if 'tecnico' in df_contratos.columns:
+                tecnico_stats = df_contratos['tecnico'].value_counts().reset_index()
+                tecnico_stats.columns = ['Técnico', 'Cantidad']
+                tecnico_stats = tecnico_stats[tecnico_stats['Técnico'] != ''].head(10)
+
+                if not tecnico_stats.empty:
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        try:
+                            import plotly.express as px
+                            fig = px.bar(
+                                tecnico_stats,
+                                x='Técnico',
+                                y='Cantidad',
+                                title='Top 10 Técnicos',
+                                color='Técnico',
+                                text='Cantidad'
+                            )
+                            fig.update_layout(height=400, showlegend=False)
+                            st.plotly_chart(fig, width='stretch')
+                        except:
+                            st.dataframe(tecnico_stats)
+
+                    with col2:
+                        st.dataframe(
+                            tecnico_stats,
+                            height=400,
+                            width='stretch'
+                        )
+
+            # Análisis por tipo de cliente (mantener el existente)
+            if 'Tipo_cliente' in df_contratos.columns:
+                tipo_cliente_stats = df_contratos['Tipo_cliente'].value_counts().reset_index()
+                tipo_cliente_stats.columns = ['Tipo Cliente', 'Cantidad']
+
+                if not tipo_cliente_stats.empty:
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        try:
+                            import plotly.express as px
+                            fig = px.pie(
+                                tipo_cliente_stats,
+                                values='Cantidad',
+                                names='Tipo Cliente',
+                                title='Distribución por Tipo de Cliente',
+                                hole=0.3
+                            )
+                            fig.update_layout(height=400)
+                            st.plotly_chart(fig, width='stretch')
+                        except:
+                            st.dataframe(tipo_cliente_stats)
+
+                    with col2:
+                        st.dataframe(
+                            tipo_cliente_stats,
+                            height=400,
+                            width='stretch'
+                        )
+
+            # ============================
+            # EVOLUCIÓN TEMPORAL - REAGRUPADO
+            # ============================
+
+            if 'fecha_inicio_contrato' in df_contratos.columns:
+                st.subheader("📅 Evolución Temporal de Contratos")
+
+                # Crear pestañas para diferentes vistas temporales
+                tab1, tab2, tab3 = st.tabs(["📈 Mensual", "📅 Semanal", "📋 Últimos Contratos"])
+
+                with tab1:
+                    # Evolución mensual
+                    st.markdown("#### Evolución Mensual")
+
+                    # Crear columna de mes
+                    df_contratos['mes_inicio'] = df_contratos['fecha_inicio_contrato'].dt.to_period('M')
+                    mensual = df_contratos.groupby('mes_inicio').size().reset_index()
+                    mensual.columns = ['Mes', 'Contratos']
+                    mensual['Mes'] = mensual['Mes'].astype(str)
+
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        try:
+                            import plotly.express as px
+                            fig = px.line(
+                                mensual,
+                                x='Mes',
+                                y='Contratos',
+                                title='Contratos por Mes',
+                                markers=True
+                            )
+                            fig.update_layout(height=400)
+                            st.plotly_chart(fig, width='stretch')
+                        except:
+                            st.dataframe(mensual)
+
+                    with col2:
+                        # Estadísticas mensuales
+                        st.markdown("**Estadísticas Mensuales**")
+                        st.metric("Promedio mensual", f"{mensual['Contratos'].mean():.1f}")
+                        st.metric("Máximo mensual", f"{mensual['Contratos'].max()}")
+                        st.metric("Mínimo mensual", f"{mensual['Contratos'].min()}")
+
+                with tab2:
+                    # Evolución semanal
+                    st.markdown("#### Evolución Semanal")
+
+                    # Crear columna de semana (formato: Año-Semana)
+                    df_contratos['semana_inicio'] = df_contratos['fecha_inicio_contrato'].dt.strftime('%Y-W%U')
+
+                    # Agrupar por semana
+                    semanal = df_contratos.groupby('semana_inicio').size().reset_index()
+                    semanal.columns = ['Semana', 'Contratos']
+
+                    # Ordenar por semana
+                    semanal = semanal.sort_values('Semana')
+
+                    # Mostrar estadísticas de la última semana
+                    if not semanal.empty:
+                        ultima_semana = semanal.iloc[-1]
+                        st.metric(f"Última semana ({ultima_semana['Semana']})", ultima_semana['Contratos'])
+
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        try:
+                            import plotly.express as px
+                            fig = px.line(
+                                semanal,
+                                x='Semana',
+                                y='Contratos',
+                                title='Contratos por Semana',
+                                markers=True
+                            )
+                            fig.update_layout(height=400)
+                            fig.update_xaxes(tickangle=45)
+                            st.plotly_chart(fig, width='stretch')
+                        except:
+                            st.dataframe(semanal)
+
+                    with col2:
+                        # Top 5 semanas con más contratos
+                        st.markdown("**Top 5 Semanas**")
+                        top_semanas = semanal.sort_values('Contratos', ascending=False).head(5)
+                        for idx, row in top_semanas.iterrows():
+                            st.write(f"**{row['Semana']}**: {row['Contratos']} contratos")
+
+                with tab3:
+                    # Últimos contratos registrados
+                    st.markdown("#### Últimos Contratos Registrados")
+
+                    # Ordenar por fecha más reciente
+                    df_recent = df_contratos.sort_values('fecha_inicio_contrato', ascending=False).head(20)
+
+                    # Seleccionar columnas relevantes para mostrar
+                    columnas_mostrar = ['num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato', 'comercial']
+                    columnas_mostrar = [col for col in columnas_mostrar if col in df_recent.columns]
+
+                    # Añadir columnas nuevas si están disponibles
+                    nuevas_columnas = ['SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada']
+                    for col in nuevas_columnas:
+                        if col in df_recent.columns:
+                            columnas_mostrar.append(col)
+
+                    st.dataframe(
+                        df_recent[columnas_mostrar],
+                        height=400,
+                        width='stretch'
+                    )
+
+                    # Estadísticas de los últimos 30 días
+                    if not df_contratos.empty:
+                        from datetime import datetime, timedelta
+                        hoy = datetime.now()
+                        hace_30_dias = hoy - timedelta(days=30)
+
+                        contratos_30_dias = df_contratos[
+                            df_contratos['fecha_inicio_contrato'] >= hace_30_dias
+                            ].shape[0]
+
+                        st.metric("Contratos últimos 30 días", contratos_30_dias)
+
+            # Filtros
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if 'estado' in df_contratos.columns:
+                    estados = ['Todos'] + sorted(df_contratos['estado'].dropna().unique().tolist())
+                    estado_filtro = st.selectbox("Filtrar por estado:", estados)
+                else:
+                    estado_filtro = 'Todos'
+
+            with col2:
+                if 'comercial' in df_contratos.columns:
+                    comerciales = ['Todos'] + sorted(df_contratos['comercial'].dropna().unique().tolist())
+                    comercial_filtro = st.selectbox("Filtrar por comercial:", comerciales)
+                else:
+                    comercial_filtro = 'Todos'
+
+            with col3:
+                if 'metodo_entrada' in df_contratos.columns:
+                    metodos = ['Todos'] + sorted(df_contratos['metodo_entrada'].dropna().unique().tolist())
+                    metodo_filtro = st.selectbox("Filtrar por método:", metodos)
+                else:
+                    metodo_filtro = 'Todos'
+
+            # Selección de columnas (separada)
+            columnas_disponibles = df_contratos.columns.tolist()
+            columnas_default = [
+                'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato',
+                'comercial', 'fecha_instalacion', 'comentarios',
+                'SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada'
+            ]
+            # Filtrar solo columnas que existen
+            columnas_default = [col for col in columnas_default if col in columnas_disponibles]
+
+            columnas_seleccionadas = st.multiselect(
+                "Columnas a mostrar:",
+                columnas_disponibles,
+                default=columnas_default
+            )
+
+            # Aplicar filtros
+            df_filtrado = df_contratos.copy()
+
+            if estado_filtro != 'Todos' and 'estado' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['estado'] == estado_filtro]
+
+            if comercial_filtro != 'Todos' and 'comercial' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['comercial'] == comercial_filtro]
+
+            if metodo_filtro != 'Todos' and 'metodo_entrada' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['metodo_entrada'] == metodo_filtro]
+
+            st.info(f"Mostrando {len(df_filtrado)} de {len(df_contratos)} contratos")
+
+            # Mostrar tabla
+            if columnas_seleccionadas:
+                st.dataframe(
+                    df_filtrado[columnas_seleccionadas],
+                    height=400,
+                    width='stretch'
+                )
+            else:
+                st.dataframe(df_filtrado, height=400, width='stretch')
+
+            # Botones de exportación
+            col1, col2 = st.columns(2)
+
+            with col1:
+                import io
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df_contratos.to_excel(writer, index=False, sheet_name='Contratos')
+                output.seek(0)
+
+                st.download_button(
+                    label="📥 Descargar Todos los Contratos (Excel)",
+                    data=output,
+                    file_name="seguimiento_contratos_completo.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    width='stretch'
+                )
+
+            with col2:
+                output_filtrado = io.BytesIO()
+                with pd.ExcelWriter(output_filtrado, engine='xlsxwriter') as writer:
+                    df_filtrado.to_excel(writer, index=False, sheet_name='Contratos_Filtrados')
+                output_filtrado.seek(0)
+
+                st.download_button(
+                    label="📊 Descargar Datos Filtrados (Excel)",
+                    data=output_filtrado,
+                    file_name="seguimiento_contratos_filtrado.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    width='stretch'
+                )
+
+        except Exception as e:
+            st.error(f"❌ Error al cargar datos de seguimiento de contratos: {str(e)}")
+            import traceback
+            with st.expander("🔍 Ver detalles del error", expanded=False):
+                st.code(traceback.format_exc())
+########################
 
 def mostrar_certificacion():
     """Muestra el panel de certificación con análisis de ofertas y observaciones"""
@@ -5133,7 +6129,7 @@ def mostrar_resultados_certificacion(df):
     """Muestra los resultados de la certificación"""
 
     # Mostrar información sobre columnas disponibles
-    with st.expander("📋 Columnas disponibles en los datos", expanded=True):
+    with st.expander("📋 Columnas disponibles en los datos", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Total de registros", f"{len(df):,}")
@@ -5150,11 +6146,7 @@ def mostrar_resultados_certificacion(df):
         for i, col in enumerate(df.columns, 1):
             st.write(f"{i}. {col} ({df[col].dtype})")
 
-    st.markdown("---")
-
     # KPIs principales
-    st.subheader("📊 Métricas Principales")
-
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -5182,11 +6174,8 @@ def mostrar_resultados_certificacion(df):
         else:
             st.metric("Serviciables", "N/A")
 
-    st.markdown("---")
-
     # Análisis de observaciones
     if 'categoria_observacion' in df.columns:
-        st.subheader("📋 Análisis de Observaciones")
 
         with st.expander("ℹ️ Información sobre las categorías", expanded=False):
             st.info("""
@@ -5232,11 +6221,6 @@ def mostrar_resultados_certificacion(df):
             )
     else:
         st.warning("⚠️ No se pudo clasificar las observaciones")
-
-    st.markdown("---")
-
-    # Tabla de datos
-    st.subheader("📋 Datos Detallados")
 
     # Filtrar columnas que realmente existen en el DataFrame
     columnas_disponibles = df.columns.tolist()
@@ -5293,9 +6277,6 @@ def mostrar_resultados_certificacion(df):
         st.warning("Por favor, selecciona al menos una columna para mostrar")
 
     # Exportación
-    st.markdown("---")
-    st.subheader("📥 Exportar Datos")
-
     col1, col2, col3 = st.columns(3)
 
     with col1:

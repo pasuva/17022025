@@ -1,5 +1,4 @@
 import streamlit as st
-from datetime import datetime
 from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip, demo
 from modules.formulario_cliente import formulario_cliente
 
@@ -12,9 +11,6 @@ st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.i
 def get_url_params():
     """Función robusta para obtener parámetros de URL"""
     params = st.query_params
-
-    # Debug: mostrar todos los parámetros
-    #st.write(f"🔍 DEBUG - Todos los parámetros: {dict(params)}")
 
     # Obtener precontrato_id
     precontrato_id = None
@@ -50,9 +46,6 @@ def get_url_params():
 
 # Obtener parámetros
 precontrato_id, token = get_url_params()
-
-#st.write(f"🔍 DEBUG - precontrato_id: {precontrato_id}")
-#st.write(f"🔍 DEBUG - token: {token}")
 
 if token and precontrato_id:
     # Verificar si el token parece válido (debería tener al menos 10 caracteres)
