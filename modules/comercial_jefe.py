@@ -203,8 +203,8 @@ def mapa_dashboard():
 
         opcion = option_menu(
             menu_title=None,
-            options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Buscar Coordenadas", "Descargar Datos"],
-            icons=["globe", "check-circle", "bar-chart", "compass", "download"],
+            options=["Mapa Asignaciones", "Viabilidades", "Ver Datos", "Buscar Coordenadas", "Descargar Datos","Soporte"],
+            icons=["globe", "check-circle", "bar-chart", "compass", "download","ticket"],
             menu_icon="list",
             default_index=0,
             styles={
@@ -258,7 +258,463 @@ def mapa_dashboard():
         mostrar_coordenadas()
     elif opcion == "Descargar Datos":
         download_datos(datos_uis, total_ofertas, viabilidades)
+    elif opcion == "Soporte":
+        mostrar_soporte_gestor_comercial()
 
+
+def mostrar_soporte_gestor_comercial():
+    """Panel de soporte para gestores comerciales (clientes)."""
+    st.title("🎫 Soporte Técnico")
+    st.markdown("---")
+
+    # Pestañas para diferentes funciones
+    tab1, tab2 = st.tabs(["📋 Mis Tickets", "➕ Nuevo Ticket"])
+
+    with tab1:
+        mostrar_mis_tickets_gestor()
+
+    with tab2:
+        crear_ticket_cliente()
+
+
+def mostrar_mis_tickets_gestor():
+    """Muestra los tickets creados por el gestor comercial actual."""
+
+    # Obtener el ID del usuario actual (gestor comercial)
+    user_id = st.session_state.get("user_id")
+    if not user_id:
+        # Intentar obtenerlo de otra manera si no está en session_state
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM usuarios WHERE username = ?", (st.session_state['username'],))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                user_id = result[0]
+            else:
+                st.error("❌ No se pudo identificar al usuario.")
+                return
+        except:
+            st.error("❌ Error al obtener información del usuario.")
+            return
+
+    st.subheader("📋 Mis Tickets Reportados")
+    st.markdown("---")
+
+    try:
+        conn = obtener_conexion()
+
+        # Consulta para obtener tickets del gestor comercial
+        query = """
+        SELECT 
+            t.ticket_id,
+            t.fecha_creacion,
+            t.categoria,
+            t.prioridad,
+            t.estado,
+            u.username as asignado_a,
+            t.titulo,
+            t.descripcion,
+            t.comentarios
+        FROM tickets t
+        LEFT JOIN usuarios u ON t.asignado_a = u.id
+        WHERE t.usuario_id = ?
+        ORDER BY t.fecha_creacion DESC
+        """
+
+        df_tickets = pd.read_sql(query, conn, params=(user_id,))
+        conn.close()
+
+        if df_tickets.empty:
+            st.success("🎉 No has creado ningún ticket aún.")
+            st.info("Usa la pestaña '➕ Nuevo Ticket' para reportar una incidencia.")
+            return
+
+        # Mostrar métricas rápidas
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Tickets", len(df_tickets))
+        with col2:
+            abiertos = len(df_tickets[df_tickets['estado'] == 'Abierto'])
+            st.metric("Abiertos", abiertos)
+        with col3:
+            resueltos = len(df_tickets[df_tickets['estado'].isin(['Resuelto', 'Cerrado'])])
+            st.metric("Resuelto", resueltos)
+
+        st.markdown("---")
+
+        # Mostrar cada ticket en un expander
+        for _, ticket in df_tickets.iterrows():
+            # Determinar color según prioridad
+            prioridad_color = {
+                'Alta': '🔴',
+                'Media': '🟡',
+                'Baja': '🟢'
+            }.get(ticket['prioridad'], '⚪')
+
+            # Determinar color según estado
+            estado_color = {
+                'Abierto': '🟢',
+                'En Progreso': '🟡',
+                'Resuelto': '🔵',
+                'Cerrado': '⚫'
+            }.get(ticket['estado'], '⚪')
+
+            with st.expander(f"{estado_color} Ticket #{ticket['ticket_id']}: {ticket['titulo']} {prioridad_color}"):
+                col_info1, col_info2 = st.columns(2)
+
+                with col_info1:
+                    st.markdown(f"**📅 Creado:** {ticket['fecha_creacion']}")
+                    st.markdown(f"**🏷️ Categoría:** {ticket['categoria']}")
+                    st.markdown(f"**🚨 Prioridad:** {ticket['prioridad']}")
+
+                with col_info2:
+                    st.markdown(f"**📊 Estado:** {ticket['estado']}")
+                    st.markdown(f"**👥 Asignado a:** {ticket['asignado_a'] or 'Pendiente de asignación'}")
+                    st.markdown(f"**🎫 ID:** #{ticket['ticket_id']}")
+
+                st.markdown("---")
+                st.markdown("**📄 Descripción:**")
+                st.info(ticket['descripcion'])
+
+                if ticket['comentarios']:
+                    st.markdown("---")
+                    st.markdown("**💬 Comentarios del equipo:**")
+                    # Mostrar comentarios con formato
+                    comentarios = ticket['comentarios'].split('\n\n')
+                    for comentario in comentarios:
+                        if comentario.strip():
+                            st.warning(comentario.strip())
+
+                # Botón para añadir más información (solo si el ticket está abierto)
+                if ticket['estado'] in ['Abierto', 'En Progreso']:
+                    st.markdown("---")
+                    st.markdown("**📝 Añadir información adicional:**")
+
+                    # Formulario separado para añadir información
+                    with st.form(key=f"add_info_{ticket['ticket_id']}"):
+                        nueva_info = st.text_area(
+                            "Información adicional:",
+                            placeholder="Si tienes más detalles sobre esta incidencia, añádelos aquí...",
+                            height=100,
+                            key=f"info_{ticket['ticket_id']}"
+                        )
+
+                        enviar_info = st.form_submit_button("📤 Enviar información", use_container_width=True)
+
+                        if enviar_info and nueva_info.strip():
+                            try:
+                                conn = obtener_conexion()
+                                cursor = conn.cursor()
+
+                                # Añadir la información al campo de comentarios
+                                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+                                info_formateada = f"\n\n[{timestamp}] {st.session_state['username']} (cliente):\n{nueva_info.strip()}"
+
+                                cursor.execute("""
+                                    UPDATE tickets 
+                                    SET comentarios = COALESCE(comentarios || ?, ?)
+                                    WHERE ticket_id = ?
+                                """, (
+                                    info_formateada,
+                                    f"[{timestamp}] {st.session_state['username']} (cliente):\n{nueva_info.strip()}",
+                                    ticket['ticket_id']
+                                ))
+
+                                conn.commit()
+                                conn.close()
+
+                                # Registrar en trazabilidad
+                                log_trazabilidad(
+                                    st.session_state["username"],
+                                    "Información adicional en ticket",
+                                    f"Añadió información al ticket #{ticket['ticket_id']}"
+                                )
+
+                                st.success("✅ Información añadida al ticket")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Error al añadir información: {str(e)[:100]}")
+
+    except Exception as e:
+        st.error(f"⚠️ Error al cargar tickets: {str(e)[:200]}")
+
+
+def crear_ticket_cliente():
+    """Formulario para que los gestores comerciales creen tickets como clientes."""
+
+    st.subheader("➕ Crear Nuevo Ticket")
+    st.markdown("---")
+
+    # Información del gestor comercial
+    st.info(f"**👤 Reportando como:** {st.session_state.get('username', 'Gestor comercial')}")
+
+    # Inicializar estado para manejar confirmación
+    if 'ticket_creado' not in st.session_state:
+        st.session_state['ticket_creado'] = False
+        st.session_state['ticket_info'] = {}
+
+    # Si ya se creó un ticket, mostrar confirmación
+    if st.session_state.get('ticket_creado'):
+        ticket_info = st.session_state.get('ticket_info', {})
+
+        st.success(f"✅ **Ticket #{ticket_info.get('id')} creado correctamente**")
+        st.balloons()
+
+        # Mostrar resumen
+        with st.expander("📋 Ver resumen del ticket", expanded=True):
+            col_sum1, col_sum2 = st.columns(2)
+            with col_sum1:
+                st.markdown(f"**🎫 ID:** #{ticket_info.get('id')}")
+                st.markdown(f"**📝 Asunto:** {ticket_info.get('titulo')}")
+                st.markdown(f"**🏷️ Tipo:** {ticket_info.get('categoria')}")
+                st.markdown(f"**🚨 Urgencia:** {ticket_info.get('prioridad')}")
+
+            with col_sum2:
+                st.markdown(f"**📊 Estado:** Abierto")
+                st.markdown(f"**👤 Reportado por:** {st.session_state.get('username')}")
+                st.markdown(f"**👥 Asignado a:** Pendiente de asignación")
+                st.markdown(f"**📅 Fecha:** {ticket_info.get('fecha')}")
+
+        # Opciones después de crear
+        st.markdown("---")
+        col_opc1, col_opc2 = st.columns(2)
+        with col_opc1:
+            if st.button("📋 Ver mis tickets", use_container_width=True):
+                # Limpiar estado y mostrar la pestaña de tickets
+                st.session_state['ticket_creado'] = False
+                st.rerun()
+
+        with col_opc2:
+            if st.button("➕ Crear otro ticket", use_container_width=True):
+                # Limpiar estado para mostrar formulario nuevamente
+                st.session_state['ticket_creado'] = False
+                st.rerun()
+
+        return
+
+    # Si no se ha creado ticket, mostrar formulario
+    st.markdown("---")
+
+    with st.form("form_ticket_cliente"):
+        # Título y categoría
+        titulo = st.text_input(
+            "📝 **Asunto del ticket** *",
+            placeholder="Ej: Problema con la visualización de datos en el mapa de asignaciones",
+            help="Describe brevemente la incidencia"
+        )
+
+        col_cat, col_pri = st.columns(2)
+        with col_cat:
+            categoria = st.selectbox(
+                "🏷️ **Tipo de incidencia** *",
+                [
+                    "Problema técnico",
+                    "Error en datos",
+                    "Consulta sobre funcionalidad",
+                    "Solicitud de nueva característica",
+                    "Problema de acceso",
+                    "Otro"
+                ]
+            )
+
+        with col_pri:
+            prioridad = st.selectbox(
+                "🚨 **Urgencia** *",
+                ["Baja", "Media", "Alta"],
+                help="Alta = Bloqueante, Media = Importante, Baja = Mejora"
+            )
+
+        # Descripción detallada
+        st.markdown("**📄 Descripción detallada** *")
+        descripcion = st.text_area(
+            label="",
+            placeholder="""Por favor, describe la incidencia con el mayor detalle posible:
+
+• ¿Qué problema has encontrado?
+• ¿Qué estabas intentando hacer?
+• ¿Qué pasó exactamente?
+• ¿Qué esperabas que sucediera?
+• ¿Cuándo ocurrió? (Fecha y hora aproximada)
+
+Si es un error técnico:
+• ¿Qué pasos seguiste para que ocurriera?
+• ¿Apareció algún mensaje de error?
+• ¿En qué pantalla o sección ocurrió?
+
+Información adicional:
+• Navegador que usas:
+• Sistema operativo:
+• Dispositivo (PC, móvil, tablet):""",
+            height=300,
+            label_visibility="collapsed"
+        )
+
+        # Información adicional opcional
+        with st.expander("🔧 Información técnica adicional (opcional)"):
+            st.markdown("Esta información ayuda a los técnicos a diagnosticar el problema más rápido.")
+
+            col_tech1, col_tech2 = st.columns(2)
+            with col_tech1:
+                navegador = st.selectbox(
+                    "Navegador:",
+                    ["Chrome", "Firefox", "Edge", "Safari", "Otro", "No sé"]
+                )
+
+                sistema_operativo = st.selectbox(
+                    "Sistema operativo:",
+                    ["Windows", "macOS", "Linux", "iOS", "Android", "Otro"]
+                )
+
+            with col_tech2:
+                dispositivo = st.selectbox(
+                    "Dispositivo:",
+                    ["PC/Laptop", "Móvil", "Tablet", "Otro"]
+                )
+
+                url_pagina = st.text_input(
+                    "URL de la página (si aplica):",
+                    placeholder="https://..."
+                )
+
+        # Adjuntar archivos (opcional)
+        with st.expander("📎 Adjuntar archivos (opcional)"):
+            st.info("Puedes adjuntar capturas de pantalla o documentos relacionados con la incidencia.")
+            archivos = st.file_uploader(
+                "Selecciona archivos:",
+                type=['png', 'jpg', 'jpeg', 'pdf', 'txt', 'csv'],
+                accept_multiple_files=True
+            )
+
+            if archivos:
+                st.success(f"✅ {len(archivos)} archivo(s) listo(s) para adjuntar")
+                for archivo in archivos:
+                    st.write(f"📄 {archivo.name} ({archivo.size / 1024:.1f} KB)")
+
+        st.markdown("---")
+        st.markdown("**\* Campos obligatorios**")
+
+        # Botones del formulario (SOLO form_submit_button permitido)
+        col_btn1, col_btn2 = st.columns([1, 1])
+        with col_btn1:
+            enviar = st.form_submit_button(
+                "✅ **Enviar Ticket**",
+                type="primary",
+                use_container_width=True
+            )
+        with col_btn2:
+            cancelar = st.form_submit_button(
+                "❌ **Cancelar**",
+                use_container_width=True
+            )
+
+        # Procesar formulario
+        if enviar:
+            if not titulo or not descripcion:
+                st.error("⚠️ Por favor, completa todos los campos obligatorios (*)")
+            else:
+                try:
+                    # Obtener user_id del gestor comercial
+                    user_id = st.session_state.get("user_id")
+                    if not user_id:
+                        # Intentar obtenerlo de la base de datos
+                        conn = obtener_conexion()
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT id FROM usuarios WHERE username = ?", (st.session_state['username'],))
+                        result = cursor.fetchone()
+                        if result:
+                            user_id = result[0]
+                        else:
+                            st.error("❌ No se pudo identificar al usuario. Por favor, contacta con administración.")
+                            return
+                        conn.close()
+
+                    # Crear descripción completa con información técnica
+                    descripcion_completa = descripcion
+
+                    # Añadir información técnica si se proporcionó
+                    info_tecnica = "\n\n--- INFORMACIÓN TÉCNICA ---\n"
+                    info_tecnica += f"• Navegador: {navegador}\n"
+                    info_tecnica += f"• Sistema operativo: {sistema_operativo}\n"
+                    info_tecnica += f"• Dispositivo: {dispositivo}\n"
+                    if url_pagina:
+                        info_tecnica += f"• URL: {url_pagina}\n"
+                    info_tecnica += f"• Fecha reporte: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+
+                    descripcion_completa += info_tecnica
+
+                    # Insertar el ticket en la base de datos
+                    conn = obtener_conexion()
+                    cursor = conn.cursor()
+
+                    cursor.execute("""
+                        INSERT INTO tickets 
+                        (usuario_id, categoria, prioridad, estado, titulo, descripcion)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        user_id,
+                        categoria,
+                        prioridad,
+                        "Abierto",  # Estado inicial: Abierto sin asignar
+                        titulo,
+                        descripcion_completa
+                    ))
+
+                    conn.commit()
+                    ticket_id = cursor.lastrowid
+
+                    # Añadir comentario inicial
+                    cursor.execute("""
+                        UPDATE tickets 
+                        SET comentarios = ?
+                        WHERE ticket_id = ?
+                    """, (
+                        f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Ticket creado por gestor comercial {st.session_state['username']}. Pendiente de asignación a técnico.",
+                        ticket_id
+                    ))
+
+                    conn.commit()
+                    conn.close()
+
+                    # Registrar en trazabilidad
+                    log_trazabilidad(
+                        st.session_state["username"],
+                        "Creación de ticket (cliente)",
+                        f"Ticket #{ticket_id} creado como cliente: {titulo}"
+                    )
+
+                    # Guardar información para mostrar confirmación
+                    st.session_state['ticket_creado'] = True
+                    st.session_state['ticket_info'] = {
+                        'id': ticket_id,
+                        'titulo': titulo,
+                        'categoria': categoria,
+                        'prioridad': prioridad,
+                        'fecha': datetime.now().strftime('%d/%m/%Y %H:%M')
+                    }
+
+                    # Recargar para mostrar confirmación
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Error al crear el ticket: {str(e)[:200]}")
+                    st.info("""
+                    **Solución:**
+                    1. Verifica tu conexión a internet
+                    2. Contacta con el administrador si el problema persiste
+                    3. Intenta nuevamente en unos minutos
+                    """)
+
+        if cancelar:
+            # Solo se ejecuta si se presiona Cancelar
+            st.info("Formulario cancelado. No se ha creado ningún ticket.")
+
+def obtener_conexion():
+    return sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+    )
+########################
 
 def mostrar_coordenadas():
     import folium

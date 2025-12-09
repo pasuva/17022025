@@ -17,8 +17,6 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 import ftfy
-# Si necesitas matplotlib, importarlo al principio del archivo
-import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -2986,6 +2984,1685 @@ def descargar_imagenes_ofertas(df_ofertas):
                 width='stretch'
             )
 
+
+def admin_ticketing_panel():
+    """Panel principal de administración del sistema de tickets."""
+    # Submenú horizontal (similar al de "Ver Datos")
+    sub_seccion = option_menu(
+        menu_title=None,
+        options=["Todos los Tickets", "Tickets Abiertos", "Tickets Asignados",
+                 "Métricas", "Mis Tickets"],  # Añadido "Mis Tickets"
+        icons=["list", "exclamation-circle", "person-check",
+               "bar-chart", "person"],  # Añadido ícono "person"
+        default_index=0,
+        orientation="horizontal",
+        styles={
+            "container": {
+                "padding": "0!important",
+                "margin": "0px",
+                "background-color": "#F0F7F2",
+                "border-radius": "0px",
+                "max-width": "none"
+            },
+            "icon": {
+                "color": "#2C5A2E",
+                "font-size": "25px"
+            },
+            "nav-link": {
+                "color": "#2C5A2E",
+                "font-size": "18px",
+                "text-align": "center",
+                "margin": "0px",
+                "--hover-color": "#66B032",
+                "border-radius": "0px",
+            },
+            "nav-link-selected": {
+                "background-color": "#66B032",
+                "color": "white",
+                "font-weight": "bold"
+            }
+        }
+    )
+
+    # Registrar en trazabilidad
+    rol_actual = st.session_state.get("role", "admin")
+    log_trazabilidad(
+        st.session_state["username"],
+        f"Acceso a tickets ({rol_actual})",
+        f"Seleccionó la sección: {sub_seccion}"
+    )
+
+    # Contenido dinámico según la subsección seleccionada
+    st.markdown(f"### 📍 {sub_seccion}")
+
+    if sub_seccion == "Mis Tickets":
+        mostrar_mis_tickets()
+    elif sub_seccion == "Todos los Tickets":
+        st.info("📋 **Todos los Tickets** - Vista completa para administradores")
+        st.write("Aquí se mostrarán todos los tickets del sistema con filtros avanzados.")
+        mostrar_todos_tickets()
+
+    elif sub_seccion == "Tickets Abiertos":
+        st.info("🔍 **Tickets Abiertos** - Requieren atención inmediata")
+        st.write("Tickets con estado 'Abierto' o 'En Progreso'.")
+        mostrar_tickets_abiertos()
+
+    elif sub_seccion == "Tickets Asignados":
+        st.info("👤 **Tickets Asignados** - Tus tickets activos")
+        st.write("Tickets asignados al administrador actual.")
+        mostrar_tickets_asignados()
+
+    elif sub_seccion == "Métricas":
+        st.info("📈 **Métricas del Sistema** - Estadísticas en tiempo real")
+        st.write("Gráficos y KPIs del sistema de tickets.")
+        mostrar_metricas_tickets()
+
+
+def mostrar_metricas_tickets():
+    """Muestra métricas y estadísticas del sistema de tickets."""
+    st.subheader("📈 Métricas del Sistema")
+    st.markdown("---")
+
+    try:
+        conn = obtener_conexion()
+
+        # --- MÉTRICAS PRINCIPALES ---
+        st.markdown("### 🎯 KPIs Principales")
+
+        # Consultas para métricas
+        metricas = {}
+
+        # Total tickets
+        total = pd.read_sql("SELECT COUNT(*) as total FROM tickets", conn)['total'].iloc[0]
+        metricas['total'] = total
+
+        # Tickets por estado
+        estados = pd.read_sql("""
+            SELECT estado, COUNT(*) as cantidad 
+            FROM tickets 
+            GROUP BY estado
+        """, conn)
+
+        # Tickets por prioridad
+        prioridades = pd.read_sql("""
+            SELECT prioridad, COUNT(*) as cantidad 
+            FROM tickets 
+            GROUP BY prioridad
+        """, conn)
+
+        # Tickets últimos 7 días
+        ultimos_7d = pd.read_sql("""
+            SELECT DATE(fecha_creacion) as fecha, COUNT(*) as cantidad
+            FROM tickets 
+            WHERE fecha_creacion >= DATE('now', '-7 days')
+            GROUP BY DATE(fecha_creacion)
+            ORDER BY fecha
+        """, conn)
+
+        # Tiempo promedio de resolución (tickets cerrados) - VERSIÓN SEGURA
+        # Primero verificamos si existe el campo fecha_cierre
+        try:
+            # Intentamos una consulta que funcione con o sin fecha_cierre
+            tiempo_resolucion = pd.read_sql("""
+                SELECT 
+                    AVG(
+                        (JULIANDAY(COALESCE(fecha_cierre, fecha_creacion)) - JULIANDAY(fecha_creacion)) * 24
+                    ) as horas_promedio
+                FROM tickets 
+                WHERE estado IN ('Resuelto', 'Cerrado')
+            """, conn)
+        except:
+            # Si falla, creamos un DataFrame vacío
+            tiempo_resolucion = pd.DataFrame(columns=['horas_promedio'])
+
+        conn.close()
+
+        # Mostrar métricas en tarjetas
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Total Tickets", total)
+
+        with col2:
+            abiertos = estados[estados['estado'] == 'Abierto']['cantidad'].sum() if not estados.empty else 0
+            st.metric("Tickets Abiertos", abiertos, delta_color="inverse")
+
+        with col3:
+            en_progreso = estados[estados['estado'] == 'En Progreso']['cantidad'].sum() if not estados.empty else 0
+            st.metric("En Progreso", en_progreso)
+
+        with col4:
+            resueltos = estados[estados['estado'].isin(['Resuelto', 'Cerrado'])][
+                'cantidad'].sum() if not estados.empty else 0
+            tasa_resolucion = (resueltos / total * 100) if total > 0 else 0
+            st.metric("Tasa de Resolución", f"{tasa_resolucion:.1f}%")
+
+        st.markdown("---")
+
+        # --- GRÁFICOS ---
+        st.markdown("### 📊 Visualizaciones")
+
+        # Gráfico 1: Distribución por estado
+        if not estados.empty:
+            col_graf1, col_graf2 = st.columns(2)
+
+            with col_graf1:
+                st.markdown("#### 📊 Distribución por Estado")
+                # Crear gráfico de pastel
+                fig_estado = px.pie(
+                    estados,
+                    values='cantidad',
+                    names='estado',
+                    color='estado',
+                    color_discrete_map={
+                        'Abierto': '#FF6B6B',
+                        'En Progreso': '#FFD166',
+                        'Resuelto': '#4ECDC4',
+                        'Cerrado': '#06D6A0'
+                    }
+                )
+                fig_estado.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_estado, use_container_width=True)
+
+            with col_graf2:
+                st.markdown("#### 🚨 Distribución por Prioridad")
+                if not prioridades.empty:
+                    fig_prioridad = px.bar(
+                        prioridades,
+                        x='prioridad',
+                        y='cantidad',
+                        color='prioridad',
+                        color_discrete_map={
+                            'Alta': '#FF6B6B',
+                            'Media': '#FFD166',
+                            'Baja': '#4ECDC4'
+                        }
+                    )
+                    fig_prioridad.update_layout(showlegend=False)
+                    st.plotly_chart(fig_prioridad, use_container_width=True)
+
+        # Gráfico 2: Tendencia últimos 7 días
+        if not ultimos_7d.empty:
+            st.markdown("#### 📈 Tendencia (Últimos 7 días)")
+
+            fig_tendencia = px.line(
+                ultimos_7d,
+                x='fecha',
+                y='cantidad',
+                markers=True,
+                line_shape='spline'
+            )
+            fig_tendencia.update_layout(
+                xaxis_title="Fecha",
+                yaxis_title="Nuevos Tickets"
+            )
+            st.plotly_chart(fig_tendencia, use_container_width=True)
+
+        # --- TABLAS DETALLADAS ---
+        st.markdown("### 📋 Detalles por Categoría y Usuario")
+
+        tab_cat, tab_user, tab_time = st.tabs(["🏷️ Por Categoría", "👥 Por Usuario", "⏱️ Tiempos"])
+
+        with tab_cat:
+            conn = obtener_conexion()
+            por_categoria = pd.read_sql("""
+                SELECT 
+                    categoria,
+                    COUNT(*) as total,
+                    SUM(CASE WHEN estado = 'Abierto' THEN 1 ELSE 0 END) as abiertos,
+                    SUM(CASE WHEN estado = 'En Progreso' THEN 1 ELSE 0 END) as en_progreso,
+                    SUM(CASE WHEN estado IN ('Resuelto', 'Cerrado') THEN 1 ELSE 0 END) as resueltos
+                FROM tickets
+                GROUP BY categoria
+                ORDER BY total DESC
+            """, conn)
+            conn.close()
+
+            if not por_categoria.empty:
+                st.dataframe(por_categoria, use_container_width=True)
+
+        with tab_user:
+            conn = obtener_conexion()
+            # CONSULTA CORREGIDA - usando la tabla 'usuarios' correctamente
+            por_usuario = pd.read_sql("""
+                SELECT 
+                    u.username as usuario,
+                    COUNT(DISTINCT t.ticket_id) as tickets_creados,
+                    COUNT(DISTINCT CASE WHEN t.estado = 'Abierto' THEN t.ticket_id END) as abiertos,
+                    COUNT(DISTINCT ta.ticket_id) as asignados
+                FROM usuarios u
+                LEFT JOIN tickets t ON u.id = t.usuario_id
+                LEFT JOIN tickets ta ON u.id = ta.asignado_a
+                GROUP BY u.id, u.username
+                ORDER BY tickets_creados DESC
+            """, conn)
+            conn.close()
+
+            if not por_usuario.empty:
+                st.dataframe(por_usuario, use_container_width=True)
+
+        with tab_time:
+            st.info("⏱️ **Estadísticas de Tiempo**")
+
+            col_t1, col_t2, col_t3 = st.columns(3)
+            with col_t1:
+                # Mostrar tiempo promedio solo si hay datos
+                if not tiempo_resolucion.empty and 'horas_promedio' in tiempo_resolucion.columns:
+                    horas = tiempo_resolucion['horas_promedio'].iloc[0]
+                    if horas and not pd.isna(horas):
+                        st.metric("Tiempo Promedio Resolución", f"{horas:.1f} horas")
+                    else:
+                        st.metric("Tiempo Promedio Resolución", "Sin datos")
+                else:
+                    st.metric("Tiempo Promedio Resolución", "N/A")
+
+            with col_t2:
+                # Tickets antiguos (> 7 días)
+                conn = obtener_conexion()
+                antiguos = pd.read_sql("""
+                    SELECT COUNT(*) as cantidad
+                    FROM tickets
+                    WHERE estado IN ('Abierto', 'En Progreso')
+                    AND fecha_creacion < DATE('now', '-7 days')
+                """, conn)['cantidad'].iloc[0]
+                conn.close()
+                st.metric("Tickets > 7 días", antiguos, delta_color="inverse")
+
+            with col_t3:
+                # Tickets sin asignar
+                conn = obtener_conexion()
+                sin_asignar = pd.read_sql("""
+                    SELECT COUNT(*) as cantidad
+                    FROM tickets
+                    WHERE estado = 'Abierto' 
+                    AND (asignado_a IS NULL OR asignado_a = '')
+                """, conn)['cantidad'].iloc[0]
+                conn.close()
+                st.metric("Sin asignar", sin_asignar, delta_color="inverse")
+
+        # --- REPORTE DESCARGABLE ---
+        st.markdown("---")
+        st.markdown("### 📄 Exportar Reporte")
+
+        if st.button("📊 Generar Reporte Completo", type="primary", use_container_width=True):
+            # Crear reporte en Excel
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # Hoja 1: Resumen
+                resumen_data = {
+                    'Métrica': ['Total Tickets', 'Abiertos', 'En Progreso', 'Resueltos', 'Tasa Resolución'],
+                    'Valor': [total, abiertos, en_progreso, resueltos, f"{tasa_resolucion:.1f}%"]
+                }
+                pd.DataFrame(resumen_data).to_excel(writer, sheet_name='Resumen', index=False)
+
+                # Hoja 2: Tickets detallados
+                conn = obtener_conexion()
+                tickets_detalle = pd.read_sql("""
+                    SELECT 
+                        t.*,
+                        u.username as nombre_usuario,
+                        a.username as nombre_asignado
+                    FROM tickets t
+                    LEFT JOIN usuarios u ON t.usuario_id = u.id
+                    LEFT JOIN usuarios a ON t.asignado_a = a.id
+                    ORDER BY t.fecha_creacion DESC
+                """, conn)
+                conn.close()
+                tickets_detalle.to_excel(writer, sheet_name='Tickets', index=False)
+
+            output.seek(0)
+
+            st.download_button(
+                label="⬇️ Descargar Reporte Completo (.xlsx)",
+                data=output,
+                file_name=f"reporte_tickets_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+    except Exception as e:
+        st.error(f"⚠️ Error al cargar métricas: {str(e)[:200]}")
+        st.info("""
+        **Posibles soluciones:**
+        1. Ejecuta este SQL para añadir el campo `fecha_cierre`:
+           ```sql
+           ALTER TABLE tickets ADD COLUMN fecha_cierre DATETIME;
+           ```
+        2. Verifica que la tabla `tickets` existe
+        3. Comprueba la conexión a la base de datos
+        """)
+
+
+def actualizar_estado_ticket(ticket_id, nuevo_estado):
+    """Actualiza el estado de un ticket y registra la acción como comentario."""
+    try:
+        user_id = st.session_state.get("user_id", 1)
+        username = st.session_state.get("username", "Usuario")
+
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+
+        # Obtener estado anterior
+        cursor.execute("SELECT estado, titulo FROM tickets WHERE ticket_id = ?", (ticket_id,))
+        ticket_info = cursor.fetchone()
+        estado_anterior = ticket_info[0] if ticket_info else "Desconocido"
+        titulo_ticket = ticket_info[1] if ticket_info else f"#{ticket_id}"
+
+        # Verificar si existe el campo fecha_cierre
+        cursor.execute("PRAGMA table_info(tickets)")
+        columnas = cursor.fetchall()
+        tiene_fecha_cierre = any(col[1] == 'fecha_cierre' for col in columnas)
+
+        # Actualizar estado del ticket
+        if nuevo_estado in ['Resuelto', 'Cerrado'] and tiene_fecha_cierre:
+            cursor.execute("""
+                UPDATE tickets 
+                SET estado = ?, fecha_cierre = CURRENT_TIMESTAMP 
+                WHERE ticket_id = ?
+            """, (nuevo_estado, ticket_id))
+        else:
+            cursor.execute("""
+                UPDATE tickets 
+                SET estado = ? 
+                WHERE ticket_id = ?
+            """, (nuevo_estado, ticket_id))
+
+        # Registrar el cambio de estado como comentario
+        cursor.execute("""
+            INSERT INTO comentarios_tickets 
+            (ticket_id, usuario_id, tipo, contenido)
+            VALUES (?, ?, ?, ?)
+        """, (
+            ticket_id,
+            user_id,
+            'actualizacion',
+            f"Estado cambiado de '{estado_anterior}' a '{nuevo_estado}' por {username}"
+        ))
+
+        conn.commit()
+        conn.close()
+
+        # Registrar en trazabilidad
+        log_trazabilidad(
+            username,
+            "Actualización de ticket",
+            f"Cambió estado del ticket #{ticket_id} ('{titulo_ticket}') de '{estado_anterior}' a '{nuevo_estado}'"
+        )
+
+        st.toast(f"✅ Ticket #{ticket_id} actualizado a '{nuevo_estado}'")
+        return True
+
+    except Exception as e:
+        st.error(f"⚠️ Error al actualizar ticket: {str(e)[:100]}")
+        return False
+
+
+def generar_reporte_actividad(user_id):
+    """Genera un reporte de actividad del usuario."""
+    try:
+        conn = obtener_conexion()
+
+        # Obtener información del usuario
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM usuarios WHERE id = ?", (user_id,))
+        user_info = cursor.fetchone()
+        username = user_info[0] if user_info else f"Usuario #{user_id}"
+
+        # Obtener tickets creados por el usuario
+        tickets_creados = pd.read_sql("""
+            SELECT 
+                ticket_id,
+                fecha_creacion,
+                categoria,
+                prioridad,
+                estado,
+                asignado_a,
+                titulo
+            FROM tickets
+            WHERE usuario_id = ?
+            ORDER BY fecha_creacion DESC
+        """, conn, params=(user_id,))
+
+        # Obtener tickets asignados al usuario
+        tickets_asignados = pd.read_sql("""
+            SELECT 
+                t.ticket_id,
+                t.fecha_creacion,
+                u.username as reportado_por,
+                t.categoria,
+                t.prioridad,
+                t.estado,
+                t.titulo
+            FROM tickets t
+            LEFT JOIN usuarios u ON t.usuario_id = u.id
+            WHERE t.asignado_a = ?
+            ORDER BY t.fecha_creacion DESC
+        """, conn, params=(user_id,))
+
+        conn.close()
+
+        # Mostrar el reporte
+        st.subheader(f"📊 Reporte de Actividad: {username}")
+        st.markdown("---")
+
+        # Resumen estadístico
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Tickets Creados", len(tickets_creados))
+        with col2:
+            tickets_abiertos = len(tickets_creados[tickets_creados['estado'] == 'Abierto'])
+            st.metric("Creados Abiertos", tickets_abiertos)
+        with col3:
+            st.metric("Tickets Asignados", len(tickets_asignados))
+        with col4:
+            asignados_activos = len(tickets_asignados[tickets_asignados['estado'].isin(['Abierto', 'En Progreso'])])
+            st.metric("Asignados Activos", asignados_activos)
+
+        # Pestañas para diferentes secciones del reporte
+        tab1, tab2, tab3 = st.tabs(["📝 Tickets Creados", "👤 Tickets Asignados", "📈 Estadísticas"])
+
+        with tab1:
+            if not tickets_creados.empty:
+                st.markdown(f"### 📝 Tickets Creados por Ti ({len(tickets_creados)})")
+
+                # Formatear para mejor visualización
+                tickets_creados_display = tickets_creados.copy()
+                tickets_creados_display['fecha_creacion'] = pd.to_datetime(
+                    tickets_creados_display['fecha_creacion']).dt.strftime('%d/%m/%Y %H:%M')
+
+                st.dataframe(
+                    tickets_creados_display.rename(columns={
+                        'ticket_id': 'ID',
+                        'fecha_creacion': 'Creado',
+                        'categoria': 'Categoría',
+                        'prioridad': 'Prioridad',
+                        'estado': 'Estado',
+                        'titulo': 'Título'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # Distribución por estado
+                if len(tickets_creados) > 0:
+                    st.markdown("#### 📊 Distribución por Estado")
+                    distribucion = tickets_creados['estado'].value_counts()
+                    st.bar_chart(distribucion)
+            else:
+                st.info("No has creado ningún ticket todavía.")
+
+        with tab2:
+            if not tickets_asignados.empty:
+                st.markdown(f"### 👤 Tickets Asignados a Ti ({len(tickets_asignados)})")
+
+                tickets_asignados_display = tickets_asignados.copy()
+                tickets_asignados_display['fecha_creacion'] = pd.to_datetime(
+                    tickets_asignados_display['fecha_creacion']).dt.strftime('%d/%m/%Y %H:%M')
+
+                st.dataframe(
+                    tickets_asignados_display.rename(columns={
+                        'ticket_id': 'ID',
+                        'fecha_creacion': 'Creado',
+                        'reportado_por': 'Reportado por',
+                        'categoria': 'Categoría',
+                        'prioridad': 'Prioridad',
+                        'estado': 'Estado',
+                        'titulo': 'Título'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # Métricas de desempeño
+                st.markdown("#### 🎯 Métricas de Desempeño")
+
+                col_perf1, col_perf2, col_perf3 = st.columns(3)
+                with col_perf1:
+                    resueltos = len(tickets_asignados[tickets_asignados['estado'].isin(['Resuelto', 'Cerrado'])])
+                    porcentaje_resueltos = (resueltos / len(tickets_asignados) * 100) if len(
+                        tickets_asignados) > 0 else 0
+                    st.metric("Tasa de Resolución", f"{porcentaje_resueltos:.1f}%")
+
+                with col_perf2:
+                    alta_prioridad = len(tickets_asignados[tickets_asignados['prioridad'] == 'Alta'])
+                    st.metric("Alta Prioridad", alta_prioridad)
+
+                with col_perf3:
+                    # Calcular tiempo promedio de resolución (si hay tickets resueltos)
+                    if resueltos > 0:
+                        st.metric("Tickets Resueltos", resueltos)
+                    else:
+                        st.metric("En Progreso", len(tickets_asignados[tickets_asignados['estado'] == 'En Progreso']))
+            else:
+                st.info("No tienes tickets asignados actualmente.")
+
+        with tab3:
+            st.markdown("### 📈 Estadísticas Detalladas")
+
+            # Estadísticas por categoría
+            if not tickets_creados.empty:
+                st.markdown("#### 🏷️ Tickets Creados por Categoría")
+                cat_stats = tickets_creados.groupby('categoria').agg({
+                    'ticket_id': 'count',
+                    'estado': lambda x: (x == 'Abierto').sum()
+                }).rename(columns={'ticket_id': 'Total', 'estado': 'Abiertos'})
+
+                st.dataframe(cat_stats, use_container_width=True)
+
+            # Tendencia temporal (últimos 30 días)
+            st.markdown("#### 📅 Actividad Reciente (Últimos 30 días)")
+
+            try:
+                conn = obtener_conexion()
+
+                # Tickets creados en los últimos 30 días
+                creados_30d = pd.read_sql("""
+                    SELECT 
+                        DATE(fecha_creacion) as fecha,
+                        COUNT(*) as cantidad
+                    FROM tickets
+                    WHERE usuario_id = ? 
+                        AND fecha_creacion >= DATE('now', '-30 days')
+                    GROUP BY DATE(fecha_creacion)
+                    ORDER BY fecha
+                """, conn, params=(user_id,))
+
+                if not creados_30d.empty:
+                    # Crear gráfico de línea
+                    fig = px.line(
+                        creados_30d,
+                        x='fecha',
+                        y='cantidad',
+                        markers=True,
+                        title='Tickets Creados por Día (Últimos 30 días)'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No hay actividad en los últimos 30 días.")
+
+                conn.close()
+            except Exception as e:
+                st.warning(f"No se pudo generar la tendencia temporal: {str(e)[:100]}")
+
+        # Opción para exportar el reporte
+        st.markdown("---")
+        st.markdown("### 📄 Exportar Reporte")
+
+        if st.button("💾 Descargar Reporte Completo", type="primary", use_container_width=True):
+            # Crear un archivo Excel con el reporte
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # Hoja 1: Resumen
+                resumen_data = {
+                    'Métrica': ['Usuario', 'Tickets Creados', 'Tickets Asignados',
+                                'Tickets Abiertos', 'Tickets Resueltos', 'Fecha Reporte'],
+                    'Valor': [username, len(tickets_creados), len(tickets_asignados),
+                              tickets_abiertos, resueltos, datetime.now().strftime('%Y-%m-%d %H:%M')]
+                }
+                pd.DataFrame(resumen_data).to_excel(writer, sheet_name='Resumen', index=False)
+
+                # Hoja 2: Tickets creados
+                if not tickets_creados.empty:
+                    tickets_creados.to_excel(writer, sheet_name='Tickets_Creados', index=False)
+
+                # Hoja 3: Tickets asignados
+                if not tickets_asignados.empty:
+                    tickets_asignados.to_excel(writer, sheet_name='Tickets_Asignados', index=False)
+
+            output.seek(0)
+
+            st.download_button(
+                label="⬇️ Descargar Reporte (.xlsx)",
+                data=output,
+                file_name=f"reporte_actividad_{username}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+        return True
+
+    except Exception as e:
+        st.error(f"⚠️ Error al generar reporte: {str(e)[:100]}")
+        return False
+
+def mostrar_tickets_asignados():
+    """Muestra tickets asignados al administrador actual."""
+    st.subheader("👤 Mis Tickets Asignados")
+    st.markdown("---")
+
+    # Obtener ID del usuario actual
+    user_id = st.session_state.get("user_id", 1)  # Ajusta con tu variable
+
+    try:
+        conn = obtener_conexion()
+
+        # Consulta para tickets asignados al usuario actual
+        query = """
+        SELECT 
+            t.ticket_id,
+            t.fecha_creacion,
+            u.username as usuario,
+            t.categoria,
+            t.prioridad,
+            t.estado,
+            t.titulo,
+            t.descripcion,
+            t.comentarios
+        FROM tickets t
+        LEFT JOIN usuarios u ON t.usuario_id = u.id
+        WHERE t.asignado_a = ? 
+            AND t.estado IN ('Abierto', 'En Progreso')
+        ORDER BY 
+            CASE t.prioridad 
+                WHEN 'Alta' THEN 1
+                WHEN 'Media' THEN 2
+                WHEN 'Baja' THEN 3
+            END,
+            t.fecha_creacion DESC
+        """
+
+        df_tickets = pd.read_sql(query, conn, params=(user_id,))
+        conn.close()
+
+        if df_tickets.empty:
+            st.success("🎉 ¡Excelente! No tienes tickets asignados pendientes.")
+            return
+
+        # --- RESUMEN ---
+        st.markdown("### 📊 Mi Carga de Trabajo")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Asignados", len(df_tickets))
+        with col2:
+            alta = len(df_tickets[df_tickets['prioridad'] == 'Alta'])
+            st.metric("Alta Prioridad", alta, delta_color="inverse")
+        with col3:
+            vencimiento = len(df_tickets[df_tickets['fecha_creacion'] < (datetime.now() - datetime.timedelta(days=3))])
+            st.metric("> 3 días", vencimiento)
+
+        st.markdown("---")
+
+        # --- LISTA DE TICKETS ---
+        st.markdown(f"### 📋 Tickets bajo mi Responsabilidad ({len(df_tickets)})")
+
+        for _, ticket in df_tickets.iterrows():
+            # Calcular días desde creación
+            fecha_creacion = pd.to_datetime(ticket['fecha_creacion'])
+            dias_transcurridos = (datetime.now() - fecha_creacion).days
+
+            # Determinar color según antigüedad
+            color_borde = "#FF6B6B" if dias_transcurridos > 3 else "#FFD166" if dias_transcurridos > 1 else "#4ECDC4"
+
+            with st.container():
+                st.markdown(f"""
+                <div style="
+                    border-left: 5px solid {color_borde};
+                    padding: 15px;
+                    margin: 10px 0;
+                    background-color: #F8F9FA;
+                    border-radius: 5px;
+                ">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>🎫 Ticket #{ticket['ticket_id']}: {ticket['titulo']}</strong>
+                        </div>
+                        <div>
+                            <span style="background-color: {
+                '#FF6B6B' if ticket['prioridad'] == 'Alta' else
+                '#FFD166' if ticket['prioridad'] == 'Media' else '#4ECDC4'
+                }; color: white; padding: 5px 10px; border-radius: 10px; font-size: 12px;">
+                                {ticket['prioridad']}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 10px; color: #666; font-size: 14px;">
+                        👤 <strong>Reportado por:</strong> {ticket['usuario']} | 
+                        📅 <strong>Creado:</strong> {fecha_creacion.strftime('%d/%m/%Y %H:%M')} |
+                        ⏳ <strong>Hace:</strong> {dias_transcurridos} días
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Botones de acción en línea
+                col_acc1, col_acc2, col_acc3, col_acc4 = st.columns([2, 2, 2, 2])
+
+                with col_acc1:
+                    if st.button(f"👁️ Ver Detalles #{ticket['ticket_id']}",
+                                 key=f"ver_{ticket['ticket_id']}",
+                                 use_container_width=True):
+                        st.session_state[f"ver_ticket_{ticket['ticket_id']}"] = True
+
+                with col_acc2:
+                    if st.button(f"💬 Comentar #{ticket['ticket_id']}",
+                                 key=f"com_{ticket['ticket_id']}",
+                                 use_container_width=True):
+                        st.session_state[f"comentar_ticket_{ticket['ticket_id']}"] = True
+
+                with col_acc3:
+                    if st.button(f"✅ Resolver #{ticket['ticket_id']}",
+                                 key=f"res_{ticket['ticket_id']}",
+                                 type="primary",
+                                 use_container_width=True):
+                        actualizar_estado_ticket(ticket['ticket_id'], 'Resuelto')
+                        st.rerun()
+
+                with col_acc4:
+                    if st.button(f"🔄 Reasignar #{ticket['ticket_id']}",
+                                 key=f"reas_{ticket['ticket_id']}",
+                                 use_container_width=True):
+                        st.session_state[f"reasignar_ticket_{ticket['ticket_id']}"] = True
+
+                # Mostrar detalles si se solicita
+                if st.session_state.get(f"ver_ticket_{ticket['ticket_id']}"):
+                    st.markdown("---")
+                    st.markdown(f"#### 📄 Detalles del Ticket #{ticket['ticket_id']}")
+
+                    col_det1, col_det2 = st.columns(2)
+                    with col_det1:
+                        st.markdown(f"**🏷️ Categoría:** {ticket['categoria']}")
+                        st.markdown(f"**📊 Estado:** {ticket['estado']}")
+                    with col_det2:
+                        st.markdown(f"**🚨 Prioridad:** {ticket['prioridad']}")
+                        st.markdown(f"**👤 Reportado por:** {ticket['usuario']}")
+
+                    st.markdown("**📝 Descripción:**")
+                    st.info(ticket['descripcion'])
+
+                    if ticket['comentarios']:
+                        st.markdown("**💬 Comentarios:**")
+                        st.warning(ticket['comentarios'])
+
+                    if st.button(f"❌ Cerrar Detalles #{ticket['ticket_id']}"):
+                        st.session_state.pop(f"ver_ticket_{ticket['ticket_id']}", None)
+                        st.rerun()
+
+                    st.markdown("---")
+
+        # --- ACCIONES GLOBALES ---
+        st.markdown("### ⚡ Acciones en Lote")
+
+        col_glob1, col_glob2 = st.columns(2)
+        with col_glob1:
+            if st.button("✅ Marcar Todos como Resueltos", use_container_width=True):
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE tickets SET estado = 'Resuelto' WHERE asignado_a = ? AND estado IN ('Abierto', 'En Progreso')",
+                    (user_id,)
+                )
+                conn.commit()
+                conn.close()
+                st.success("✅ Todos los tickets marcados como resueltos")
+                st.rerun()
+
+        with col_glob2:
+            if st.button("📊 Generar Reporte de Actividad", use_container_width=True):
+                generar_reporte_actividad(user_id)
+
+    except Exception as e:
+        st.error(f"⚠️ Error al cargar tickets asignados: {str(e)[:200]}")
+
+
+def mostrar_tickets_abiertos():
+    """Muestra tickets con estado 'Abierto' o 'En Progreso'."""
+
+    try:
+        conn = obtener_conexion()
+
+        # Consulta para tickets abiertos/en progreso
+        query = """
+        SELECT 
+            t.ticket_id,
+            t.fecha_creacion,
+            u.username as usuario,
+            t.categoria,
+            t.prioridad,
+            t.estado,
+            a.username as asignado_a,
+            t.titulo,
+            t.descripcion,
+            t.comentarios
+        FROM tickets t
+        LEFT JOIN usuarios u ON t.usuario_id = u.id
+        LEFT JOIN usuarios a ON t.asignado_a = a.id
+        WHERE t.estado IN ('Abierto', 'En Progreso')
+        ORDER BY 
+            CASE t.prioridad 
+                WHEN 'Alta' THEN 1
+                WHEN 'Media' THEN 2
+                WHEN 'Baja' THEN 3
+            END,
+            t.fecha_creacion DESC
+        """
+
+        df_tickets = pd.read_sql(query, conn)
+        conn.close()
+
+        if df_tickets.empty:
+            st.success("✅ ¡Genial! No hay tickets pendientes.")
+            return
+
+        # Crear pestañas para diferentes vistas
+        tab1, tab2 = st.tabs(["📄 Vista Tabla", "📋 Vista Detallada"])
+
+        with tab1:
+            # Vista tabla compacta - VERSIÓN SIMPLIFICADA SIN SELECCIÓN
+            df_display = df_tickets.copy()
+            df_display = df_display.rename(columns={
+                'ticket_id': 'ID',
+                'fecha_creacion': 'Creado',
+                'prioridad': 'Prioridad',
+                'estado': 'Estado',
+                'asignado_a': 'Asignado a',
+                'titulo': 'Título'
+            })
+
+            # Mostrar solo la tabla sin funcionalidad de selección
+            st.dataframe(
+                df_display[['ID', 'Creado', 'Prioridad', 'Estado', 'Asignado a', 'Título']],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Botones de acción generales (sin selección específica)
+            st.markdown("### ⚡ Acciones Rápidas")
+            col_acc1, col_acc2 = st.columns(2)
+            with col_acc1:
+                if st.button("📥 Exportar lista", use_container_width=True):
+                    # Crear archivo Excel
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df_display.to_excel(writer, sheet_name='Tickets_Abiertos', index=False)
+                    output.seek(0)
+
+                    st.download_button(
+                        label="⬇️ Descargar Excel",
+                        data=output,
+                        file_name=f"tickets_abiertos_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+            with col_acc2:
+                if st.button("🔄 Actualizar vista", use_container_width=True):
+                    st.rerun()
+
+        with tab2:
+            # Vista detallada con expanders
+            for _, ticket in df_tickets.iterrows():
+                with st.expander(f"🎫 #{ticket['ticket_id']} - {ticket['titulo']} ({ticket['prioridad']})"):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.markdown(f"**📅 Creado:** {ticket['fecha_creacion']}")
+                        st.markdown(f"**👤 Usuario:** {ticket['usuario']}")
+                        st.markdown(f"**🏷️ Categoría:** {ticket['categoria']}")
+
+                    with col2:
+                        # Mostrar prioridad con color
+                        color_prioridad = {
+                            'Alta': '🔴',
+                            'Media': '🟡',
+                            'Baja': '🟢'
+                        }.get(ticket['prioridad'], '⚪')
+
+                        st.markdown(f"**🚨 Prioridad:** {color_prioridad} `{ticket['prioridad']}`")
+                        st.markdown(f"**📊 Estado:** `{ticket['estado']}`")
+                        st.markdown(f"**👥 Asignado a:** {ticket['asignado_a'] or 'Sin asignar'}")
+
+                    st.markdown("---")
+                    st.markdown(f"**📄 Descripción:**")
+                    st.info(ticket['descripcion'])
+
+                    if ticket['comentarios']:
+                        st.markdown(f"**💬 Comentarios:**")
+                        st.warning(ticket['comentarios'])
+
+                    # --- NUEVO: SISTEMA DE COMENTARIOS EN TIEMPO REAL ---
+                    st.markdown("---")
+                    st.markdown("**💬 Añadir nuevo comentario:**")
+
+                    # Formulario para nuevo comentario
+                    with st.form(key=f"form_comentario_{ticket['ticket_id']}", clear_on_submit=True):
+                        nuevo_comentario = st.text_area(
+                            "Escribe tu comentario:",
+                            placeholder="Añade información adicional, preguntas o actualizaciones sobre este ticket...",
+                            height=100,
+                            key=f"comentario_text_{ticket['ticket_id']}"
+                        )
+
+                        tipo_comentario = st.selectbox(
+                            "Tipo de comentario:",
+                            ["Actualización", "Pregunta", "Solución", "Información adicional"],
+                            key=f"tipo_comentario_{ticket['ticket_id']}"
+                        )
+
+                        es_interno = st.checkbox(
+                            "Comentario interno (solo visible para el equipo)",
+                            key=f"interno_{ticket['ticket_id']}"
+                        )
+
+                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+                        with col_btn1:
+                            enviar_comentario = st.form_submit_button(
+                                "💬 Enviar comentario",
+                                use_container_width=True
+                            )
+
+                        with col_btn2:
+                            if st.form_submit_button("✅ Marcar como Resuelto", use_container_width=True):
+                                actualizar_estado_ticket(ticket['ticket_id'], 'Resuelto')
+                                # Añadir comentario automático
+                                user_id = st.session_state.get("user_id", 1)
+                                conn = obtener_conexion()
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    UPDATE tickets 
+                                    SET comentarios = COALESCE(comentarios || '\n\n', '') || ?
+                                    WHERE ticket_id = ?
+                                """, (
+                                    f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {st.session_state['username']} marcó el ticket como RESUELTO.",
+                                    ticket['ticket_id']
+                                ))
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
+
+                        with col_btn3:
+                            if st.form_submit_button("👤 Asignar a mí", use_container_width=True):
+                                user_id = st.session_state.get("user_id", 1)
+                                conn = obtener_conexion()
+                                cursor = conn.cursor()
+                                cursor.execute(
+                                    "UPDATE tickets SET asignado_a = ?, estado = 'En Progreso' WHERE ticket_id = ?",
+                                    (user_id, ticket['ticket_id'])
+                                )
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
+
+                        if enviar_comentario and nuevo_comentario.strip():
+                            # Añadir el nuevo comentario a los comentarios existentes
+                            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+                            usuario = st.session_state.get("username", "Usuario")
+                            tipo = f"[{tipo_comentario}]" if not es_interno else f"[{tipo_comentario} - INTERNO]"
+
+                            nuevo_comentario_formateado = f"\n\n[{timestamp}] {usuario} {tipo}:\n{nuevo_comentario.strip()}"
+
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE tickets 
+                                SET comentarios = COALESCE(comentarios || ?, ?)
+                                WHERE ticket_id = ?
+                            """, (
+                                nuevo_comentario_formateado,
+                                f"[{timestamp}] {usuario} {tipo}:\n{nuevo_comentario.strip()}",
+                                ticket['ticket_id']
+                            ))
+                            conn.commit()
+                            conn.close()
+
+                            log_trazabilidad(
+                                st.session_state["username"],
+                                "Comentario en ticket",
+                                f"Añadió comentario al ticket #{ticket['ticket_id']}"
+                            )
+
+                            st.success("✅ Comentario añadido")
+                            st.rerun()
+
+                    # Botones de acción adicionales
+                    st.markdown("---")
+                    st.markdown("**⚡ Otras acciones:**")
+
+                    col_act1, col_act2, col_act3 = st.columns(3)
+                    with col_act1:
+                        if st.button(f"📋 Ver historial completo",
+                                     key=f"hist_{ticket['ticket_id']}",
+                                     use_container_width=True):
+                            st.session_state[f"ver_historial_{ticket['ticket_id']}"] = True
+                            st.rerun()
+
+                    with col_act2:
+                        if st.button(f"🔗 Copiar enlace",
+                                     key=f"copy_{ticket['ticket_id']}",
+                                     use_container_width=True):
+                            # Crear enlace simbólico al ticket
+                            st.code(f"Ticket #{ticket['ticket_id']}: {ticket['titulo']}", language=None)
+                            st.toast("✅ Enlace copiado al portapapeles")
+
+                    with col_act3:
+                        if st.button(f"👤 Asignar a otro",
+                                     key=f"asg_{ticket['ticket_id']}",
+                                     use_container_width=True):
+                            st.session_state["ticket_a_asignar"] = ticket['ticket_id']
+                            st.rerun()
+
+        # --- ASIGNACIÓN DE TICKETS ---
+        if st.session_state.get("ticket_a_asignar"):
+            ticket_id = st.session_state["ticket_a_asignar"]
+            st.markdown(f"### 👤 Asignar Ticket #{ticket_id}")
+
+            # Obtener lista de agentes (usuarios con rol de agente)
+            conn = obtener_conexion()
+            agentes = pd.read_sql("SELECT id, username FROM usuarios WHERE role IN ('admin', 'agent')", conn)
+            conn.close()
+
+            if not agentes.empty:
+                agente_seleccionado = st.selectbox(
+                    "Seleccionar agente:",
+                    options=agentes['username'].tolist()
+                )
+
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("✅ Confirmar Asignación"):
+                        id_agente = agentes[agentes['username'] == agente_seleccionado]['id'].iloc[0]
+
+                        conn = obtener_conexion()
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE tickets SET asignado_a = ?, estado = 'En Progreso' WHERE ticket_id = ?",
+                            (id_agente, ticket_id)
+                        )
+
+                        # Añadir comentario sobre la asignación
+                        cursor.execute("""
+                            UPDATE tickets 
+                            SET comentarios = COALESCE(comentarios || '\n\n', '') || ?
+                            WHERE ticket_id = ?
+                        """, (
+                            f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {st.session_state['username']} asignó el ticket a {agente_seleccionado}.",
+                            ticket_id
+                        ))
+
+                        conn.commit()
+                        conn.close()
+
+                        log_trazabilidad(
+                            st.session_state["username"],
+                            "Asignación de ticket",
+                            f"Asignó el ticket #{ticket_id} a {agente_seleccionado}"
+                        )
+
+                        st.success(f"✅ Ticket #{ticket_id} asignado a {agente_seleccionado}")
+                        st.session_state.pop("ticket_a_asignar", None)
+                        st.rerun()
+
+                with col_btn2:
+                    if st.button("❌ Cancelar"):
+                        st.session_state.pop("ticket_a_asignar", None)
+                        st.rerun()
+            else:
+                st.warning("No hay agentes disponibles para asignar")
+                if st.button("❌ Cancelar"):
+                    st.session_state.pop("ticket_a_asignar", None)
+                    st.rerun()
+
+    except Exception as e:
+        st.error(f"⚠️ Error al cargar tickets abiertos: {str(e)[:200]}")
+        st.info("""
+        **Posibles soluciones:**
+        1. Verifica que las tablas `tickets` y `usuarios` existen
+        2. Comprueba la conexión a la base de datos
+        3. Asegúrate de que los campos de la consulta coinciden con tu estructura de tabla
+        """)
+
+def mostrar_todos_tickets():
+    """Muestra todos los tickets del sistema con filtros avanzados."""
+
+    try:
+        conn = obtener_conexion()
+
+        # Consulta completa con información de usuarios
+        query = """
+        SELECT 
+            t.ticket_id,
+            t.fecha_creacion,
+            u.username as usuario,
+            t.categoria,
+            t.prioridad,
+            t.estado,
+            a.username as asignado_a,
+            t.titulo,
+            t.descripcion,
+            t.comentarios
+        FROM tickets t
+        LEFT JOIN usuarios u ON t.usuario_id = u.id
+        LEFT JOIN usuarios a ON t.asignado_a = a.id
+        ORDER BY 
+            CASE t.prioridad 
+                WHEN 'Alta' THEN 1
+                WHEN 'Media' THEN 2
+                WHEN 'Baja' THEN 3
+            END,
+            t.fecha_creacion DESC
+        """
+
+        df_tickets = pd.read_sql(query, conn)
+        conn.close()
+
+        if df_tickets.empty:
+            st.info("🎉 No hay tickets en el sistema.")
+            return
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            estados_filtro = st.multiselect(
+                "Estado",
+                options=df_tickets['estado'].unique(),
+                default=df_tickets['estado'].unique()
+            )
+        with col2:
+            prioridades_filtro = st.multiselect(
+                "Prioridad",
+                options=df_tickets['prioridad'].unique(),
+                default=df_tickets['prioridad'].unique()
+            )
+        with col3:
+            categorias_filtro = st.multiselect(
+                "Categoría",
+                options=df_tickets['categoria'].unique(),
+                default=df_tickets['categoria'].unique()
+            )
+
+        # Aplicar filtros
+        mask = (
+                df_tickets['estado'].isin(estados_filtro) &
+                df_tickets['prioridad'].isin(prioridades_filtro) &
+                df_tickets['categoria'].isin(categorias_filtro)
+        )
+        df_filtrado = df_tickets[mask]
+
+        # --- MÉTRICAS RÁPIDAS ---
+        st.markdown("### 📊 Resumen")
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total", len(df_filtrado))
+        with col2:
+            abiertos = len(df_filtrado[df_filtrado['estado'] == 'Abierto'])
+            st.metric("Abiertos", abiertos, delta_color="inverse")
+        with col3:
+            en_progreso = len(df_filtrado[df_filtrado['estado'] == 'En Progreso'])
+            st.metric("En Progreso", en_progreso)
+        with col4:
+            resueltos = len(df_filtrado[df_filtrado['estado'].isin(['Resuelto', 'Cerrado'])])
+            st.metric("Resueltos", resueltos)
+
+        st.markdown("---")
+
+        # --- TABLA DE TICKETS ---
+        st.markdown(f"### 📋 Resultados ({len(df_filtrado)} tickets)")
+
+        # Formatear datos para visualización
+        df_display = df_filtrado.copy()
+        df_display = df_display.rename(columns={
+            'ticket_id': 'ID',
+            'fecha_creacion': 'Creado',
+            'usuario': 'Usuario',
+            'categoria': 'Categoría',
+            'prioridad': 'Prioridad',
+            'estado': 'Estado',
+            'asignado_a': 'Asignado a',
+            'titulo': 'Título'
+        })
+
+        # Mostrar tabla
+        st.dataframe(
+            df_display[['ID', 'Creado', 'Usuario', 'Categoría', 'Prioridad', 'Estado', 'Asignado a', 'Título']],
+            column_config={
+                'ID': st.column_config.NumberColumn(width='small'),
+                'Creado': st.column_config.DatetimeColumn(format='DD/MM/YY HH:mm'),
+                'Prioridad': st.column_config.TextColumn(
+                    help="🚨 Alta - 🔸 Media - 🔹 Baja"
+                ),
+                'Estado': st.column_config.TextColumn(
+                    help="🟢 Abierto - 🟡 En Progreso - 🔴 Cerrado"
+                )
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # --- ACCIONES RÁPIDAS ---
+        st.markdown("### ⚡ Acciones Rápidas")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("📥 Exportar a Excel", use_container_width=True):
+                # Crear archivo Excel
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df_filtrado.to_excel(writer, sheet_name='Tickets', index=False)
+                output.seek(0)
+
+                st.download_button(
+                    label="⬇️ Descargar archivo",
+                    data=output,
+                    file_name=f"tickets_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+        with col2:
+            if st.button("🔄 Actualizar Vista", use_container_width=True):
+                st.rerun()
+
+        with col3:
+            if st.button("➕ Crear Ticket", type="primary", use_container_width=True):
+                st.session_state["crear_nuevo_ticket_global"] = True
+                st.rerun()
+
+    except Exception as e:
+        st.error(f"⚠️ Error al cargar tickets: {str(e)[:200]}")
+        st.info("""
+        **Solución:** 
+        1. Verifica que la tabla 'tickets' existe en la base de datos
+        2. Asegúrate de que la función 'obtener_conexion()' funciona correctamente
+        """)
+
+def mostrar_mis_tickets():
+    """Muestra los tickets del usuario actual."""
+
+    # Obtener user_id del usuario actual (ajusta según tu sistema)
+    user_id = st.session_state.get("user_id", 1)  # Temporal: ajusta con tu variable real
+
+    # Cabecera específica para Mis Tickets
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.subheader("📋 Mis Tickets Reportados")
+    with col2:
+        if st.button("➕ Nuevo Ticket", type="primary", use_container_width=True):
+            st.session_state["crear_nuevo_ticket"] = True
+
+    st.markdown("---")
+
+    # Si el usuario quiere crear un nuevo ticket
+    if st.session_state.get("crear_nuevo_ticket", False):
+        crear_nuevo_ticket_form(user_id)
+        return
+
+    # Mostrar tabla de tickets del usuario
+    try:
+        conn = obtener_conexion()
+
+        # Consulta para obtener tickets del usuario
+        query = """
+        SELECT 
+            ticket_id,
+            fecha_creacion,
+            categoria,
+            prioridad,
+            estado,
+            asignado_a,
+            titulo,
+            descripcion
+        FROM tickets 
+        WHERE usuario_id = ?
+        ORDER BY fecha_creacion DESC
+        """
+
+        df_tickets = pd.read_sql(query, conn, params=(user_id,))
+        conn.close()
+
+        if df_tickets.empty:
+            st.success("🎉 No tienes tickets reportados. ¡Todo está en orden!")
+            st.info("Usa el botón '➕ Nuevo Ticket' para reportar un problema o solicitar ayuda.")
+            return
+
+        # Mostrar métricas rápidas
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Tickets", len(df_tickets))
+        with col2:
+            abiertos = len(df_tickets[df_tickets['estado'] == 'Abierto'])
+            st.metric("Abiertos", abiertos, delta_color="inverse")
+        with col3:
+            en_progreso = len(df_tickets[df_tickets['estado'] == 'En Progreso'])
+            st.metric("En Progreso", en_progreso)
+        with col4:
+            resueltos = len(df_tickets[df_tickets['estado'].isin(['Resuelto', 'Cerrado'])])
+            st.metric("Resueltos", resueltos)
+
+        st.markdown("---")
+
+        # Mostrar tabla de tickets
+        st.dataframe(
+            df_tickets.rename(columns={
+                'ticket_id': 'ID',
+                'fecha_creacion': 'Creado',
+                'categoria': 'Categoría',
+                'prioridad': 'Prioridad',
+                'estado': 'Estado',
+                'titulo': 'Título'
+            }),
+            column_config={
+                'ID': st.column_config.NumberColumn(width='small'),
+                'Creado': st.column_config.DatetimeColumn(format='DD/MM/YY HH:mm'),
+                'Prioridad': st.column_config.TextColumn(
+                    help="🚨 Alta - 🔸 Media - 🔹 Baja"
+                ),
+                'Estado': st.column_config.TextColumn(
+                    help="🟢 Abierto - 🟡 En Progreso - 🔴 Cerrado"
+                )
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+
+    except Exception as e:
+        st.error(f"⚠️ Error al cargar tickets: {str(e)[:200]}")
+        st.info("""
+        **Posibles soluciones:**
+        1. La tabla 'tickets' no existe en la base de datos
+        2. El user_id no está correctamente configurado
+        3. Problema de conexión con la base de datos
+        """)
+
+        # Mostrar datos de ejemplo para visualización
+        with st.expander("📊 Ver datos de ejemplo"):
+            datos_ejemplo = pd.DataFrame({
+                "ID": [1001, 1002, 1003],
+                "Título": ["Error en gráfico", "Consulta de datos", "Solicitud de acceso"],
+                "Estado": ["En Progreso", "Abierto", "Resuelto"],
+                "Prioridad": ["Alta", "Media", "Baja"],
+                "Creado": ["2025-01-15", "2025-01-14", "2025-01-10"],
+                "Asignado a": ["Soporte Técnico", "Pendiente", "Administrador"]
+            })
+            st.dataframe(datos_ejemplo, use_container_width=True)
+
+
+def crear_nuevo_ticket_form(user_id):
+    """Formulario para crear un nuevo ticket con opción de asignación."""
+
+    st.subheader("✨ Crear Nuevo Ticket")
+    st.markdown("---")
+
+    # Obtener lista de agentes para asignación (solo si el usuario es admin)
+    es_admin = st.session_state.get("role") == "admin"
+    lista_agentes = []
+
+    if es_admin:
+        try:
+            conn = obtener_conexion()
+            # Obtener usuarios con roles de administrador o agente
+            agentes_df = pd.read_sql("""
+                SELECT id, username, role 
+                FROM usuarios 
+                WHERE role IN ('admin', 'agent', 'soporte', 'tecnico', 'support')
+                OR role LIKE '%admin%' 
+                OR role LIKE '%soporte%'
+                ORDER BY username
+            """, conn)
+            conn.close()
+
+            if not agentes_df.empty:
+                lista_agentes = agentes_df[['id', 'username']].to_dict('records')
+        except Exception as e:
+            st.warning(f"No se pudieron cargar los agentes: {str(e)[:100]}")
+
+    with st.form("nuevo_ticket_form", clear_on_submit=True):
+        titulo = st.text_input(
+            "📝 **Título del ticket** *",
+            placeholder="Ej: Error al exportar reporte PDF",
+            help="Describe brevemente el problema o solicitud"
+        )
+
+        col_cat, col_pri = st.columns(2)
+        with col_cat:
+            categoria = st.selectbox(
+                "🏷️ **Categoría** *",
+                ["Soporte Técnico", "Error/Bug", "Consulta",
+                 "Solicitud de acceso", "Mejora", "Otro"]
+            )
+
+        with col_pri:
+            prioridad = st.selectbox(
+                "🚨 **Prioridad** *",
+                ["Alta", "Media", "Baja"],
+                index=1,
+                help="Alta = Urgente, Media = Normal, Baja = Baja urgencia"
+            )
+
+        # Opción de asignación solo para administradores
+        asignado_id = None
+        if es_admin and lista_agentes:
+            opciones_asignacion = ["Sin asignar"] + [f"{agente['username']} (ID: {agente['id']})" for agente in
+                                                     lista_agentes]
+            asignacion_seleccionada = st.selectbox(
+                "👤 **Asignar a (opcional):**",
+                options=opciones_asignacion,
+                index=0,
+                help="Selecciona un agente para asignar el ticket inmediatamente"
+            )
+
+            if asignacion_seleccionada != "Sin asignar":
+                # Extraer el ID del agente seleccionado
+                try:
+                    asignado_id = int(asignacion_seleccionada.split("ID: ")[1].replace(")", ""))
+                except:
+                    asignado_id = None
+
+        descripcion = st.text_area(
+            "📄 **Descripción detallada** *",
+            placeholder="""Describe el problema o solicitud con el mayor detalle posible:
+
+• ¿Qué pasó exactamente?
+• ¿Cuándo ocurrió? (Fecha y hora aproximada)
+• ¿Qué esperabas que sucediera?
+• ¿Qué pasó en su lugar?
+• Pasos para reproducir el problema (si aplica):
+  1. 
+  2. 
+  3. 
+
+Información adicional (sistema operativo, navegador, versión de la app, etc.):""",
+            height=250
+        )
+
+        # Mostrar información del usuario que crea el ticket
+        with st.expander("ℹ️ Información del ticket"):
+            usuario_actual = st.session_state.get("username", "Usuario")
+            st.write(f"**Creado por:** {usuario_actual}")
+            st.write(f"**ID de usuario:** {user_id}")
+            st.write(f"**Fecha creación:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+            if asignado_id:
+                agente_nombre = next((a['username'] for a in lista_agentes if a['id'] == asignado_id), "Desconocido")
+                st.write(f"**Asignado a:** {agente_nombre}")
+
+        st.markdown("**\* Campos obligatorios**")
+
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            enviar = st.form_submit_button("✅ **Crear Ticket**", type="primary", use_container_width=True)
+        with col2:
+            cancelar = st.form_submit_button("❌ **Cancelar**", use_container_width=True)
+
+        if cancelar:
+            st.session_state["crear_nuevo_ticket"] = False
+            st.rerun()
+
+        if enviar:
+            if not titulo or not descripcion:
+                st.error("⚠️ Por favor, completa todos los campos obligatorios (*)")
+            else:
+                try:
+                    conn = obtener_conexion()
+                    cursor = conn.cursor()
+
+                    # Si hay asignación, determinar el estado
+                    estado_inicial = "En Progreso" if asignado_id else "Abierto"
+
+                    if asignado_id:
+                        # Crear ticket con asignación
+                        cursor.execute("""
+                            INSERT INTO tickets 
+                            (usuario_id, categoria, prioridad, estado, asignado_a, titulo, descripcion)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            user_id,
+                            categoria,
+                            prioridad,
+                            estado_inicial,
+                            asignado_id,
+                            titulo,
+                            descripcion
+                        ))
+                    else:
+                        # Crear ticket sin asignación
+                        cursor.execute("""
+                            INSERT INTO tickets 
+                            (usuario_id, categoria, prioridad, estado, titulo, descripcion)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (
+                            user_id,
+                            categoria,
+                            prioridad,
+                            estado_inicial,
+                            titulo,
+                            descripcion
+                        ))
+
+                    conn.commit()
+                    ticket_id = cursor.lastrowid
+
+                    # Si se asignó, actualizar para registrar quién asignó
+                    if asignado_id:
+                        cursor.execute("""
+                            UPDATE tickets 
+                            SET comentarios = ? 
+                            WHERE ticket_id = ?
+                        """, (
+                            f"Asignado automáticamente a ID {asignado_id} por {st.session_state['username']} al crear el ticket.",
+                            ticket_id
+                        ))
+                        conn.commit()
+
+                    conn.close()
+
+                    # Registrar en trazabilidad
+                    log_trazabilidad(
+                        st.session_state["username"],
+                        "Creación de ticket",
+                        f"Creó el ticket #{ticket_id}: '{titulo}' (Prioridad: {prioridad}, Estado: {estado_inicial})"
+                    )
+
+                    # Mostrar mensaje de éxito con detalles
+                    st.success(f"✅ **Ticket #{ticket_id} creado correctamente**")
+
+                    # Mostrar resumen
+                    with st.expander("📋 Ver resumen del ticket creado", expanded=True):
+                        col_res1, col_res2 = st.columns(2)
+                        with col_res1:
+                            st.write(f"**ID:** #{ticket_id}")
+                            st.write(f"**Título:** {titulo}")
+                            st.write(f"**Categoría:** {categoria}")
+                            st.write(f"**Prioridad:** {prioridad}")
+
+                        with col_res2:
+                            st.write(f"**Estado:** {estado_inicial}")
+                            st.write(f"**Creado por:** {st.session_state.get('username')}")
+                            if asignado_id:
+                                agente_nombre = next((a['username'] for a in lista_agentes if a['id'] == asignado_id),
+                                                     "Desconocido")
+                                st.write(f"**Asignado a:** {agente_nombre}")
+                            st.write(f"**Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+                    st.balloons()
+
+                    # Opción para crear otro ticket
+                    col_otro1, col_otro2 = st.columns(2)
+                    with col_otro1:
+                        if st.button("➕ Crear otro ticket", type="secondary"):
+                            st.session_state["crear_nuevo_ticket"] = True
+                            st.rerun()
+
+                    with col_otro2:
+                        if st.button("📋 Ver mis tickets", type="primary"):
+                            st.session_state["crear_nuevo_ticket"] = False
+                            st.rerun()
+
+                except Exception as e:
+                    error_msg = str(e)
+                    st.error(f"⚠️ Error al crear ticket: {error_msg[:200]}")
+
+                    # Diagnóstico del error
+                    with st.expander("🔍 Ver detalles del error"):
+                        st.code(error_msg, language='python')
+
+                        if "no such table" in error_msg.lower():
+                            st.error("""
+                            **ERROR CRÍTICO: La tabla 'tickets' no existe.**
+
+                            **Solución:**
+                            1. Ejecuta este SQL en tu base de datos:
+                            ```sql
+                            CREATE TABLE IF NOT EXISTS tickets (
+                                ticket_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                usuario_id INTEGER NOT NULL,
+                                categoria TEXT NOT NULL,
+                                prioridad TEXT CHECK(prioridad IN ('Alta', 'Media', 'Baja')) DEFAULT 'Media',
+                                estado TEXT CHECK(estado IN ('Abierto', 'En Progreso', 'Resuelto', 'Cerrado')) DEFAULT 'Abierto',
+                                asignado_a INTEGER,
+                                titulo TEXT NOT NULL,
+                                descripcion TEXT NOT NULL,
+                                comentarios TEXT,
+                                FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+                                FOREIGN KEY (asignado_a) REFERENCES usuarios(id)
+                            );
+                            ```
+
+                            2. O usa el botón de creación de tabla en la sección de administración.
+                            """)
+
+
+# Mantén estas funciones sin cambios (las que ya tenías):
+def user_ticketing_panel():
+    """Panel simplificado para que los usuarios vean/creen sus tickets."""
+    st.title("🎫 Mis Tickets")
+    st.markdown("---")
+    st.info("""
+    **Vista de usuario final:**
+    - ✨ **Crear nuevo ticket**: Formulario simple para reportar problemas
+    - 📋 **Ver mis tickets**: Solo los tickets creados por el usuario actual
+    - 🔄 **Seguimiento**: Ver estado y comentarios de mis tickets
+    """)
+    st.warning("⏳ Funcionalidad en desarrollo. Próximamente disponible.")
+
+
+def crear_ticket_ejemplo():
+    """Función temporal para crear un ticket de prueba."""
+    try:
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+
+        # Insertar ticket de ejemplo
+        cursor.execute("""
+            INSERT INTO tickets 
+            (usuario_id, categoria, prioridad, estado, titulo, descripcion)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            1,  # ID de usuario de ejemplo
+            "Soporte Técnico",
+            "Media",
+            "Abierto",
+            "Problema de integración con Streamlit",
+            "Necesito ayuda para integrar el sistema de ticketing en el dashboard existente."
+        ))
+
+        conn.commit()
+        conn.close()
+
+        st.toast("✅ Ticket de ejemplo creado correctamente")
+
+    except Exception as e:
+        st.error(f"⚠️ Error al crear ticket de ejemplo: {str(e)[:100]}")
+
 # Función principal de la app (Dashboard de administración)
 def admin_dashboard():
     """Panel del administrador."""
@@ -3056,11 +4733,13 @@ def admin_dashboard():
             options=[
                 "Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades",
                 "Mapa UUIIs", "Cargar Nuevos Datos", "Generar Informe",
-                "Trazabilidad y logs", "Gestionar Usuarios", "Anuncios", "Control de versiones"
+                "Trazabilidad y logs", "Gestionar Usuarios", "Anuncios",
+                "Control de versiones", "Sistema de Ticketing"  # Nuevas opciones
             ],
             icons=[
                 "house", "graph-up", "bar-chart", "check-circle", "globe", "upload",
-                "file-earmark-text", "journal-text", "people", "megaphone", "arrow-clockwise"
+                "file-earmark-text", "journal-text", "people", "megaphone",
+                "arrow-clockwise", "ticket"  # Nuevos iconos
             ],
             menu_icon="list",
             default_index=0,
@@ -3118,6 +4797,9 @@ def admin_dashboard():
     # Opción: Visualizar datos de la tabla datos_uis
     if opcion == "Home":
         home_page()
+    # AÑADE ESTAS DOS NUEVAS OPCIONES:
+    elif opcion == "Sistema de Ticketing":
+        admin_ticketing_panel()
     elif opcion == "Ver Datos":
 
         sub_seccion = option_menu(
@@ -4505,7 +6187,7 @@ def admin_dashboard():
         elif sub_seccion == "Agregar usuarios":
             st.info("ℹ️ Desde esta sección puedes agregar nuevos usuarios al sistema.")
             nombre = st.text_input("Nombre del Usuario")
-            rol = st.selectbox("Rol", ["admin", "comercial", "comercial_jefe", "comercial_rafa", "comercial_vip","demo"])
+            rol = st.selectbox("Rol", ["admin", "comercial", "comercial_jefe", "comercial_rafa", "comercial_vip","demo","tecnico"])
             email = st.text_input("Email del Usuario")
             password = st.text_input("Contraseña", type="password")
 
@@ -4531,9 +6213,9 @@ def admin_dashboard():
                 if usuario:
                     nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
                     nuevo_rol = st.selectbox("Nuevo Rol",
-                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo"],
+                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo","tecnico"],
                                              index=["admin", "comercial", "comercial_jefe",
-                                                    "comercial_rafa","comercial_vip","demo"].index(usuario[1]))
+                                                    "comercial_rafa","comercial_vip","demo","tecnico"].index(usuario[1]))
                     nuevo_email = st.text_input("Nuevo Email", value=usuario[2])
                     nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
 
