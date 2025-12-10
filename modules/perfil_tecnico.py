@@ -364,18 +364,21 @@ def mis_tickets():
         # --- RESUMEN ESTADÍSTICO ---
         st.markdown("### 📊 Mi Carga de Trabajo")
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("Total Asignados", len(df_tickets))
         with col2:
-            alta = len(df_tickets[df_tickets['prioridad'] == 'Alta'])
-            st.metric("Alta Prioridad", alta, delta_color="inverse")
+            alta = len(df_tickets[df_tickets['prioridad'] == 'Cerrado'])
+            st.metric("Cerrado", alta, delta_color="inverse")
         with col3:
             en_progreso = len(df_tickets[df_tickets['estado'] == 'En Progreso'])
             st.metric("En Progreso", en_progreso)
         with col4:
             abiertos = len(df_tickets[df_tickets['estado'] == 'Abierto'])
             st.metric("Abiertos", abiertos)
+        with col5:
+            abiertos = len(df_tickets[df_tickets['estado'] == 'Resuelto'])
+            st.metric("Resuelto", abiertos)
 
         st.markdown("---")
 
@@ -441,7 +444,7 @@ def mis_tickets():
                 'Abierto': '📥',
                 'En Progreso': '⚙️',
                 'Resuelto': '✅',
-                'Cerrado': '🔒'
+                'Cancelado': '🔒'
             }.get(ticket['estado'], '📋')
 
             with st.expander(f"{estado_icono} {prioridad_icono} Ticket #{ticket['ticket_id']}: {ticket['titulo']}"):
@@ -554,7 +557,7 @@ def mis_tickets():
                     with col_est1:
                         nuevo_estado = st.selectbox(
                             "Cambiar estado:",
-                            ["Abierto", "En Progreso", "Resuelto", "Cerrado"],
+                            ["Abierto", "En Progreso", "Resuelto", "Cancelado"],
                             index=0 if ticket['estado'] == 'Abierto' else
                             1 if ticket['estado'] == 'En Progreso' else
                             2 if ticket['estado'] == 'Resuelto' else 3,
@@ -677,6 +680,11 @@ def crear_tickets():
     - 📝 **Documentar incidencias** técnicas
     """)
 
+    # Variable para controlar si mostrar el botón después de crear
+    ticket_creado_exitosamente = False
+    ticket_id_creado = None
+    resumen_ticket = None
+
     with st.form("form_ticket_tecnico"):
         # Sección 1: Información básica
         st.markdown("### 📝 Información del Ticket")
@@ -796,7 +804,7 @@ Si es una tarea:
         st.markdown("---")
         st.markdown("**\* Campos obligatorios**")
 
-        # Botones
+        # Botones DEL FORMULARIO (solo st.form_submit_button)
         col_btn1, col_btn2 = st.columns([1, 1])
         with col_btn1:
             enviar = st.form_submit_button(
@@ -810,135 +818,163 @@ Si es una tarea:
                 use_container_width=True
             )
 
-        if cancelar:
-            st.info("Formulario cancelado.")
-            st.rerun()
+    # #########################
+    # FUERA DEL FORMULARIO - INDENTACIÓN CRÍTICA
+    # #########################
 
-        if enviar:
-            if not titulo or not descripcion:
-                st.error("⚠️ Por favor, completa todos los campos obligatorios (*)")
-            else:
-                try:
-                    # Obtener ID del técnico actual
-                    user_id = st.session_state.get("user_id")
-                    if not user_id:
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT id FROM usuarios WHERE username = ?", (st.session_state['username'],))
-                        result = cursor.fetchone()
-                        if result:
-                            user_id = result[0]
-                        else:
-                            st.error("❌ No se pudo identificar al usuario.")
-                            return
-                        conn.close()
+    # Manejar la cancelación
+    if 'cancelar' in locals() and cancelar:
+        st.info("Formulario cancelado.")
+        st.rerun()
 
-                    # Determinar estado inicial
-                    if asignado_id:
-                        estado_inicial = "En Progreso"
-                        comentario_asignacion = f"Asignado inicialmente a {usuario_asignado}"
-                    else:
-                        estado_inicial = "Abierto"
-                        comentario_asignacion = "Creado por técnico, pendiente de asignación"
-
-                    # Crear descripción completa
-                    descripcion_completa = descripcion
-
-                    # Añadir información técnica si se proporcionó
-                    if 'sistema_afectado' in locals():
-                        info_tecnica = "\n\n--- INFORMACIÓN TÉCNICA ---\n"
-                        info_tecnica += f"• Sistema afectado: {sistema_afectado}\n"
-                        info_tecnica += f"• Entorno: {entorno}\n"
-                        info_tecnica += f"• Nivel de urgencia: {urgencia}\n"
-                        info_tecnica += f"• Tiempo estimado: {tiempo_estimado} horas\n"
-                        info_tecnica += f"• Creado por técnico: {st.session_state['username']}\n"
-
-                        descripcion_completa += info_tecnica
-
-                    # Insertar ticket
+    # Manejar el envío del formulario
+    if enviar:
+        if not titulo or not descripcion:
+            st.error("⚠️ Por favor, completa todos los campos obligatorios (*)")
+        else:
+            try:
+                # Obtener ID del técnico actual
+                user_id = st.session_state.get("user_id")
+                if not user_id:
                     conn = get_db_connection()
                     cursor = conn.cursor()
-
-                    if asignado_id:
-                        cursor.execute("""
-                            INSERT INTO tickets 
-                            (usuario_id, categoria, prioridad, estado, asignado_a, titulo, descripcion)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            user_id,
-                            categoria,
-                            prioridad,
-                            estado_inicial,
-                            asignado_id,
-                            titulo,
-                            descripcion_completa
-                        ))
+                    cursor.execute("SELECT id FROM usuarios WHERE username = ?", (st.session_state['username'],))
+                    result = cursor.fetchone()
+                    if result:
+                        user_id = int(result[0])
                     else:
-                        cursor.execute("""
-                            INSERT INTO tickets 
-                            (usuario_id, categoria, prioridad, estado, titulo, descripcion)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            user_id,
-                            categoria,
-                            prioridad,
-                            estado_inicial,
-                            titulo,
-                            descripcion_completa
-                        ))
-
-                    conn.commit()
-                    ticket_id = cursor.lastrowid
-
-                    # Añadir comentario inicial
-                    cursor.execute("""
-                        UPDATE tickets 
-                        SET comentarios = ?
-                        WHERE ticket_id = ?
-                    """, (
-                        f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {comentario_asignacion} por {st.session_state['username']}.",
-                        ticket_id
-                    ))
-
-                    conn.commit()
+                        st.error("❌ No se pudo identificar al usuario.")
+                        return
                     conn.close()
 
-                    # Registrar en trazabilidad
-                    log_trazabilidad(
-                        st.session_state["username"],
-                        "Creación de ticket (técnico)",
-                        f"Ticket técnico #{ticket_id} creado: {titulo}"
-                    )
+                # Determinar estado inicial
+                if asignado_id:
+                    estado_inicial = "En Progreso"
+                    comentario_asignacion = f"Asignado inicialmente a {usuario_asignado}"
+                    asignado_id = int(asignado_id) if asignado_id is not None else None
+                else:
+                    estado_inicial = "Abierto"
+                    comentario_asignacion = "Creado por técnico, pendiente de asignación"
 
-                    # Mostrar éxito
-                    st.success(f"✅ **Ticket #{ticket_id} creado correctamente**")
-                    st.balloons()
+                # Crear descripción completa
+                descripcion_completa = descripcion
 
-                    # Mostrar resumen
-                    with st.expander("📋 Ver resumen", expanded=True):
-                        col_res1, col_res2 = st.columns(2)
-                        with col_res1:
-                            st.markdown(f"**🎫 ID:** #{ticket_id}")
-                            st.markdown(f"**📝 Asunto:** {titulo}")
-                            st.markdown(f"**🏷️ Categoría:** {categoria}")
-                            st.markdown(f"**🚨 Prioridad:** {prioridad}")
+                # Añadir información técnica si se proporcionó
+                if 'sistema_afectado' in locals():
+                    info_tecnica = "\n\n--- INFORMACIÓN TÉCNICA ---\n"
+                    info_tecnica += f"• Sistema afectado: {sistema_afectado}\n"
+                    info_tecnica += f"• Entorno: {entorno}\n"
+                    info_tecnica += f"• Nivel de urgencia: {urgencia}\n"
+                    info_tecnica += f"• Tiempo estimado: {tiempo_estimado} horas\n"
+                    info_tecnica += f"• Creado por técnico: {st.session_state['username']}\n"
+                    descripcion_completa += info_tecnica
 
-                        with col_res2:
-                            st.markdown(f"**📊 Estado:** {estado_inicial}")
-                            st.markdown(f"**👤 Creado por:** {st.session_state['username']}")
-                            if asignado_id:
-                                st.markdown(f"**👥 Asignado a:** {usuario_asignado}")
-                            else:
-                                st.markdown(f"**👥 Asignado a:** Pendiente")
-                            st.markdown(f"**📅 Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+                # Insertar ticket
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                user_id = int(user_id) if user_id is not None else None
 
-                    # Opción para ver tickets asignados
-                    st.markdown("---")
-                    if st.button("📋 Ver mis tickets asignados", use_container_width=True):
-                        st.rerun()
+                if asignado_id:
+                    cursor.execute("""
+                        INSERT INTO tickets 
+                        (usuario_id, categoria, prioridad, estado, asignado_a, titulo, descripcion)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        user_id,
+                        categoria,
+                        prioridad,
+                        estado_inicial,
+                        asignado_id,
+                        titulo,
+                        descripcion_completa
+                    ))
+                else:
+                    cursor.execute("""
+                        INSERT INTO tickets 
+                        (usuario_id, categoria, prioridad, estado, titulo, descripcion)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        user_id,
+                        categoria,
+                        prioridad,
+                        estado_inicial,
+                        titulo,
+                        descripcion_completa
+                    ))
 
-                except Exception as e:
-                    st.error(f"❌ Error al crear el ticket: {str(e)[:200]}")
+                conn.commit()
+                ticket_id = cursor.lastrowid
+
+                # Añadir comentario inicial
+                cursor.execute("""
+                    UPDATE tickets 
+                    SET comentarios = ?
+                    WHERE ticket_id = ?
+                """, (
+                    f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {comentario_asignacion} por {st.session_state['username']}.",
+                    ticket_id
+                ))
+
+                conn.commit()
+                conn.close()
+
+                # Registrar en trazabilidad
+                log_trazabilidad(
+                    st.session_state["username"],
+                    "Creación de ticket (técnico)",
+                    f"Ticket técnico #{ticket_id} creado: {titulo}"
+                )
+
+                # Mostrar éxito
+                st.success(f"✅ **Ticket #{ticket_id} creado correctamente**")
+                st.balloons()
+
+                # Guardar información para mostrar el resumen
+                ticket_creado_exitosamente = True
+                ticket_id_creado = ticket_id
+                resumen_ticket = {
+                    "titulo": titulo,
+                    "categoria": categoria,
+                    "prioridad": prioridad,
+                    "estado": estado_inicial,
+                    "usuario_asignado": usuario_asignado if asignado_id else None,
+                    "asignado_id": asignado_id
+                }
+
+            except Exception as e:
+                st.error(f"❌ Error al crear el ticket: {str(e)[:200]}")
+
+    # #########################
+    # SECCIÓN FUERA DEL FORMULARIO
+    # #########################
+
+    # Mostrar resumen después de crear el ticket
+    if ticket_creado_exitosamente and resumen_ticket:
+        with st.expander("📋 Ver resumen del ticket creado", expanded=True):
+            col_res1, col_res2 = st.columns(2)
+            with col_res1:
+                st.markdown(f"**🎫 ID:** #{ticket_id_creado}")
+                st.markdown(f"**📝 Asunto:** {resumen_ticket['titulo']}")
+                st.markdown(f"**🏷️ Categoría:** {resumen_ticket['categoria']}")
+                st.markdown(f"**🚨 Prioridad:** {resumen_ticket['prioridad']}")
+
+            with col_res2:
+                st.markdown(f"**📊 Estado:** {resumen_ticket['estado']}")
+                st.markdown(f"**👤 Creado por:** {st.session_state['username']}")
+                if resumen_ticket['usuario_asignado']:
+                    st.markdown(f"**👥 Asignado a:** {resumen_ticket['usuario_asignado']}")
+                else:
+                    st.markdown(f"**👥 Asignado a:** Pendiente")
+                st.markdown(f"**📅 Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+        st.markdown("---")
+
+        # Botón para ver tickets asignados (FUERA del formulario)
+        if st.button("📋 Ver mis tickets asignados", use_container_width=True):
+            # Aquí puedes navegar a otra vista o filtrar tickets
+            # Por ejemplo, establecer un estado de sesión
+            st.session_state['ver_mis_tickets'] = True
+            st.rerun()
 
 
 def actualizar_estado_ticket(ticket_id, nuevo_estado):
@@ -963,8 +999,8 @@ def actualizar_estado_ticket(ticket_id, nuevo_estado):
         column_names = [col[1] for col in columnas]
         tiene_fecha_cierre = 'fecha_cierre' in column_names
 
-        # Si el estado es 'Resuelto' o 'Cerrado', intentamos añadir fecha_cierre si el campo existe
-        if nuevo_estado in ['Resuelto', 'Cerrado'] and tiene_fecha_cierre:
+        # Si el estado es 'Resuelto' o 'Cancelado', intentamos añadir fecha_cierre si el campo existe
+        if nuevo_estado in ['Resuelto', 'Cancelado'] and tiene_fecha_cierre:
             try:
                 cursor.execute("""
                     UPDATE tickets 
@@ -1045,7 +1081,7 @@ def actualizar_estado_ticket(ticket_id, nuevo_estado):
                 usuario_id INTEGER NOT NULL,
                 categoria TEXT NOT NULL,
                 prioridad TEXT CHECK(prioridad IN ('Alta', 'Media', 'Baja')) DEFAULT 'Media',
-                estado TEXT CHECK(estado IN ('Abierto', 'En Progreso', 'Resuelto', 'Cerrado')) DEFAULT 'Abierto',
+                estado TEXT CHECK(estado IN ('Abierto', 'En Progreso', 'Resuelto', 'Cancelado')) DEFAULT 'Abierto',
                 asignado_a INTEGER,
                 titulo TEXT NOT NULL,
                 descripcion TEXT NOT NULL,

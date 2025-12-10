@@ -298,7 +298,216 @@ def correo_excel_control(destinatario, bytes_excel, nombre_archivo="datos_uis_co
         "nombre": nombre_archivo,
         "bytes": bytes_excel
     }
-
     enviar_notificacion(destinatario, asunto, contenido, archivo_adjunto)
 
+
+# En notificaciones.py
+
+def notificar_asignacion_ticket(destinatario, ticket_info):
+    """
+    Envía notificación cuando un ticket es asignado.
+    ticket_info: diccionario con:
+        - ticket_id: ID del ticket
+        - titulo: Título del ticket
+        - asignado_por: Quien asignó el ticket
+        - prioridad: Prioridad del ticket
+        - categoria: Categoría del ticket
+        - enlace: Enlace al ticket (opcional)
+    """
+    asunto = f"🎫 Nuevo Ticket Asignado: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
+
+    contenido = {
+        "mensaje": f"""
+        Se te ha asignado un nuevo ticket para atender:
+
+        📋 **Detalles del Ticket:**
+        • **ID:** #{ticket_info['ticket_id']}
+        • **Título:** {ticket_info['titulo']}
+        • **Prioridad:** {ticket_info['prioridad']}
+        • **Categoría:** {ticket_info['categoria']}
+        • **Asignado por:** {ticket_info['asignado_por']}
+
+        ⏰ **Acción requerida:**
+        Por favor, revisa este ticket lo antes posible según su prioridad.
+
+        🔗 **Acceso directo:** {ticket_info.get('enlace', 'Accede al sistema para ver detalles completos')}
+
+        Saludos,
+        El equipo de soporte técnico
+        """,
+        "Nota": "Este correo fue generado automáticamente por el sistema de gestión de tickets."
+    }
+
+    enviar_notificacion(destinatario, asunto, contenido)
+
+
+def notificar_actualizacion_ticket(destinatario, ticket_info):
+    """
+    Envía notificación cuando un ticket es actualizado.
+    ticket_info: diccionario con:
+        - ticket_id: ID del ticket
+        - titulo: Título del ticket
+        - actualizado_por: Quien actualizó el ticket
+        - tipo_actualizacion: "comentario", "cambio_estado", "cambio_prioridad", etc.
+        - descripcion_cambio: Descripción del cambio
+        - nuevo_estado: Nuevo estado (si aplica)
+        - enlace: Enlace al ticket (opcional)
+    """
+    # Determinar el asunto según el tipo de actualización
+    if ticket_info['tipo_actualizacion'] == 'comentario':
+        asunto = f"💬 Nuevo comentario en Ticket #{ticket_info['ticket_id']}: {ticket_info['titulo']}"
+    elif ticket_info['tipo_actualizacion'] == 'cambio_estado':
+        asunto = f"🔄 Cambio de estado en Ticket #{ticket_info['ticket_id']}: {ticket_info['titulo']}"
+    else:
+        asunto = f"📝 Actualización en Ticket #{ticket_info['ticket_id']}: {ticket_info['titulo']}"
+
+    contenido = {
+        "mensaje": f"""
+        Se ha actualizado un ticket que estás siguiendo:
+
+        📋 **Ticket:** #{ticket_info['ticket_id']} - {ticket_info['titulo']}
+        • **Actualizado por:** {ticket_info['actualizado_por']}
+        • **Tipo de actualización:** {ticket_info['tipo_actualizacion'].title()}
+
+        📄 **Descripción del cambio:**
+        {ticket_info['descripcion_cambio']}
+
+        {'• **Nuevo estado:** ' + ticket_info['nuevo_estado'] if ticket_info.get('nuevo_estado') else ''}
+
+        🔗 **Ver actualización completa:** {ticket_info.get('enlace', 'Accede al sistema para ver detalles')}
+
+        Saludos,
+        El equipo de soporte técnico
+        """,
+        "Nota": "Este correo fue generado automáticamente por el sistema de gestión de tickets."
+    }
+
+    enviar_notificacion(destinatario, asunto, contenido)
+
+
+def notificar_resolucion_ticket(destinatario, ticket_info):
+    """
+    Envía notificación cuando un ticket es resuelto.
+    ticket_info: diccionario con:
+        - ticket_id: ID del ticket
+        - titulo: Título del ticket
+        - resuelto_por: Quien resolvió el ticket
+        - fecha_resolucion: Fecha de resolución
+        - comentario_final: Comentario de cierre (opcional)
+        - calificacion: Calificación (opcional)
+        - enlace: Enlace al ticket (opcional)
+    """
+    asunto = f"✅ Ticket Resuelto: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
+
+    contenido = {
+        "mensaje": f"""
+        ¡Excelente noticia! Un ticket ha sido resuelto:
+
+        🎉 **Ticket Resuelto:** #{ticket_info['ticket_id']} - {ticket_info['titulo']}
+        • **Resuelto por:** {ticket_info['resuelto_por']}
+        • **Fecha de resolución:** {ticket_info['fecha_resolucion']}
+
+        📝 **Comentario de cierre:**
+        {ticket_info.get('comentario_final', 'Ticket completado satisfactoriamente.')}
+
+        {'⭐ **Calificación:** ' + str(ticket_info['calificacion']) + '/5' if ticket_info.get('calificacion') else ''}
+
+        🙏 **Agradecimiento:**
+        Gracias por confiar en nuestro servicio de soporte.
+
+        🔗 **Ver ticket cerrado:** {ticket_info.get('enlace', 'Accede al sistema para revisar')}
+
+        💡 **¿Necesitas más ayuda?**
+        Si el problema persiste o necesitas asistencia adicional, por favor reabre este ticket o crea uno nuevo.
+
+        Saludos,
+        El equipo de soporte técnico
+        """,
+        "Nota": "Este correo fue generado automáticamente por el sistema de gestión de tickets."
+    }
+
+    enviar_notificacion(destinatario, asunto, contenido)
+
+
+def notificar_creacion_ticket(destinatario, ticket_info):
+    """
+    Envía notificación cuando se crea un nuevo ticket.
+    ticket_info: diccionario con:
+        - ticket_id: ID del ticket
+        - titulo: Título del ticket
+        - creado_por: Quien creó el ticket
+        - prioridad: Prioridad del ticket
+        - categoria: Categoría del ticket
+        - estado: Estado inicial
+        - descripcion: Descripción breve
+        - enlace: Enlace al ticket (opcional)
+    """
+    asunto = f"🎫 Nuevo Ticket Creado: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
+
+    contenido = {
+        "mensaje": f"""
+        Se ha creado un nuevo ticket en el sistema:
+
+        📋 **Detalles del Ticket:**
+        • **ID:** #{ticket_info['ticket_id']}
+        • **Título:** {ticket_info['titulo']}
+        • **Prioridad:** {ticket_info['prioridad']}
+        • **Categoría:** {ticket_info['categoria']}
+        • **Estado:** {ticket_info['estado']}
+        • **Creado por:** {ticket_info['creado_por']}
+
+        📄 **Descripción:**
+        {ticket_info.get('descripcion', 'Sin descripción adicional.')}
+
+        ⏱️ **Siguientes pasos:**
+        El ticket será revisado por nuestro equipo y asignado al técnico apropiado.
+
+        🔗 **Seguimiento:** {ticket_info.get('enlace', 'Puedes seguir el progreso desde el sistema')}
+
+        Saludos,
+        El equipo de soporte técnico
+        """,
+        "Nota": "Este correo fue generado automáticamente por el sistema de gestión de tickets."
+    }
+
+    enviar_notificacion(destinatario, asunto, contenido)
+
+
+def notificar_reasignacion_ticket(destinatario, ticket_info):
+    """
+    Envía notificación cuando un ticket es reasignado.
+    ticket_info: diccionario con:
+        - ticket_id: ID del ticket
+        - titulo: Título del ticket
+        - reasignado_por: Quien reasignó el ticket
+        - anterior_asignado: Técnico anterior
+        - nuevo_asignado: Nuevo técnico asignado
+        - motivo: Motivo de la reasignación
+        - enlace: Enlace al ticket (opcional)
+    """
+    asunto = f"🔄 Ticket Reasignado: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
+
+    contenido = {
+        "mensaje": f"""
+        Un ticket ha sido reasignado:
+
+        📋 **Ticket:** #{ticket_info['ticket_id']} - {ticket_info['titulo']}
+
+        🔄 **Cambio de asignación:**
+        • **Anterior técnico:** {ticket_info['anterior_asignado']}
+        • **Nuevo técnico:** {ticket_info['nuevo_asignado']}
+        • **Reasignado por:** {ticket_info['reasignado_por']}
+
+        📝 **Motivo:**
+        {ticket_info.get('motivo', 'Reasignación por optimización de carga de trabajo.')}
+
+        🔗 **Acceder al ticket:** {ticket_info.get('enlace', 'Accede al sistema para continuar')}
+
+        Saludos,
+        El equipo de soporte técnico
+        """,
+        "Nota": "Este correo fue generado automáticamente por el sistema de gestión de tickets."
+    }
+
+    enviar_notificacion(destinatario, asunto, contenido)
 
