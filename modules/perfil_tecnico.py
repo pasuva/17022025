@@ -8,6 +8,9 @@ from modules.cloudinary import upload_image_to_cloudinary
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 import warnings
+
+from modules.notificaciones import notificar_creacion_ticket, notificar_asignacion_ticket
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 cookie_name = "my_app"
@@ -368,8 +371,8 @@ def mis_tickets():
         with col1:
             st.metric("Total Asignados", len(df_tickets))
         with col2:
-            alta = len(df_tickets[df_tickets['prioridad'] == 'Cerrado'])
-            st.metric("Cerrado", alta, delta_color="inverse")
+            alta = len(df_tickets[df_tickets['prioridad'] == 'Cancelado'])
+            st.metric("Cancelado", alta, delta_color="inverse")
         with col3:
             en_progreso = len(df_tickets[df_tickets['estado'] == 'En Progreso'])
             st.metric("En Progreso", en_progreso)
@@ -721,9 +724,9 @@ def crear_tickets():
 
         try:
             conn = get_db_connection()
-            # Obtener todos los usuarios que pueden recibir tickets
+            # Obtener todos los usuarios que pueden recibir tickets (incluyendo email)
             usuarios_df = pd.read_sql("""
-                SELECT id, username, role 
+                SELECT id, username, role, email 
                 FROM usuarios 
                 WHERE role IN ('admin', 'tecnico', 'agent', 'soporte', 'comercial')
                 ORDER BY username
@@ -740,17 +743,27 @@ def crear_tickets():
                 )
 
                 asignado_id = None
+                asignado_email = None
+                asignado_username = None
+
                 if usuario_asignado != "Sin asignar (abierto)":
-                    asignado_id = usuarios_df[usuarios_df['username'] == usuario_asignado]['id'].iloc[0]
+                    usuario_info = usuarios_df[usuarios_df['username'] == usuario_asignado].iloc[0]
+                    asignado_id = usuario_info['id']
+                    asignado_email = usuario_info['email']
+                    asignado_username = usuario_asignado
             else:
                 st.warning("No se encontraron usuarios para asignar")
                 usuario_asignado = "Sin asignar (abierto)"
                 asignado_id = None
+                asignado_email = None
+                asignado_username = None
 
         except Exception as e:
             st.warning(f"No se pudo cargar la lista de usuarios: {str(e)[:100]}")
             usuario_asignado = "Sin asignar (abierto)"
             asignado_id = None
+            asignado_email = None
+            asignado_username = None
 
         # Sección 3: Descripción detallada
         st.markdown("### 📄 Descripción Detallada *")
@@ -850,7 +863,7 @@ Si es una tarea:
                 # Determinar estado inicial
                 if asignado_id:
                     estado_inicial = "En Progreso"
-                    comentario_asignacion = f"Asignado inicialmente a {usuario_asignado}"
+                    comentario_asignacion = f"Asignado inicialmente a {asignado_username}"
                     asignado_id = int(asignado_id) if asignado_id is not None else None
                 else:
                     estado_inicial = "Abierto"
@@ -915,6 +928,69 @@ Si es una tarea:
                     ticket_id
                 ))
 
+                # NOTIFICACIÓN: Enviar correo si el ticket fue asignado
+                if asignado_id and asignado_email:
+                    try:
+                        # Obtener información del creador para posibles notificaciones adicionales
+                        cursor.execute("SELECT email, username FROM usuarios WHERE id = ?", (user_id,))
+                        creador_info = cursor.fetchone()
+
+                        ticket_info = {
+                            'ticket_id': ticket_id,
+                            'titulo': titulo,
+                            'asignado_por': st.session_state['username'],
+                            'prioridad': prioridad,
+                            'categoria': categoria,
+                            'enlace': f"https://tu-dominio.com/ticket/{ticket_id}"
+                        }
+
+                        # Notificar al agente asignado
+                        notificar_asignacion_ticket(asignado_email, ticket_info)
+
+                        # Opcional: Notificar al creador que su ticket fue creado y asignado
+                        if creador_info and creador_info[0]:
+                            notificacion_creacion = {
+                                'ticket_id': ticket_id,
+                                'titulo': titulo,
+                                'creado_por': st.session_state['username'],
+                                'prioridad': prioridad,
+                                'categoria': categoria,
+                                'estado': estado_inicial,
+                                'descripcion': descripcion[:100] + '...' if len(descripcion) > 100 else descripcion,
+                                'enlace': f"https://tu-dominio.com/ticket/{ticket_id}"
+                            }
+                            notificar_creacion_ticket(creador_info[0], notificacion_creacion)
+
+                        st.toast(f"📧 Notificación de asignación enviada a {asignado_username}")
+
+                    except Exception as e:
+                        st.warning(f"No se pudo enviar la notificación por correo: {str(e)[:100]}")
+                        # Continuar con el flujo aunque falle la notificación
+
+                # Si no fue asignado, notificar al administrador
+                elif not asignado_id:
+                    try:
+                        # Obtener email del administrador
+                        cursor.execute("SELECT email FROM usuarios WHERE role = 'admin' LIMIT 1")
+                        admin_result = cursor.fetchone()
+
+                        if admin_result and admin_result[0]:
+                            ticket_info = {
+                                'ticket_id': ticket_id,
+                                'titulo': titulo,
+                                'creado_por': st.session_state['username'],
+                                'prioridad': prioridad,
+                                'categoria': categoria,
+                                'estado': estado_inicial,
+                                'descripcion': descripcion[:100] + '...' if len(descripcion) > 100 else descripcion,
+                                'enlace': f"https://tu-dominio.com/ticket/{ticket_id}"
+                            }
+                            notificar_creacion_ticket(admin_result[0], ticket_info)
+                            st.toast("📧 Notificación enviada al administrador para asignación")
+
+                    except Exception as e:
+                        st.warning(f"No se pudo enviar notificación al administrador: {str(e)[:100]}")
+
                 conn.commit()
                 conn.close()
 
@@ -937,7 +1013,7 @@ Si es una tarea:
                     "categoria": categoria,
                     "prioridad": prioridad,
                     "estado": estado_inicial,
-                    "usuario_asignado": usuario_asignado if asignado_id else None,
+                    "usuario_asignado": asignado_username if asignado_id else None,
                     "asignado_id": asignado_id
                 }
 
