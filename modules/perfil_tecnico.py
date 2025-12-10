@@ -365,13 +365,11 @@ def mis_tickets():
             return
 
         # --- RESUMEN ESTADÍSTICO ---
-        st.markdown("### 📊 Mi Carga de Trabajo")
-
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("Total Asignados", len(df_tickets))
         with col2:
-            alta = len(df_tickets[df_tickets['prioridad'] == 'Cancelado'])
+            alta = len(df_tickets[df_tickets['estado'] == 'Cancelado'])
             st.metric("Cancelado", alta, delta_color="inverse")
         with col3:
             en_progreso = len(df_tickets[df_tickets['estado'] == 'En Progreso'])
@@ -380,14 +378,10 @@ def mis_tickets():
             abiertos = len(df_tickets[df_tickets['estado'] == 'Abierto'])
             st.metric("Abiertos", abiertos)
         with col5:
-            abiertos = len(df_tickets[df_tickets['estado'] == 'Resuelto'])
-            st.metric("Resuelto", abiertos)
-
-        st.markdown("---")
+            resuelto = len(df_tickets[df_tickets['estado'] == 'Resuelto'])
+            st.metric("Resuelto", resuelto)
 
         # --- FILTROS RÁPIDOS ---
-        st.markdown("### 🔍 Filtros")
-
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             estado_filtro = st.multiselect(
