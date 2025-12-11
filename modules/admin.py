@@ -1,27 +1,26 @@
-import secrets
-import urllib
-import zipfile, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 from modules.notificaciones import correo_usuario, correo_nuevas_zonas_comercial, correo_excel_control, \
     correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, \
     correo_viabilidad_comercial, notificar_asignacion_ticket, notificar_actualizacion_ticket, \
-    notificar_resolucion_ticket
+    notificar_resolucion_ticket, notificar_reasignacion_ticket
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
-from datetime import datetime
 from streamlit_cookies_controller import CookieController
 from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 from io import BytesIO
 from google.oauth2.service_account import Credentials
-import gspread
-import json
 from googleapiclient.discovery import build
-import warnings
-import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-import ftfy
+import ftfy, folium, cloudinary, warnings, json, gspread, urllib, zipfile, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import pandas as pd
+import streamlit as st
+from folium.plugins import MarkerCluster, Geocoder, Fullscreen
+from streamlit_folium import st_folium
+from branca.element import Template, MacroElement
+from typing import Tuple, Dict, List
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -560,19 +559,6 @@ def cargar_datos_por_provincia(provincia):
     conn.close()
     return datos_uis, comercial_rafa_df
 
-
-import folium
-import pandas as pd
-import numpy as np
-import streamlit as st
-from folium.plugins import MarkerCluster, Geocoder, Fullscreen, MousePosition, MeasureControl
-from streamlit_folium import st_folium
-from branca.element import Template, MacroElement
-from typing import Tuple, Dict, List
-import time
-from functools import lru_cache
-
-
 # ============================================
 # FUNCIONES DE CARGUE OPTIMIZADAS
 # ============================================
@@ -697,7 +683,6 @@ def buscar_por_id(apartment_id: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
 # ============================================
 # FUNCIONES AUXILIARES OPTIMIZADAS
 # ============================================
-
 def crear_diccionarios_optimizados(comercial_df: pd.DataFrame) -> Dict:
     """Crea diccionarios optimizados para búsqueda rápida"""
     dicts = {
@@ -751,7 +736,6 @@ def determinar_color_marcador(apt_id: str, serv_uis: str, dicts: Dict) -> Tuple[
 # ============================================
 # FUNCIÓN PRINCIPAL CON FILTROS EN ZONA PRINCIPAL
 # ============================================
-
 def agregar_leyenda_al_mapa(mapa):
     """Añade una leyenda como control HTML al mapa"""
 
@@ -804,14 +788,6 @@ def agregar_leyenda_al_mapa(mapa):
 
 
 def determinar_color_marcador(apartment_id: str, serv_uis: str, dicts: Dict) -> Tuple[str, str]:
-    """
-    Determina el color y estado del marcador basado en múltiples fuentes
-
-    Prioridad:
-    1. Datos comerciales (si existe registro)
-    2. Datos UIS (serv_uis)
-    3. Por defecto: 'no_visitado'
-    """
 
     # Primero verificar si existe en datos comerciales
     if apartment_id in dicts.get('serviciable', {}):
@@ -847,7 +823,6 @@ def determinar_color_marcador(apartment_id: str, serv_uis: str, dicts: Dict) -> 
 
 def mostrar_info_detallada(apartment_id: str, datos_filtrados: pd.DataFrame,
                            comercial_filtradas: pd.DataFrame, dicts: Dict):
-    """Muestra información detallada del apartamento clicado"""
 
     # Quitar el prefijo "🏠 " si existe
     apartment_id = apartment_id.replace("🏠 ", "")
@@ -3607,9 +3582,6 @@ def generar_reporte_actividad(user_id):
         return False
 
 
-from datetime import datetime, timedelta
-
-
 def mostrar_tickets_asignados():
     """Muestra tickets asignados al administrador actual."""
 
@@ -3652,10 +3624,7 @@ def mostrar_tickets_asignados():
             return
 
         # Convertir la columna fecha_creacion a datetime
-        # Asegurarse de que la fecha se convierta correctamente
         df_tickets['fecha_creacion'] = pd.to_datetime(df_tickets['fecha_creacion'], errors='coerce')
-
-        # Eliminar filas con fechas inválidas si las hay
         df_tickets = df_tickets.dropna(subset=['fecha_creacion'])
 
         # --- RESUMEN ---
@@ -3666,19 +3635,11 @@ def mostrar_tickets_asignados():
             alta = len(df_tickets[df_tickets['prioridad'] == 'Alta'])
             st.metric("Alta Prioridad", alta, delta_color="inverse")
         with col3:
-            # Ahora comparamos datetime con datetime
             tres_dias_atras = datetime.now() - timedelta(days=3)
-            # Filtrar las fechas que sean menores a 3 días atrás
             vencimiento = len(df_tickets[df_tickets['fecha_creacion'] < tres_dias_atras])
             st.metric("> 3 días", vencimiento)
 
-        st.markdown("---")
-
-        # --- LISTA DE TICKETS ---
-        st.markdown(f"### 📋 Tickets bajo mi Responsabilidad ({len(df_tickets)})")
-
         for _, ticket in df_tickets.iterrows():
-            # La fecha ya está convertida a datetime
             fecha_creacion = ticket['fecha_creacion']
             dias_transcurridos = (datetime.now() - fecha_creacion).days
 
@@ -3690,22 +3651,18 @@ def mostrar_tickets_asignados():
                 left_border, content = st.columns([0.01, 0.99])
 
                 with left_border:
-                    # Esto creará una barra vertical de color
                     st.markdown(f'<div style="background-color: {color_borde}; height: 100%; width: 100%;"></div>',
                                 unsafe_allow_html=True)
 
                 with content:
-                    # Ahora el contenido
                     st.markdown(f"**🎫 Ticket #{ticket['ticket_id']}: {ticket['titulo']}**")
 
-                    # Prioridad como una pastilla
                     color_prioridad = '#FF6B6B' if ticket['prioridad'] == 'Alta' else '#FFD166' if ticket[
                                                                                                        'prioridad'] == 'Media' else '#4ECDC4'
                     st.markdown(
                         f'<span style="background-color: {color_prioridad}; color: white; padding: 0.2rem 0.5rem; border-radius: 10px; font-size: 0.8rem;">{ticket["prioridad"]}</span>',
                         unsafe_allow_html=True)
 
-                    # Información
                     st.markdown(f"""
                         👤 **Reportado por:** {ticket['usuario']}  
                         📅 **Creado:** {fecha_creacion.strftime('%d/%m/%Y %H:%M')}  
@@ -3739,7 +3696,110 @@ def mostrar_tickets_asignados():
                     if st.button(f"🔄 Reasignar #{ticket['ticket_id']}",
                                  key=f"reas_{ticket['ticket_id']}",
                                  use_container_width=True):
-                        st.session_state[f"reasignar_ticket_{ticket['ticket_id']}"] = True
+                        st.session_state["ticket_a_asignar"] = ticket['ticket_id']
+                        st.rerun()
+
+                # Mostrar formulario de comentario si se activó
+                if st.session_state.get(f"comentar_ticket_{ticket['ticket_id']}"):
+                    st.markdown("---")
+                    st.markdown(f"#### 💬 Añadir Comentario al Ticket #{ticket['ticket_id']}")
+
+                    with st.form(key=f"form_comentario_{ticket['ticket_id']}", clear_on_submit=True):
+                        nuevo_comentario = st.text_area(
+                            "Escribe tu comentario:",
+                            placeholder="Añade información adicional, preguntas o actualizaciones sobre este ticket...",
+                            height=100,
+                            key=f"comentario_text_{ticket['ticket_id']}"
+                        )
+
+                        tipo_comentario = st.selectbox(
+                            "Tipo de comentario:",
+                            ["Actualización", "Pregunta", "Solución", "Información adicional"],
+                            key=f"tipo_comentario_{ticket['ticket_id']}"
+                        )
+
+                        es_interno = st.checkbox(
+                            "Comentario interno (solo visible para el equipo)",
+                            key=f"interno_{ticket['ticket_id']}"
+                        )
+
+                        col_submit1, col_submit2 = st.columns([1, 1])
+                        with col_submit1:
+                            submit_comentario = st.form_submit_button("💬 Enviar comentario", use_container_width=True)
+                        with col_submit2:
+                            cancelar_comentario = st.form_submit_button("❌ Cancelar", use_container_width=True)
+
+                        if submit_comentario and nuevo_comentario.strip():
+                            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+                            usuario = st.session_state.get("username", "Usuario")
+                            tipo = f"[{tipo_comentario}]" if not es_interno else f"[{tipo_comentario} - INTERNO]"
+
+                            nuevo_comentario_formateado = f"\n\n[{timestamp}] {usuario} {tipo}:\n{nuevo_comentario.strip()}"
+
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE tickets 
+                                SET comentarios = COALESCE(comentarios || ?, ?)
+                                WHERE ticket_id = ?
+                            """, (
+                                nuevo_comentario_formateado,
+                                f"[{timestamp}] {usuario} {tipo}:\n{nuevo_comentario.strip()}",
+                                ticket['ticket_id']
+                            ))
+                            conn.commit()
+                            conn.close()
+
+                            # Enviar notificación por correo
+                            try:
+                                # Obtener información del ticket para notificación
+                                conn = obtener_conexion()
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    SELECT t.titulo, u.email as creador_email, u2.email as asignado_email
+                                    FROM tickets t
+                                    LEFT JOIN usuarios u ON t.usuario_id = u.id
+                                    LEFT JOIN usuarios u2 ON t.asignado_a = u2.id
+                                    WHERE t.ticket_id = ?
+                                """, (ticket['ticket_id'],))
+
+                                ticket_data = cursor.fetchone()
+                                conn.close()
+
+                                if ticket_data:
+                                    ticket_info = {
+                                        'ticket_id': ticket['ticket_id'],
+                                        'titulo': ticket_data[0],
+                                        'actualizado_por': usuario,
+                                        'tipo_actualizacion': 'comentario',
+                                        'descripcion_cambio': nuevo_comentario.strip(),
+                                        'enlace': f"https://tu-dominio.com/ticket/{ticket['ticket_id']}"
+                                    }
+
+                                    # Notificar al creador del ticket
+                                    if ticket_data[1]:
+                                        notificar_actualizacion_ticket(ticket_data[1], ticket_info)
+
+                                    # Notificar al asignado si no es el que comenta
+                                    if ticket_data[2] and ticket_data[2] != st.session_state.get('email', ''):
+                                        notificar_actualizacion_ticket(ticket_data[2], ticket_info)
+
+                            except Exception as e:
+                                st.warning(f"No se pudieron enviar notificaciones: {str(e)[:100]}")
+
+                            log_trazabilidad(
+                                st.session_state["username"],
+                                "Comentario en ticket",
+                                f"Añadió comentario al ticket #{ticket['ticket_id']}"
+                            )
+
+                            st.toast("✅ Comentario añadido")
+                            st.session_state.pop(f"comentar_ticket_{ticket['ticket_id']}", None)
+                            st.rerun()
+
+                        if cancelar_comentario:
+                            st.session_state.pop(f"comentar_ticket_{ticket['ticket_id']}", None)
+                            st.rerun()
 
                 # Mostrar detalles si se solicita
                 if st.session_state.get(f"ver_ticket_{ticket['ticket_id']}"):
@@ -3766,6 +3826,119 @@ def mostrar_tickets_asignados():
                         st.rerun()
 
                     st.markdown("---")
+
+        # --- SECCIÓN DE REASIGNACIÓN (se activa con el botón Reasignar) ---
+        if st.session_state.get("ticket_a_asignar"):
+            ticket_id = st.session_state["ticket_a_asignar"]
+            st.markdown("---")
+            st.markdown(f"### 👤 Reasignar Ticket #{ticket_id}")
+
+            # Obtener lista de agentes
+            conn = obtener_conexion()
+            agentes = pd.read_sql("SELECT id, username, email FROM usuarios WHERE role IN ('admin', 'tecnico')", conn)
+            conn.close()
+
+            if not agentes.empty:
+                agentes['id'] = agentes['id'].astype(int)
+                agente_seleccionado = st.selectbox(
+                    "Seleccionar nuevo agente:",
+                    options=agentes['username'].tolist(),
+                    key=f"reasignar_select_{ticket_id}"
+                )
+
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("✅ Confirmar Reasignación", key=f"confirmar_reas_{ticket_id}"):
+                        id_agente = agentes[agentes['username'] == agente_seleccionado]['id'].iloc[0]
+                        email_agente = agentes[agentes['username'] == agente_seleccionado]['email'].iloc[0]
+                        id_agente = int(id_agente)
+
+                        conn = obtener_conexion()
+                        cursor = conn.cursor()
+
+                        # Obtener información del ticket
+                        cursor.execute("""
+                            SELECT t.titulo, t.prioridad, t.categoria, t.usuario_id, 
+                                   u.email as creador_email, u.username as creador,
+                                   u2.username as anterior_asignado
+                            FROM tickets t
+                            LEFT JOIN usuarios u ON t.usuario_id = u.id
+                            LEFT JOIN usuarios u2 ON t.asignado_a = u2.id
+                            WHERE t.ticket_id = ?
+                        """, (ticket_id,))
+
+                        ticket_data = cursor.fetchone()
+
+                        # Actualizar asignación
+                        cursor.execute(
+                            "UPDATE tickets SET asignado_a = ?, estado = 'En Progreso' WHERE ticket_id = ?",
+                            (id_agente, ticket_id)
+                        )
+
+                        # Añadir comentario sobre la reasignación
+                        cursor.execute("""
+                            UPDATE tickets 
+                            SET comentarios = COALESCE(comentarios || '\n\n', '') || ?
+                            WHERE ticket_id = ?
+                        """, (
+                            f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {st.session_state['username']} reasignó el ticket a {agente_seleccionado}.",
+                            ticket_id
+                        ))
+
+                        conn.commit()
+                        conn.close()
+
+                        # Enviar notificaciones
+                        try:
+                            ticket_info = {
+                                'ticket_id': ticket_id,
+                                'titulo': ticket_data[0],
+                                'reasignado_por': st.session_state['username'],
+                                'anterior_asignado': ticket_data[6] if ticket_data[6] else 'Nadie',
+                                'nuevo_asignado': agente_seleccionado,
+                                'motivo': 'Reasignación manual',
+                                'enlace': f"https://tu-dominio.com/ticket/{ticket_id}"
+                            }
+
+                            # Notificar al nuevo asignado
+                            if email_agente:
+                                notificar_reasignacion_ticket(email_agente, ticket_info)
+
+                            # Notificar al creador del ticket
+                            if ticket_data[4]:
+                                notificar_actualizacion_ticket(ticket_data[4], {
+                                    'ticket_id': ticket_id,
+                                    'titulo': ticket_data[0],
+                                    'actualizado_por': st.session_state['username'],
+                                    'tipo_actualizacion': 'reasignacion',
+                                    'descripcion_cambio': f"Ticket reasignado de {ticket_data[6] if ticket_data[6] else 'Nadie'} a {agente_seleccionado}",
+                                    'enlace': f"https://tu-dominio.com/ticket/{ticket_id}"
+                                })
+
+                            st.toast(f"📧 Notificaciones enviadas")
+
+                        except Exception as e:
+                            st.warning(f"No se pudieron enviar notificaciones: {str(e)[:100]}")
+
+                        log_trazabilidad(
+                            st.session_state["username"],
+                            "Reasignación de ticket",
+                            f"Reasignó el ticket #{ticket_id} a {agente_seleccionado}"
+                        )
+
+                        st.toast(f"✅ Ticket #{ticket_id} reasignado a {agente_seleccionado}")
+                        st.session_state.pop("ticket_a_asignar", None)
+                        st.rerun()
+
+                with col_btn2:
+                    if st.button("❌ Cancelar Reasignación", key=f"cancelar_reas_{ticket_id}"):
+                        st.session_state.pop("ticket_a_asignar", None)
+                        st.rerun()
+            else:
+                st.warning("No hay agentes disponibles para reasignar")
+                if st.button("❌ Cancelar"):
+                    st.session_state.pop("ticket_a_asignar", None)
+                    st.rerun()
 
         # --- ACCIONES GLOBALES ---
         st.markdown("### ⚡ Acciones en Lote")
@@ -4658,8 +4831,6 @@ Información adicional (sistema operativo, navegador, versión de la app, etc.):
                                                      "Desconocido")
                                 st.write(f"**Asignado a:** {agente_nombre}")
                             st.write(f"**Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-
-                    st.balloons()
 
                     # Opción para crear otro ticket
                     col_otro1, col_otro2 = st.columns(2)
@@ -5839,7 +6010,7 @@ def admin_dashboard():
                                     intentos = 0
 
                                     while not token_valido and intentos < max_intentos:
-                                        token = secrets.token_urlsafe(16)
+                                        token = st.secrets.token_urlsafe(16)
                                         cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
                                         if cursor.fetchone() is None:
                                             token_valido = True

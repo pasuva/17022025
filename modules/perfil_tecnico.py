@@ -322,10 +322,10 @@ def mis_tickets():
             if result:
                 user_id = result[0]
             else:
-                st.error("❌ No se pudo identificar al usuario.")
+                st.toast("❌ No se pudo identificar al usuario.")
                 return
         except Exception as e:
-            st.error(f"❌ Error al obtener información del usuario: {str(e)[:100]}")
+            st.toast(f"❌ Error al obtener información del usuario: {str(e)[:100]}")
             return
 
     try:
@@ -360,7 +360,7 @@ def mis_tickets():
         conn.close()
 
         if df_tickets.empty:
-            st.success("✅ ¡Genial! No tienes tickets asignados en este momento.")
+            st.toast("✅ ¡Genial! No tienes tickets asignados en este momento.")
             st.info("Los tickets que te asigne el administrador aparecerán aquí.")
             return
 
@@ -540,11 +540,11 @@ def mis_tickets():
                                     f"Añadió comentario al ticket #{ticket['ticket_id']}"
                                 )
 
-                                st.success("✅ Comentario añadido")
+                                st.toast("✅ Comentario añadido")
                                 st.rerun()
 
                             except Exception as e:
-                                st.error(f"❌ Error al añadir comentario: {str(e)[:100]}")
+                                st.toast(f"❌ Error al añadir comentario: {str(e)[:100]}")
 
                 with tab_acc:
                     st.markdown("**⚡ Acciones disponibles:**")
@@ -582,7 +582,7 @@ def mis_tickets():
                                 conn.commit()
                                 conn.close()
 
-                                st.success(f"✅ Estado cambiado a '{nuevo_estado}'")
+                                st.toast(f"✅ Estado cambiado a '{nuevo_estado}'")
                                 st.rerun()
 
                     st.markdown("---")
@@ -614,11 +614,11 @@ def mis_tickets():
                                 conn.commit()
                                 conn.close()
 
-                                st.success("✅ Solicitud de información enviada")
+                                st.toast("✅ Solicitud de información enviada")
                                 st.rerun()
 
                             except Exception as e:
-                                st.error(f"❌ Error: {str(e)[:100]}")
+                                st.toast(f"❌ Error: {str(e)[:100]}")
 
                     with col_acc2:
                         if st.button("📋 Ver historial completo",
@@ -660,7 +660,7 @@ def mis_tickets():
                     st.write(f"{promedio_dias:.1f} días")
 
     except Exception as e:
-        st.error(f"⚠️ Error al cargar tickets: {str(e)[:200]}")
+        st.toast(f"⚠️ Error al cargar tickets: {str(e)[:200]}")
 
 
 def crear_tickets():
@@ -837,7 +837,7 @@ Si es una tarea:
     # Manejar el envío del formulario
     if enviar:
         if not titulo or not descripcion:
-            st.error("⚠️ Por favor, completa todos los campos obligatorios (*)")
+            st.toast("⚠️ Por favor, completa todos los campos obligatorios (*)")
         else:
             try:
                 # Obtener ID del técnico actual
@@ -850,7 +850,7 @@ Si es una tarea:
                     if result:
                         user_id = int(result[0])
                     else:
-                        st.error("❌ No se pudo identificar al usuario.")
+                        st.toast("❌ No se pudo identificar al usuario.")
                         return
                     conn.close()
 
@@ -996,8 +996,7 @@ Si es una tarea:
                 )
 
                 # Mostrar éxito
-                st.success(f"✅ **Ticket #{ticket_id} creado correctamente**")
-                st.balloons()
+                st.toast(f"✅ **Ticket #{ticket_id} creado correctamente**")
 
                 # Guardar información para mostrar el resumen
                 ticket_creado_exitosamente = True
@@ -1012,7 +1011,7 @@ Si es una tarea:
                 }
 
             except Exception as e:
-                st.error(f"❌ Error al crear el ticket: {str(e)[:200]}")
+                st.toast(f"❌ Error al crear el ticket: {str(e)[:200]}")
 
     # #########################
     # SECCIÓN FUERA DEL FORMULARIO
@@ -1058,7 +1057,7 @@ def actualizar_estado_ticket(ticket_id, nuevo_estado):
         ticket_info = cursor.fetchone()
 
         if not ticket_info:
-            st.error(f"❌ Ticket #{ticket_id} no encontrado")
+            st.toast(f"❌ Ticket #{ticket_id} no encontrado")
             return False
 
         titulo_ticket, estado_anterior = ticket_info
@@ -1136,7 +1135,7 @@ def actualizar_estado_ticket(ticket_id, nuevo_estado):
 
     except Exception as e:
         error_msg = str(e)
-        st.error(f"⚠️ Error al actualizar ticket #{ticket_id}: {error_msg[:150]}")
+        st.toast(f"⚠️ Error al actualizar ticket #{ticket_id}: {error_msg[:150]}")
 
         # Diagnosticar el error común
         if "no such table" in error_msg.lower():

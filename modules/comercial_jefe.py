@@ -293,10 +293,10 @@ def mostrar_mis_tickets_gestor():
             if result:
                 user_id = result[0]
             else:
-                st.error("❌ No se pudo identificar al usuario.")
+                st.toast("❌ No se pudo identificar al usuario.")
                 return
         except:
-            st.error("❌ Error al obtener información del usuario.")
+            st.toast("❌ Error al obtener información del usuario.")
             return
 
     st.subheader("📋 Mis Tickets Reportados")
@@ -327,7 +327,7 @@ def mostrar_mis_tickets_gestor():
         conn.close()
 
         if df_tickets.empty:
-            st.success("🎉 No has creado ningún ticket aún.")
+            st.toast("🎉 No has creado ningún ticket aún.")
             st.info("Usa la pestaña '➕ Nuevo Ticket' para reportar una incidencia.")
             return
 
@@ -432,13 +432,13 @@ def mostrar_mis_tickets_gestor():
                                     f"Añadió información al ticket #{ticket['ticket_id']}"
                                 )
 
-                                st.success("✅ Información añadida al ticket")
+                                st.toast("✅ Información añadida al ticket")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"❌ Error al añadir información: {str(e)[:100]}")
+                                st.toast(f"❌ Error al añadir información: {str(e)[:100]}")
 
     except Exception as e:
-        st.error(f"⚠️ Error al cargar tickets: {str(e)[:200]}")
+        st.toast(f"⚠️ Error al cargar tickets: {str(e)[:200]}")
 
 
 def crear_ticket_cliente():
@@ -459,8 +459,7 @@ def crear_ticket_cliente():
     if st.session_state.get('ticket_creado'):
         ticket_info = st.session_state.get('ticket_info', {})
 
-        st.success(f"✅ **Ticket #{ticket_info.get('id')} creado correctamente**")
-        st.balloons()
+        st.toast(f"✅ **Ticket #{ticket_info.get('id')} creado correctamente**")
 
         # Mostrar resumen
         with st.expander("📋 Ver resumen del ticket", expanded=True):
@@ -588,7 +587,7 @@ Información adicional:
             )
 
             if archivos:
-                st.success(f"✅ {len(archivos)} archivo(s) listo(s) para adjuntar")
+                st.toast(f"✅ {len(archivos)} archivo(s) listo(s) para adjuntar")
                 for archivo in archivos:
                     st.write(f"📄 {archivo.name} ({archivo.size / 1024:.1f} KB)")
 
@@ -612,7 +611,7 @@ Información adicional:
         # Procesar formulario
         if enviar:
             if not titulo or not descripcion:
-                st.error("⚠️ Por favor, completa todos los campos obligatorios (*)")
+                st.toast("⚠️ Por favor, completa todos los campos obligatorios (*)")
             else:
                 try:
                     # Obtener user_id del gestor comercial
@@ -626,7 +625,7 @@ Información adicional:
                         if result:
                             user_id = result[0]
                         else:
-                            st.error("❌ No se pudo identificar al usuario. Por favor, contacta con administración.")
+                            st.toast("❌ No se pudo identificar al usuario. Por favor, contacta con administración.")
                             return
                         conn.close()
 
@@ -698,7 +697,7 @@ Información adicional:
                     st.rerun()
 
                 except Exception as e:
-                    st.error(f"❌ Error al crear el ticket: {str(e)[:200]}")
+                    st.toast(f"❌ Error al crear el ticket: {str(e)[:200]}")
                     st.info("""
                     **Solución:**
                     1. Verifica tu conexión a internet
