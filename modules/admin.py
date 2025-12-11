@@ -4832,18 +4832,6 @@ Información adicional (sistema operativo, navegador, versión de la app, etc.):
                                 st.write(f"**Asignado a:** {agente_nombre}")
                             st.write(f"**Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 
-                    # Opción para crear otro ticket
-                    col_otro1, col_otro2 = st.columns(2)
-                    with col_otro1:
-                        if st.button("➕ Crear otro ticket", type="secondary"):
-                            st.session_state["crear_nuevo_ticket"] = True
-                            st.rerun()
-
-                    with col_otro2:
-                        if st.button("📋 Ver mis tickets", type="primary"):
-                            st.session_state["crear_nuevo_ticket"] = False
-                            st.rerun()
-
                 except Exception as e:
                     error_msg = str(e)
                     st.toast(f"⚠️ Error al crear ticket: {error_msg[:200]}")
