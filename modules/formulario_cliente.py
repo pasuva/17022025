@@ -537,8 +537,8 @@ def formulario_cliente(precontrato_id=None, token=None):
         st.session_state.formulario_completado = False
 
     # AÑADE ESTAS DOS LÍNEAS NUEVAS:
-    if 'coordenadas' not in st.session_state:
-        st.session_state.coordenadas = None
+    if 'coordendas' not in st.session_state:
+        st.session_state.coordendas = None
     if 'map_center' not in st.session_state:
         st.session_state.map_center = None
 
@@ -590,14 +590,14 @@ def formulario_cliente(precontrato_id=None, token=None):
 
             # Inicializar coordenadas y centro del mapa
             if len(precontrato) > 24 and precontrato[24]:
-                st.session_state.coordenadas = precontrato[24]
+                st.session_state.coordendas = precontrato[24]
                 try:
                     lat, lon = precontrato[24].split(',')
                     st.session_state.map_center = [float(lat), float(lon)]
                 except:
                     st.session_state.map_center = [40.4168, -3.7038]
             else:
-                st.session_state.coordenadas = None
+                st.session_state.coordendas = None
                 st.session_state.map_center = [40.4168, -3.7038]
 
             st.rerun()
@@ -638,14 +638,14 @@ def formulario_cliente(precontrato_id=None, token=None):
 
                 # Inicializar coordenadas y centro del mapa
                 if len(precontrato) > 24 and precontrato[24]:
-                    st.session_state.coordenadas = precontrato[24]
+                    st.session_state.coordendas = precontrato[24]
                     try:
                         lat, lon = precontrato[24].split(',')
                         st.session_state.map_center = [float(lat), float(lon)]
                     except:
                         st.session_state.map_center = [40.4168, -3.7038]
                 else:
-                    st.session_state.coordenadas = None
+                    st.session_state.coordendas = None
                     st.session_state.map_center = [40.4168, -3.7038]
                 st.rerun()
 
@@ -730,9 +730,9 @@ def formulario_cliente(precontrato_id=None, token=None):
             # Inicializar el mapa en el estado de sesión si no existe
             if 'map_center' not in st.session_state:
                 # Si hay coordenadas guardadas, centrar ahí
-                if st.session_state.coordenadas:
+                if st.session_state.coordendas:
                     try:
-                        lat, lon = st.session_state.coordenadas.split(',')
+                        lat, lon = st.session_state.coordendas.split(',')
                         st.session_state.map_center = [float(lat), float(lon)]
                     except:
                         # Centro en España por defecto
@@ -748,9 +748,9 @@ def formulario_cliente(precontrato_id=None, token=None):
             folium.plugins.MousePosition().add_to(m)
 
             # Añadir un marcador inicial si hay coordenadas en session_state
-            if st.session_state.coordenadas:
+            if st.session_state.coordendas:
                 try:
-                    lat, lon = st.session_state.coordenadas.split(',')
+                    lat, lon = st.session_state.coordendas.split(',')
                     folium.Marker([float(lat), float(lon)], tooltip="Ubicación actual").add_to(m)
                 except:
                     pass
@@ -763,14 +763,14 @@ def formulario_cliente(precontrato_id=None, token=None):
                 lat = map_data["last_clicked"]["lat"]
                 lon = map_data["last_clicked"]["lng"]
                 coordenadas_str = f"{lat},{lon}"
-                st.session_state.coordenadas = coordenadas_str
+                st.session_state.coordendas = coordenadas_str
                 # Actualizar el mapa para centrar en la nueva ubicación
                 st.session_state.map_center = [lat, lon]
                 st.rerun()
 
             # Mostrar coordenadas actuales
-            if st.session_state.coordenadas:
-                st.info(f"**Coordenadas actuales:** {st.session_state.coordenadas}")
+            if st.session_state.coordendas:
+                st.info(f"**Coordenadas actuales:** {st.session_state.coordendas}")
             else:
                 st.warning("No se han seleccionado coordenadas. Haz clic en el mapa para seleccionar la ubicación.")
 
