@@ -724,55 +724,50 @@ def formulario_cliente(precontrato_id=None, token=None):
                                             key="coordenadas_input",
                                             disabled=True)
 
-            # SECCIÓN DEL MAPA INTERACTIVO
+            # SECCIÓN DEL MAPA INTERACTIVO - USANDO st.map
             st.subheader("🗺️ Selecciona la ubicación de tu vivienda en el mapa")
 
-            # Inicializar el mapa en el estado de sesión si no existe
-            if 'map_center' not in st.session_state:
-                # Si hay coordenadas guardadas, centrar ahí
-                if st.session_state.coordendas:
-                    try:
-                        lat, lon = st.session_state.coordendas.split(',')
-                        st.session_state.map_center = [float(lat), float(lon)]
-                    except:
-                        # Centro en España por defecto
-                        st.session_state.map_center = [40.4168, -3.7038]
-                else:
-                    # Centro en España por defecto
-                    st.session_state.map_center = [40.4168, -3.7038]
+            # 1. Prepare a DataFrame for the map
+            import pandas as pd
 
-            # Crear un mapa de Folium
-            m = folium.Map(location=st.session_state.map_center, zoom_start=12)
+            # Start with an empty map or show a point if coordinates already exist
+            map_data = pd.DataFrame(columns=['lat', 'lon'])
 
-            # Añadir control de escala
-            folium.plugins.MousePosition().add_to(m)
-
-            # Añadir un marcador inicial si hay coordenadas en session_state
-            if st.session_state.coordendas:
+            # If coordinates exist in session state, display them on the map
+            if st.session_state.coordenadas:
                 try:
-                    lat, lon = st.session_state.coordendas.split(',')
-                    folium.Marker([float(lat), float(lon)], tooltip="Ubicación actual").add_to(m)
-                except:
-                    pass
+                    lat_str, lon_str = st.session_state.coordenadas.split(',')
+                    lat, lon = float(lat_str), float(lon_str)
+                    # Create a DataFrame with the existing point
+                    map_data = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+                    # Show the existing location
+                    st.success(f"📍 Ubicación actual: {lat:.5f}, {lon:.5f}")
+                except Exception as e:
+                    st.error(f"Error al procesar coordenadas guardadas: {e}")
 
-            # Mostrar el mapa y capturar interacciones
-            map_data = st_folium(m, width=700, height=500, key="mapa_interactivo")
+            # 2. Display the interactive map
+            # st.map will show an empty world map or the existing point
+            click_data = st.map(map_data, zoom=12)
 
-            # Si se hizo clic en el mapa, actualizar las coordenadas
-            if map_data and map_data.get("last_clicked"):
-                lat = map_data["last_clicked"]["lat"]
-                lon = map_data["last_clicked"]["lng"]
-                coordenadas_str = f"{lat},{lon}"
-                st.session_state.coordendas = coordenadas_str
-                # Actualizar el mapa para centrar en la nueva ubicación
-                st.session_state.map_center = [lat, lon]
-                st.rerun()
+            # 3. Process a new click on the map
+            if click_data and click_data.get('last_clicked'):
+                new_lat = click_data['last_clicked']['lat']
+                new_lon = click_data['last_clicked']['lng']
 
-            # Mostrar coordenadas actuales
-            if st.session_state.coordendas:
-                st.info(f"**Coordenadas actuales:** {st.session_state.coordendas}")
-            else:
-                st.warning("No se han seleccionado coordenadas. Haz clic en el mapa para seleccionar la ubicación.")
+                # Format and save the coordinates to session state
+                st.session_state.coordenadas = f"{new_lat},{new_lon}"
+                st.session_state.map_center = [new_lat, new_lon]  # Update center if needed
+
+                # Provide immediate visual feedback
+                st.success(f"✅ Nueva ubicación guardada: {new_lat:.5f}, {new_lon:.5f}")
+                st.rerun()  # Refresh to show the new point
+
+            # 4. Helper buttons (optional but useful)
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Limpiar Ubicación", use_container_width=True):
+                    st.session_state.coordenadas = None
+                    st.rerun()
 
             # Mostrar ejemplos de formato válido
             with st.expander("ℹ️ Formatos válidos esperados"):
