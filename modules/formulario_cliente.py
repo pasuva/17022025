@@ -12,8 +12,6 @@ from email.message import EmailMessage
 import base64
 from PIL import Image as PILImage
 import numpy as np
-import folium
-from streamlit_folium import st_folium
 
 # Añadir el import para el canvas de firma
 try:
@@ -428,8 +426,7 @@ def generar_pdf(precontrato_datos, lineas=[]):
         "Población": precontrato_datos["poblacion"],
         "Provincia": precontrato_datos["provincia"],
         "IBAN": precontrato_datos["iban"],
-        "BIC": precontrato_datos["bic"],
-        "Coordenadas": precontrato_datos.get("coordendas", ""),
+        "BIC": precontrato_datos["bic"]
     }
 
     # Añadir sección de firma si existe
@@ -536,12 +533,6 @@ def formulario_cliente(precontrato_id=None, token=None):
     if 'formulario_completado' not in st.session_state:
         st.session_state.formulario_completado = False
 
-    # AÑADE ESTAS DOS LÍNEAS NUEVAS:
-    if 'coordendas' not in st.session_state:
-        st.session_state.coordendas = None
-    if 'map_center' not in st.session_state:
-        st.session_state.map_center = None
-
     # Si se pasan parámetros desde app.py, usarlos para validación automática
     if precontrato_id and token and not st.session_state.validado:
         valido, mensaje = validar_token(precontrato_id, token)
@@ -587,19 +578,6 @@ def formulario_cliente(precontrato_id=None, token=None):
             st.session_state.precontrato_id = precontrato_id
             st.session_state.token = token
             st.session_state.precontrato_data = precontrato
-
-            # Inicializar coordenadas y centro del mapa
-            if len(precontrato) > 24 and precontrato[24]:
-                st.session_state.coordendas = precontrato[24]
-                try:
-                    lat, lon = precontrato[24].split(',')
-                    st.session_state.map_center = [float(lat), float(lon)]
-                except:
-                    st.session_state.map_center = [40.4168, -3.7038]
-            else:
-                st.session_state.coordendas = None
-                st.session_state.map_center = [40.4168, -3.7038]
-
             st.rerun()
 
     # Si no está validado, mostrar formulario de validación
@@ -635,18 +613,6 @@ def formulario_cliente(precontrato_id=None, token=None):
                 st.session_state.precontrato_id = precontrato_id_input
                 st.session_state.token = token_input
                 st.session_state.precontrato_data = precontrato
-
-                # Inicializar coordenadas y centro del mapa
-                if len(precontrato) > 24 and precontrato[24]:
-                    st.session_state.coordendas = precontrato[24]
-                    try:
-                        lat, lon = precontrato[24].split(',')
-                        st.session_state.map_center = [float(lat), float(lon)]
-                    except:
-                        st.session_state.map_center = [40.4168, -3.7038]
-                else:
-                    st.session_state.coordendas = None
-                    st.session_state.map_center = [40.4168, -3.7038]
                 st.rerun()
 
     else:
@@ -706,7 +672,7 @@ def formulario_cliente(precontrato_id=None, token=None):
                 poblacion = st.text_input("Población*", precontrato[15] or "")
 
             # TERCERA FILA: Provincia y documentos
-            col6, col7, col8 = st.columns([2, 3, 4])
+            col6, col7 = st.columns([2, 3])
 
             with col6:
                 provincia = st.text_input("Provincia*", precontrato[16] or "")
@@ -716,58 +682,6 @@ def formulario_cliente(precontrato_id=None, token=None):
                                             accept_multiple_files=True,
                                             type=['pdf', 'png', 'jpg', 'jpeg'],
                                             help="Debe adjuntar al menos un documento para continuar")
-
-            with col8:
-                # Mostrar coordenadas si ya existen
-                coordendas = st.text_input("Coordenadas (selecciona en el mapa)",
-                                            value=precontrato[24] if precontrato[24] else "",
-                                            key="coordenadas_input",
-                                            disabled=True)
-
-            # SECCIÓN DEL MAPA INTERACTIVO - USANDO st.map
-            st.subheader("🗺️ Selecciona la ubicación de tu vivienda en el mapa")
-
-            # 1. Prepare a DataFrame for the map
-            import pandas as pd
-
-            # Start with an empty map or show a point if coordinates already exist
-            map_data = pd.DataFrame(columns=['lat', 'lon'])
-
-            # If coordinates exist in session state, display them on the map
-            if st.session_state.coordenadas:
-                try:
-                    lat_str, lon_str = st.session_state.coordenadas.split(',')
-                    lat, lon = float(lat_str), float(lon_str)
-                    # Create a DataFrame with the existing point
-                    map_data = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-                    # Show the existing location
-                    st.success(f"📍 Ubicación actual: {lat:.5f}, {lon:.5f}")
-                except Exception as e:
-                    st.error(f"Error al procesar coordenadas guardadas: {e}")
-
-            # 2. Display the interactive map
-            # st.map will show an empty world map or the existing point
-            click_data = st.map(map_data, zoom=12)
-
-            # 3. Process a new click on the map
-            if click_data and click_data.get('last_clicked'):
-                new_lat = click_data['last_clicked']['lat']
-                new_lon = click_data['last_clicked']['lng']
-
-                # Format and save the coordinates to session state
-                st.session_state.coordenadas = f"{new_lat},{new_lon}"
-                st.session_state.map_center = [new_lat, new_lon]  # Update center if needed
-
-                # Provide immediate visual feedback
-                st.success(f"✅ Nueva ubicación guardada: {new_lat:.5f}, {new_lon:.5f}")
-                st.rerun()  # Refresh to show the new point
-
-            # 4. Helper buttons (optional but useful)
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🗑️ Limpiar Ubicación", use_container_width=True):
-                    st.session_state.coordenadas = None
-                    st.rerun()
 
             # Mostrar ejemplos de formato válido
             with st.expander("ℹ️ Formatos válidos esperados"):
@@ -1009,10 +923,10 @@ def formulario_cliente(precontrato_id=None, token=None):
                             cursor.execute("""
                                 UPDATE precontratos
                                 SET nombre=?, nombre_legal=?, cif=?, nif=?, telefono1=?, telefono2=?, mail=?, direccion=?,
-                                    cp=?, poblacion=?, provincia=?, iban=?, bic=?, firma=?, coordendas=?
+                                    cp=?, poblacion=?, provincia=?, iban=?, bic=?, firma=?
                                 WHERE id=?
                             """, (nombre, nombre_legal, cif, nif, telefono1, telefono2, mail, direccion,
-                                  cp, poblacion, provincia, iban, bic, firma_base64, coordendas,
+                                  cp, poblacion, provincia, iban, bic, firma_base64,
                                   int(st.session_state.precontrato_id)))
 
                             # Marcar link como usado
