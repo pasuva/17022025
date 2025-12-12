@@ -1114,43 +1114,63 @@ def comercial_dashboard_vip():
                             if precontrato[12]:  # Si hay teléfono 2
                                 st.write(f"**Teléfono 2:** {precontrato[12]}")
 
-                        # Botón para regenerar enlace si está usado o expirado
-                        if precontrato[8]:  # Si está usado
-                            if st.button(f"🔄 Regenerar enlace para {precontrato[1]}", key=f"regen_{precontrato[0]}"):
-                                try:
-                                    conn = get_db_connection()
-                                    cursor = conn.cursor()
-                                    # Generar nuevo token
-                                    token_valido = False
-                                    max_intentos = 5
-                                    intentos = 0
+                        # ==== ELIMINA ESTA LÍNEA: if precontrato[8]: ====
+                        # Botón para regenerar enlace (AHORA SIEMPRE VISIBLE)
+                        if st.button(f"🔄 Generar/Regenerar enlace para {precontrato[1]}",
+                                     key=f"regen_{precontrato[0]}"):
+                            try:
+                                conn = get_db_connection()
+                                cursor = conn.cursor()
 
-                                    while not token_valido and intentos < max_intentos:
-                                        token = secrets.token_urlsafe(16)
-                                        cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
-                                        if cursor.fetchone() is None:
-                                            token_valido = True
-                                        intentos += 1
+                                # Generar nuevo token único
+                                token_valido = False
+                                max_intentos = 5
+                                intentos = 0
 
-                                    if token_valido:
-                                        expiracion = datetime.now() + timedelta(hours=24)
+                                while not token_valido and intentos < max_intentos:
+                                    token = secrets.token_urlsafe(16)
+                                    cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
+                                    if cursor.fetchone() is None:
+                                        token_valido = True
+                                    intentos += 1
 
+                                if token_valido:
+                                    expiracion = datetime.now() + timedelta(hours=24)
+
+                                    # Verificar si ya existe un enlace
+                                    cursor.execute("SELECT id FROM precontrato_links WHERE precontrato_id = ?",
+                                                   (precontrato[0],))
+                                    link_existente = cursor.fetchone()
+
+                                    if link_existente:
                                         # Actualizar el token existente
                                         cursor.execute("""
-                                            UPDATE precontrato_links 
-                                            SET token = ?, expiracion = ?, usado = 0
-                                            WHERE precontrato_id = ?
-                                        """, (token, expiracion, precontrato[0]))
-                                        conn.commit()
-                                        conn.close()
-                                        #base_url = "https://one7022025.onrender.com"
-                                        base_url = "http://localhost:8501"
-                                        link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
-                                        st.success("✅ Nuevo enlace generado correctamente.")
-                                        st.code(link_cliente, language="text")
-                                        st.info("💡 Copia este nuevo enlace y envíalo al cliente.")
-                                except Exception as e:
-                                    st.toast(f"❌ Error al regenerar enlace: {e}")
+                                                        UPDATE precontrato_links 
+                                                        SET token = ?, expiracion = ?, usado = 0
+                                                        WHERE precontrato_id = ?
+                                                    """, (token, expiracion, precontrato[0]))
+                                        mensaje = "✅ Enlace REGENERADO correctamente."
+                                    else:
+                                        # Crear nuevo enlace (si no existía)
+                                        cursor.execute("""
+                                                        INSERT INTO precontrato_links (precontrato_id, token, expiracion, usado)
+                                                        VALUES (?, ?, ?, ?)
+                                                    """, (precontrato[0], token, expiracion, 0))
+                                        mensaje = "✅ Enlace GENERADO por primera vez."
+
+                                    conn.commit()
+                                    conn.close()
+
+                                    base_url = "http://localhost:8501"
+                                    link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
+                                    st.success(mensaje)
+                                    st.code(link_cliente, language="text")
+                                    st.info("💡 Copia este nuevo enlace y envíalo al cliente.")
+                                else:
+                                    st.toast("❌ No se pudo generar un token único.")
+
+                            except Exception as e:
+                                st.toast(f"❌ Error al generar enlace: {e}")
 
             else:
                 st.toast(

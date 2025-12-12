@@ -4734,7 +4734,7 @@ Información adicional (sistema operativo, navegador, versión de la app, etc.):
                 agente_nombre = next((a['username'] for a in lista_agentes if a['id'] == asignado_id), "Desconocido")
                 st.write(f"**Asignado a:** {agente_nombre}")
 
-        st.markdown("**\* Campos obligatorios**")
+        st.markdown("**Campos obligatorios**")
 
         col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
@@ -5508,107 +5508,67 @@ def admin_dashboard():
 
 
         elif sub_seccion == "Seguimiento de Contratos":
-
             st.info("ℹ️ Aquí puedes cargar contratos, mapear columnas, guardar en BD y sincronizar con datos UIS.")
 
             # Mapeo de columnas del Excel a la BD
-
             if st.button("🔄 Actualizar contratos"):
-
                 with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
-
                     try:
-
                         # 1. Cargar datos desde Google Sheets
-
                         df = cargar_contratos_google()
 
                         # Normalizar nombres de columnas INMEDIATAMENTE
-
                         df.columns = df.columns.map(lambda x: str(x).strip().lower() if x is not None else "")
 
                         # 2. Guardar en la base de datos
-
                         conn = obtener_conexion()
-
                         cur = conn.cursor()
 
                         # Borrar registros anteriores
-
                         cur.execute("DELETE FROM seguimiento_contratos")
-
                         conn.commit()
-
                         total = len(df)
-
                         progress = st.progress(0)
 
                         # ACTUALIZADO: Incluir las nuevas columnas
-
                         insert_sql = '''INSERT INTO seguimiento_contratos (
-
                             num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
-
                             comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios,
-
                             SAT, Tipo_cliente, tecnico, metodo_entrada, billing
-
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
                         inserted_divisor = 0
-
                         inserted_puerto = 0
-
                         inserted_fecha_fin = 0
-
                         inserted_sat = 0
-
                         inserted_tipo_cliente = 0
-
                         inserted_tecnico = 0
-
                         inserted_metodo_entrada = 0
-
                         inserted_billing = 0
 
                         for i, row in df.iterrows():
-
                             # Obtener apartment_id y formatearlo
-
                             ap_id = row.get('apartment_id')
-
                             try:
-
                                 ap_id_int = int(ap_id)
-
                                 padded_id = 'P' + str(ap_id_int).zfill(10)
 
                             except (ValueError, TypeError):
-
                                 padded_id = None
 
                             # Obtener valores CORRECTAMENTE (después de la normalización)
-
                             fecha_instalacion = row.get('fecha_instalacion')
-
                             fecha_fin_contrato = row.get('fecha_fin_contrato')
 
                             # Obtener divisor y puerto usando los nombres NORMALIZADOS
-
                             divisor = row.get('divisor')
-
                             puerto = row.get('puerto')
 
                             # Obtener las nuevas columnas (en minúsculas)
-
                             sat = row.get('sat')
-
                             tipo_cliente = row.get('tipo_cliente')
-
                             tecnico = row.get('tecnico')
-
                             metodo_entrada = row.get('metodo_entrada')
-
                             billing = row.get('billing')
 
                             # Contar cuántos valores no nulos tenemos
@@ -5638,145 +5598,82 @@ def admin_dashboard():
                                 inserted_billing += 1
 
                             # Inserción
-
                             try:
-
                                 cur.execute(insert_sql, (
-
                                     row.get('num_contrato'),
-
                                     row.get('cliente'),
-
                                     row.get('coordenadas'),
-
                                     row.get('estado'),
-
                                     row.get('fecha_inicio_contrato'),
-
                                     row.get('fecha_ingreso'),
-
                                     row.get('comercial'),
-
                                     fecha_instalacion,
-
                                     padded_id,
-
                                     fecha_fin_contrato,
-
                                     divisor,
-
                                     puerto,
-
                                     row.get('comentarios'),
-
                                     sat,
-
                                     tipo_cliente,
-
                                     tecnico,
-
                                     metodo_entrada,
-
                                     billing
-
                                 ))
 
                             except Exception as e:
-
                                 st.toast(f"⚠️ Error al insertar fila {i}: {e}")
-
                                 st.write(
-
                                     f"Valores: divisor={divisor}, puerto={puerto}, fecha_fin_contrato={fecha_fin_contrato}")
-
                             progress.progress((i + 1) / total)
-
                         conn.commit()
 
                         # Mostrar estadísticas de inserción
-
                         st.info(f"📊 Divisores insertados: {inserted_divisor}/{total}")
-
                         st.info(f"📊 Puertos insertados: {inserted_puerto}/{total}")
-
                         st.info(f"📊 Fechas fin contrato insertadas: {inserted_fecha_fin}/{total}")
-
                         st.info(f"📊 SAT insertados: {inserted_sat}/{total}")
-
                         st.info(f"📊 Tipo cliente insertados: {inserted_tipo_cliente}/{total}")
-
                         st.info(f"📊 Técnicos insertados: {inserted_tecnico}/{total}")
-
                         st.info(f"📊 Método entrada insertados: {inserted_metodo_entrada}/{total}")
-
                         st.info(f"📊 Billing insertados: {inserted_billing}/{total}")
 
                         # 3. Verificar qué se guardó realmente en la base de datos
-
                         cur.execute("""
-
                             SELECT COUNT(*) as total, 
-
                                    COUNT(divisor) as con_divisor, 
-
                                    COUNT(puerto) as con_puerto,
-
                                    COUNT(fecha_fin_contrato) as con_fecha_fin,
-
                                    COUNT(SAT) as con_sat,
-
                                    COUNT(Tipo_cliente) as con_tipo_cliente,
-
                                    COUNT(tecnico) as con_tecnico,
-
                                    COUNT(metodo_entrada) as con_metodo_entrada,
-
                                    COUNT(billing) as con_billing
-
                             FROM seguimiento_contratos
-
                         """)
 
                         stats = cur.fetchone()
-
                         st.toast(
-
                             f"📊 En base de datos - Total: {stats[0]}, Con divisor: {stats[1]}, Con puerto: {stats[2]}, Con fecha_fin_contrato: {stats[3]}")
 
                         st.toast(
-
                             f"📊 SAT: {stats[4]}, Tipo cliente: {stats[5]}, Técnico: {stats[6]}, Método entrada: {stats[7]}, Billing: {stats[8]}")
 
                         # 4. Mostrar algunos ejemplos de lo que se guardó
-
                         cur.execute("""
-
                             SELECT apartment_id, fecha_fin_contrato, divisor, puerto, SAT, Tipo_cliente, tecnico 
-
                             FROM seguimiento_contratos 
-
                             WHERE fecha_fin_contrato IS NOT NULL 
-
                                OR divisor IS NOT NULL 
-
                                OR puerto IS NOT NULL
-
                                OR SAT IS NOT NULL
-
                                OR Tipo_cliente IS NOT NULL
-
                                OR tecnico IS NOT NULL
-
                             LIMIT 5
-
                         """)
-
                         resultados = cur.fetchall()
 
                         if resultados:
-
                             st.info("📋 Ejemplos de registros insertados:")
-
                             for resultado in resultados:
                                 st.write(f"- {resultado}")
 
@@ -5789,158 +5686,92 @@ def admin_dashboard():
                                 # Actualizar divisor en datos_uis
 
                                 cur.execute("""
-
                                     UPDATE datos_uis
-
                                     SET divisor = (
-
                                         SELECT sc.divisor
-
                                         FROM seguimiento_contratos sc
-
                                         WHERE sc.apartment_id = datos_uis.apartment_id
-
                                         AND sc.divisor IS NOT NULL
-
                                         AND sc.divisor != ''
-
                                         LIMIT 1
-
                                     )
 
                                     WHERE apartment_id IN (
-
                                         SELECT apartment_id FROM seguimiento_contratos 
-
                                         WHERE divisor IS NOT NULL AND divisor != ''
-
                                     )
-
                                 """)
 
                                 updated_divisor = cur.rowcount
-
                                 conn.commit()
 
                                 # Actualizar puerto en datos_uis
-
                                 cur.execute("""
-
                                     UPDATE datos_uis
-
                                     SET puerto = (
-
                                         SELECT sc.puerto
-
                                         FROM seguimiento_contratos sc
-
                                         WHERE sc.apartment_id = datos_uis.apartment_id
-
                                         AND sc.puerto IS NOT NULL
-
                                         AND sc.puerto != ''
-
                                         LIMIT 1
-
                                     )
-
                                     WHERE apartment_id IN (
-
                                         SELECT apartment_id FROM seguimiento_contratos 
-
                                         WHERE puerto IS NOT NULL AND puerto != ''
-
                                     )
-
                                 """)
 
                                 updated_puerto = cur.rowcount
-
                                 conn.commit()
 
                                 # Actualizar fecha_fin_contrato en datos_uis
-
                                 cur.execute("""
-
                                     UPDATE datos_uis
-
                                     SET fecha_fin_contrato = (
-
                                         SELECT sc.fecha_fin_contrato
-
                                         FROM seguimiento_contratos sc
-
                                         WHERE sc.apartment_id = datos_uis.apartment_id
-
                                         AND sc.fecha_fin_contrato IS NOT NULL
-
                                         AND sc.fecha_fin_contrato != ''
-
                                         LIMIT 1
-
                                     )
-
                                     WHERE apartment_id IN (
-
                                         SELECT apartment_id FROM seguimiento_contratos 
-
                                         WHERE fecha_fin_contrato IS NOT NULL AND fecha_fin_contrato != ''
-
                                     )
-
                                 """)
-
                                 updated_fecha_fin = cur.rowcount
-
                                 conn.commit()
-
                                 st.toast(
-
                                     f"✅ Actualizados {updated_divisor} divisores, {updated_puerto} puertos y {updated_fecha_fin} fechas fin contrato en datos_uis")
-
                         # 6. Feedback final
-
                         st.toast("✅ Proceso completado correctamente.")
 
 
                     except Exception as e:
-
                         st.toast(f"❌ Error en el proceso: {e}")
-
                         import traceback
-
                         st.code(traceback.format_exc())
 
             # ✅ CHECKBOX RESTAURADO - Mostrar registros existentes
-
             if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
-
                 with st.spinner("Cargando registros de contratos..."):
-
                     try:
-
                         conn = obtener_conexion()
-
                         existing = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
-
                         conn.close()
 
                         if existing.empty:
-
                             st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
 
                         else:
-
                             cols = st.multiselect("Filtra columnas a mostrar", existing.columns,
-
                                                   default=existing.columns,
-
                                                   key="cols_existing")
-
                             st.dataframe(existing[cols], width='stretch')
 
                     except Exception as e:
-
                         st.toast(f"❌ Error al cargar registros existentes: {e}")
 
         if sub_seccion == "Precontratos":
@@ -8195,9 +8026,6 @@ def mostrar_certificacion():
             """
 
             # Mostrar consulta para depuración
-            with st.expander("🔍 Ver consulta SQL", expanded=False):
-                st.code(query_ofertas)
-
             df_ofertas = pd.read_sql(query_ofertas, conn)
 
             if df_ofertas.empty:
@@ -8268,13 +8096,6 @@ def mostrar_certificacion():
                 df_final = df_final.rename(columns=rename_map)
 
             # Mostrar información sobre el DataFrame
-            with st.expander("📊 Información del DataFrame", expanded=False):
-                st.write(f"**Filas:** {len(df_final)}")
-                st.write(f"**Columnas:** {len(df_final.columns)}")
-                st.write("**Columnas disponibles:**", list(df_final.columns))
-                st.write("**Primeras filas:**")
-                st.dataframe(df_final.head())
-
             # Clasificar observaciones
             df_final = clasificar_observaciones(df_final)
 
@@ -8356,23 +8177,6 @@ def mostrar_resultados_certificacion(df):
     """Muestra los resultados de la certificación"""
 
     # Mostrar información sobre columnas disponibles
-    with st.expander("📋 Columnas disponibles en los datos", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total de registros", f"{len(df):,}")
-            st.metric("Total de columnas", f"{len(df.columns)}")
-        with col2:
-            if 'comercial' in df.columns:
-                comerciales_unicos = df['comercial'].nunique()
-                st.metric("Comerciales únicos", f"{comerciales_unicos}")
-            if 'cto' in df.columns:
-                ctos_unicos = df['cto'].nunique()
-                st.metric("CTOs únicos", f"{ctos_unicos}")
-
-        st.write("**Lista de columnas:**")
-        for i, col in enumerate(df.columns, 1):
-            st.write(f"{i}. {col} ({df[col].dtype})")
-
     # KPIs principales
     col1, col2, col3, col4 = st.columns(4)
 
