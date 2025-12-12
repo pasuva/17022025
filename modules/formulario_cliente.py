@@ -536,6 +536,12 @@ def formulario_cliente(precontrato_id=None, token=None):
     if 'formulario_completado' not in st.session_state:
         st.session_state.formulario_completado = False
 
+    # AÑADE ESTAS DOS LÍNEAS NUEVAS:
+    if 'coordenadas' not in st.session_state:
+        st.session_state.coordenadas = None
+    if 'map_center' not in st.session_state:
+        st.session_state.map_center = None
+
     # Si se pasan parámetros desde app.py, usarlos para validación automática
     if precontrato_id and token and not st.session_state.validado:
         valido, mensaje = validar_token(precontrato_id, token)
@@ -581,6 +587,19 @@ def formulario_cliente(precontrato_id=None, token=None):
             st.session_state.precontrato_id = precontrato_id
             st.session_state.token = token
             st.session_state.precontrato_data = precontrato
+
+            # Inicializar coordenadas y centro del mapa
+            if len(precontrato) > 24 and precontrato[24]:
+                st.session_state.coordenadas = precontrato[24]
+                try:
+                    lat, lon = precontrato[24].split(',')
+                    st.session_state.map_center = [float(lat), float(lon)]
+                except:
+                    st.session_state.map_center = [40.4168, -3.7038]
+            else:
+                st.session_state.coordenadas = None
+                st.session_state.map_center = [40.4168, -3.7038]
+
             st.rerun()
 
     # Si no está validado, mostrar formulario de validación
@@ -616,6 +635,18 @@ def formulario_cliente(precontrato_id=None, token=None):
                 st.session_state.precontrato_id = precontrato_id_input
                 st.session_state.token = token_input
                 st.session_state.precontrato_data = precontrato
+
+                # Inicializar coordenadas y centro del mapa
+                if len(precontrato) > 24 and precontrato[24]:
+                    st.session_state.coordenadas = precontrato[24]
+                    try:
+                        lat, lon = precontrato[24].split(',')
+                        st.session_state.map_center = [float(lat), float(lon)]
+                    except:
+                        st.session_state.map_center = [40.4168, -3.7038]
+                else:
+                    st.session_state.coordenadas = None
+                    st.session_state.map_center = [40.4168, -3.7038]
                 st.rerun()
 
     else:
@@ -693,41 +724,55 @@ def formulario_cliente(precontrato_id=None, token=None):
                                             key="coordenadas_input",
                                             disabled=True)
 
-            # MAPA para seleccionar coordenadas
+            # SECCIÓN DEL MAPA INTERACTIVO
             st.subheader("🗺️ Selecciona la ubicación de tu vivienda en el mapa")
 
             # Inicializar el mapa en el estado de sesión si no existe
             if 'map_center' not in st.session_state:
-                # Centro en España
-                st.session_state.map_center = [40.4168, -3.7038]
+                # Si hay coordenadas guardadas, centrar ahí
+                if st.session_state.coordenadas:
+                    try:
+                        lat, lon = st.session_state.coordenadas.split(',')
+                        st.session_state.map_center = [float(lat), float(lon)]
+                    except:
+                        # Centro en España por defecto
+                        st.session_state.map_center = [40.4168, -3.7038]
+                else:
+                    # Centro en España por defecto
+                    st.session_state.map_center = [40.4168, -3.7038]
 
             # Crear un mapa de Folium
-            m = folium.Map(location=st.session_state.map_center, zoom_start=6)
+            m = folium.Map(location=st.session_state.map_center, zoom_start=12)
 
             # Añadir control de escala
             folium.plugins.MousePosition().add_to(m)
 
-            # Añadir un marcador inicial si hay coordenadas
-            if precontrato[24]:
+            # Añadir un marcador inicial si hay coordenadas en session_state
+            if st.session_state.coordenadas:
                 try:
-                    lat, lon = precontrato[24].split(',')
+                    lat, lon = st.session_state.coordenadas.split(',')
                     folium.Marker([float(lat), float(lon)], tooltip="Ubicación actual").add_to(m)
                 except:
                     pass
 
             # Mostrar el mapa y capturar interacciones
-            map_data = st_folium(m, width=700, height=500)
+            map_data = st_folium(m, width=700, height=500, key="mapa_interactivo")
 
             # Si se hizo clic en el mapa, actualizar las coordenadas
             if map_data and map_data.get("last_clicked"):
                 lat = map_data["last_clicked"]["lat"]
                 lon = map_data["last_clicked"]["lng"]
-                coordendas_str = f"{lat},{lon}"
-                st.session_state.coordendas_input = coordendas_str
+                coordenadas_str = f"{lat},{lon}"
+                st.session_state.coordenadas = coordenadas_str
                 # Actualizar el mapa para centrar en la nueva ubicación
                 st.session_state.map_center = [lat, lon]
-                # También podemos añadir un marcador en tiempo real? (en la siguiente iteración se verá)
                 st.rerun()
+
+            # Mostrar coordenadas actuales
+            if st.session_state.coordenadas:
+                st.info(f"**Coordenadas actuales:** {st.session_state.coordenadas}")
+            else:
+                st.warning("No se han seleccionado coordenadas. Haz clic en el mapa para seleccionar la ubicación.")
 
             # Mostrar ejemplos de formato válido
             with st.expander("ℹ️ Formatos válidos esperados"):
