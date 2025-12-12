@@ -12,6 +12,10 @@ from email.message import EmailMessage
 import base64
 from PIL import Image as PILImage
 import numpy as np
+import json
+from datetime import datetime
+import requests
+from urllib.parse import quote
 
 # Añadir el import para el canvas de firma
 try:
@@ -35,6 +39,229 @@ def get_db_connection():
     except Exception as e:
         st.error(f"❌ Error de conexión a BD: {e}")
         return None
+
+#####
+# -------------------- GEOLOCALIZACIÓN SIMPLE --------------------
+def obtener_coordenadas_cartociudad(direccion, cp, poblacion, provincia):
+    """
+    Obtiene coordenadas usando CartoCiudad.
+    VERSIÓN OPTIMIZADA: Maneja direcciones sin número, busca portal más cercano y marca precisión.
+    """
+    import re
+    import requests
+    import json
+    from urllib.parse import quote
+    from datetime import datetime
+
+    # 1. Análisis inteligente de la dirección
+    direccion_limpia = direccion.strip()
+
+    # Buscar el último número en la dirección
+    match_numero = re.search(r'(\d+)\s*$', direccion_limpia)
+    numero_buscado = int(match_numero.group(1)) if match_numero else None
+
+    # Extraer el nombre de la vía (inteligente: elimina números y caracteres extraños)
+    if numero_buscado:
+        # Elimina solo el número final
+        nombre_via = re.sub(r'\s*\d+\s*$', '', direccion_limpia).strip()
+        # Limpia espacios extra y comas al final
+        nombre_via = re.sub(r'[\s,]+$', '', nombre_via)
+    else:
+        nombre_via = direccion_limpia
+
+    print(f"🔍 Análisis de dirección:")
+    print(f"   - Dirección original: '{direccion}'")
+    print(f"   - Nombre de vía: '{nombre_via}'")
+    print(f"   - Número buscado: {numero_buscado}")
+    print(f"   - Población: {poblacion}")
+    print(f"   - CP: {cp}")
+
+    # 2. Construcción inteligente de variantes (optimizado)
+    variantes_a_probar = []
+
+    # Componentes para construir variantes
+    componentes = {
+        'via': nombre_via,
+        'via_upper': nombre_via.upper(),
+        'num': f" {numero_buscado}" if numero_buscado else "",
+        'pob': poblacion,
+        'pob_upper': poblacion.upper(),
+        'cp': cp,
+        'prov': provincia,
+        'prov_upper': provincia.upper()
+    }
+
+    # REGLA: Construir variantes según si tenemos número o no
+    if numero_buscado:
+        # Con número - variantes más específicas primero
+        variantes_a_probar.extend([
+            f"{componentes['via']}{componentes['num']}, {componentes['pob']}",
+            f"{componentes['via']}{componentes['num']}, {componentes['cp']} {componentes['pob']}",
+            f"{componentes['via_upper']}{componentes['num']}, {componentes['pob_upper']}",
+            f"{componentes['via']}{componentes['num']}, {componentes['pob']}, {componentes['prov']}",
+            f"{componentes['via']}, {componentes['pob']}",  # Sin número como fallback
+        ])
+    else:
+        # Sin número - variantes más genéricas
+        variantes_a_probar.extend([
+            f"{componentes['via']}, {componentes['pob']}",
+            f"{componentes['via']}, {componentes['cp']} {componentes['pob']}",
+            f"{componentes['via_upper']}, {componentes['pob_upper']}",
+            f"{componentes['via']}, {componentes['pob']}, {componentes['prov']}",
+            componentes['via'],  # Solo la vía
+        ])
+
+    print(f"🔢 Se probarán {len(variantes_a_probar)} variantes")
+
+    # 3. Búsqueda principal en la API
+    mejores_candidatos = []
+    mejor_variante = None
+
+    for i, direccion_consulta in enumerate(variantes_a_probar):
+        try:
+            print(f"\n🔄 Intento {i + 1}: '{direccion_consulta}'")
+
+            direccion_codificada = quote(direccion_consulta)
+            url = f"https://www.cartociudad.es/geocoder/api/geocoder/candidatesJsonp?q={direccion_codificada}&limit=15"
+            response = requests.get(url, timeout=8)
+
+            if response.status_code != 200:
+                continue
+
+            contenido = response.text.strip()
+            if contenido.startswith('callback(') and contenido.endswith(')'):
+                json_str = contenido[9:-1]
+                candidatos = json.loads(json_str)
+            else:
+                candidatos = json.loads(contenido)
+
+            if not candidatos:
+                continue
+
+            print(f"   ✅ {len(candidatos)} candidatos encontrados")
+
+            # Guardar los mejores candidatos de esta variante
+            mejores_candidatos.extend(candidatos)
+            mejor_variante = direccion_consulta
+
+            # Si tenemos suficientes candidatos, podemos parar
+            if len(mejores_candidatos) >= 10:
+                break
+
+        except Exception:
+            continue
+
+    # 4. Análisis de resultados y selección FINAL
+    if not mejores_candidatos:
+        print(f"\n❌ No se encontraron resultados para ninguna variante")
+        return None
+
+    print(f"\n📊 ANÁLISIS FINAL: {len(mejores_candidatos)} candidatos para evaluar")
+
+    # Preparar lista de portales disponibles
+    portales_disponibles = []
+    for cand in mejores_candidatos:
+        portal_num = cand.get('portalNumber')
+        if portal_num is not None:
+            portales_disponibles.append((portal_num, cand))
+
+    # Caso 1: No buscamos número específico
+    if not numero_buscado:
+        portal_encontrado = mejores_candidatos[0]
+        precision = "sin_numero"
+        print(f"   ⭐ Dirección sin número - usando primer resultado")
+
+    # Caso 2: Buscamos número y existe exactamente
+    elif any(portal_num == numero_buscado for portal_num, _ in portales_disponibles):
+        for portal_num, cand in portales_disponibles:
+            if portal_num == numero_buscado:
+                portal_encontrado = cand
+                precision = "exacta"
+                print(f"   🎯 ENCONTRADO portal {numero_buscado} (coincidencia exacta)")
+                break
+
+    # Caso 3: Buscamos número pero no existe - encontrar el MÁS CERCANO
+    else:
+        # Encontrar el portal con número más cercano
+        portal_mas_cercano = None
+        menor_diferencia = float('inf')
+
+        for portal_num, cand in portales_disponibles:
+            diferencia = abs(portal_num - numero_buscado)
+            if diferencia < menor_diferencia:
+                menor_diferencia = diferencia
+                portal_mas_cercano = cand
+                portal_num_cercano = portal_num
+
+        if portal_mas_cercano:
+            portal_encontrado = portal_mas_cercano
+            precision = "aproximada"
+            print(f"   🔍 APROXIMACIÓN: portal {numero_buscado} no existe")
+            print(f"   📍 Usando portal {portal_num_cercano} (diferencia: {menor_diferencia})")
+        else:
+            # Fallback: usar primer resultado
+            portal_encontrado = mejores_candidatos[0]
+            precision = "aproximada_general"
+            print(f"   ⚠️  No hay portales numerados - usando mejor candidato")
+
+    # 5. Construir resultado FINAL
+    resultado = {
+        "lat": float(portal_encontrado['lat']),
+        "lon": float(portal_encontrado['lng']),
+        "direccion_normalizada": portal_encontrado.get('address', mejor_variante or direccion_limpia),
+        "portal_original": numero_buscado,
+        "portal_encontrado": portal_encontrado.get('portalNumber'),
+        "codigo_postal": portal_encontrado.get('postalCode', cp),
+        "precision": precision,
+        "fuente": "CartoCiudad",
+        "timestamp": datetime.now().isoformat(),
+        "notas": ""
+    }
+
+    # Añadir notas según la precisión
+    if precision == "exacta":
+        resultado["notas"] = "Ubicación exacta del portal"
+    elif precision == "aproximada":
+        dif = abs(numero_buscado - resultado["portal_encontrado"])
+        resultado[
+            "notas"] = f"Portal {numero_buscado} no encontrado. Usando portal {resultado['portal_encontrado']} (diferencia: {dif})"
+    elif precision == "sin_numero":
+        resultado["notas"] = "Dirección sin número específico. Usando ubicación aproximada de la vía."
+    else:
+        resultado["notas"] = "Ubicación aproximada basada en la dirección proporcionada."
+
+    print(f"\n✅ RESULTADO FINAL: {resultado['direccion_normalizada']}")
+    print(f"   📍 Coordenadas: {resultado['lat']:.6f}, {resultado['lon']:.6f}")
+    print(f"   🎯 Precisión: {precision}")
+    print(f"   📝 Notas: {resultado['notas']}")
+
+    return resultado
+
+
+def guardar_coordenadas_en_db(precontrato_id, coordenadas):
+    """Guarda las coordenadas en la base de datos"""
+    if not coordenadas:
+        return False
+
+    conn = get_db_connection()
+    if not conn:
+        return False
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE precontratos 
+            SET coordenadas = ? 
+            WHERE id = ?
+        """, (json.dumps(coordenadas), precontrato_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"❌ Error guardando coordenadas: {e}")
+        return False
+    finally:
+        conn.close()
+#####
 
 
 # -------------------- VALIDAR TOKEN (CON DEPURACIÓN) --------------------
@@ -434,6 +661,57 @@ def generar_pdf(precontrato_datos, lineas=[]):
         datos_cliente["Firma"] = "✓ FIRMA ADJUNTADA (Ver imagen abajo)"
 
     tabla_seccion("Datos del Cliente", datos_cliente)
+
+    # ===========================================================================
+    # AQUÍ VA LA NUEVA SECCIÓN DE GEOLOCALIZACIÓN - DESPUÉS DE DATOS CLIENTE
+    # ===========================================================================
+    # Añadir coordenadas al PDF si existen
+    if precontrato_datos.get("coordenadas"):
+        try:
+            coords = json.loads(precontrato_datos["coordenadas"])
+            elements.append(Paragraph("📍 Geolocalización", styles['CustomHeading']))
+
+            # Determinar icono y texto según precisión
+            precision = coords.get('precision', 'desconocida')
+            if precision == "exacta":
+                icono_texto = "✅ UBICACIÓN EXACTA"
+                color = colors.darkgreen
+            elif precision == "aproximada":
+                icono_texto = "⚠️ UBICACIÓN APROXIMADA"
+                color = colors.orange
+            else:
+                icono_texto = "📍 UBICACIÓN DE REFERENCIA"
+                color = colors.blue
+
+            elements.append(Paragraph(f"<b>{icono_texto}</b>",
+                                      ParagraphStyle(name='PrecisionStyle',
+                                                     textColor=color,
+                                                     fontSize=10,
+                                                     spaceAfter=6)))
+
+            coord_data = [
+                ["Latitud", f"{coords.get('lat', 'N/A'):.6f}"],
+                ["Longitud", f"{coords.get('lon', 'N/A'):.6f}"],
+                ["Portal buscado", str(coords.get('portal_original', 'N/A'))],
+                ["Portal encontrado", str(coords.get('portal_encontrado', 'N/A'))],
+                ["Precisión", precision.upper()],
+                ["Notas", coords.get('notas', '')],
+                ["Google Maps", f"https://maps.google.com/?q={coords.get('lat')},{coords.get('lon')}"]
+            ]
+
+            coord_table = Table(coord_data, colWidths=[150, 350])
+            coord_table.setStyle(TableStyle([
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ]))
+            elements.append(coord_table)
+            elements.append(Spacer(1, 12))
+        except Exception as e:
+            print(f"Error al procesar coordenadas en PDF: {e}")
+            pass  # Si hay error, simplemente no mostrar
+    # ===========================================================================
 
     # Añadir imagen de la firma si existe
     if precontrato_datos.get("firma_base64"):
@@ -976,6 +1254,26 @@ def formulario_cliente(precontrato_id=None, token=None):
                                 "bic": bic,
                                 "firma_base64": firma_base64
                             }
+
+                            # ============================================
+                            # GEOLOCALIZACIÓN AUTOMÁTICA (TRANSPARENTE PARA EL USUARIO)
+                            # ============================================
+                            with st.spinner("📍 Obteniendo coordenadas de ubicación..."):
+                                coordenadas = obtener_coordenadas_cartociudad(direccion, cp, poblacion, provincia)
+
+                                if coordenadas:
+                                    # Guardar en la base de datos
+                                    guardar_coordenadas_en_db(
+                                        int(st.session_state.precontrato_id),
+                                        coordenadas
+                                    )
+
+                                    # También añadir al PDF
+                                    datos_pdf["coordenadas"] = json.dumps(coordenadas)
+
+                                    st.toast("✅ Ubicación geolocalizada automáticamente")
+                                else:
+                                    st.toast("⚠️ No se pudo obtener ubicación exacta, continuando...")
 
                             # Enviar correo
                             success, message = enviar_correo_pdf(datos_pdf, archivos=archivos, lineas=todas_lineas)

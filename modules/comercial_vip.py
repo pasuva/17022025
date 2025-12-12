@@ -1143,7 +1143,8 @@ def comercial_dashboard_vip():
                                         """, (token, expiracion, precontrato[0]))
                                         conn.commit()
                                         conn.close()
-                                        base_url = "https://one7022025.onrender.com"
+                                        #base_url = "https://one7022025.onrender.com"
+                                        base_url = "http://localhost:8501"
                                         link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
                                         st.success("✅ Nuevo enlace generado correctamente.")
                                         st.code(link_cliente, language="text")
@@ -1653,6 +1654,7 @@ def formulario_precontrato_section(apartment_id=None):
                         conn.close()
 
                         base_url = "https://one7022025.onrender.com"
+                        #base_url = "http://localhost:8501"
                         link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
 
                         st.toast("✅ Precontrato guardado correctamente.")
