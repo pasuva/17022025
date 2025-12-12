@@ -6,7 +6,8 @@ from streamlit_option_menu import option_menu
 
 from modules.notificaciones import correo_asignacion_administracion, correo_desasignacion_administracion, \
     correo_asignacion_administracion2, correo_reasignacion_saliente, \
-    correo_reasignacion_entrante, correo_confirmacion_viab_admin, correo_viabilidad_comercial
+    correo_reasignacion_entrante, correo_confirmacion_viab_admin, correo_viabilidad_comercial, \
+    notificar_creacion_ticket, notificar_actualizacion_ticket
 from folium.plugins import MarkerCluster, Geocoder
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 from datetime import datetime
@@ -277,6 +278,19 @@ def mostrar_soporte_gestor_comercial():
         crear_ticket_cliente()
 
 
+def obtener_emails_administradores():
+    """Obtiene los correos de todos los administradores."""
+    try:
+        conn = obtener_conexion()
+        query = "SELECT email FROM usuarios WHERE role = 'admin' AND email IS NOT NULL"
+        df = pd.read_sql(query, conn)
+        conn.close()
+        return df['email'].tolist()
+    except Exception as e:
+        st.warning(f"No se pudieron obtener correos de administradores: {str(e)[:100]}")
+        return []
+
+
 def mostrar_mis_tickets_gestor():
     """Muestra los tickets creados por el gestor comercial actual."""
 
@@ -339,8 +353,8 @@ def mostrar_mis_tickets_gestor():
             abiertos = len(df_tickets[df_tickets['estado'] == 'Abierto'])
             st.metric("Abiertos", abiertos)
         with col3:
-            resueltos = len(df_tickets[df_tickets['estado'].isin(['Resuelto', 'Cerrado'])])
-            st.metric("Resuelto", resueltos)
+            resueltos = len(df_tickets[df_tickets['estado'].isin(['Resuelto', 'Cancelado'])])
+            st.metric("Resueltos", resueltos)
 
         st.markdown("---")
 
@@ -358,7 +372,7 @@ def mostrar_mis_tickets_gestor():
                 'Abierto': '🟢',
                 'En Progreso': '🟡',
                 'Resuelto': '🔵',
-                'Cerrado': '⚫'
+                'Cancelado': '⚫'
             }.get(ticket['estado'], '⚪')
 
             with st.expander(f"{estado_color} Ticket #{ticket['ticket_id']}: {ticket['titulo']} {prioridad_color}"):
@@ -408,6 +422,19 @@ def mostrar_mis_tickets_gestor():
                                 conn = obtener_conexion()
                                 cursor = conn.cursor()
 
+                                # Obtener información del ticket para notificaciones
+                                cursor.execute("""
+                                    SELECT t.titulo, t.prioridad, t.categoria,
+                                           u.email as asignado_email, u.username as asignado_username,
+                                           u2.email as creador_email, u2.username as creador_username
+                                    FROM tickets t
+                                    LEFT JOIN usuarios u ON t.asignado_a = u.id
+                                    LEFT JOIN usuarios u2 ON t.usuario_id = u2.id
+                                    WHERE t.ticket_id = ?
+                                """, (ticket['ticket_id'],))
+
+                                ticket_data = cursor.fetchone()
+
                                 # Añadir la información al campo de comentarios
                                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
                                 info_formateada = f"\n\n[{timestamp}] {st.session_state['username']} (cliente):\n{nueva_info.strip()}"
@@ -424,6 +451,33 @@ def mostrar_mis_tickets_gestor():
 
                                 conn.commit()
                                 conn.close()
+
+                                # Enviar notificaciones por correo
+                                if ticket_data:
+                                    try:
+                                        ticket_info = {
+                                            'ticket_id': ticket['ticket_id'],
+                                            'titulo': ticket_data[0],
+                                            'actualizado_por': st.session_state['username'],
+                                            'tipo_actualizacion': 'informacion_adicional',
+                                            'descripcion_cambio': nueva_info.strip(),
+                                            'enlace': f"https://tu-dominio.com/ticket/{ticket['ticket_id']}"
+                                        }
+
+                                        # Notificar al asignado (si existe)
+                                        if ticket_data[3] and ticket_data[4] != st.session_state['username']:
+                                            notificar_actualizacion_ticket(ticket_data[3], ticket_info)
+
+                                        # Notificar a todos los administradores
+                                        admin_emails = obtener_emails_administradores()
+                                        for email in admin_emails:
+                                            if email != st.session_state.get('email', ''):  # Evitar auto-notificación
+                                                notificar_actualizacion_ticket(email, ticket_info)
+
+                                        st.toast(f"📧 Notificaciones enviadas")
+
+                                    except Exception as e:
+                                        st.warning(f"No se pudieron enviar notificaciones: {str(e)[:100]}")
 
                                 # Registrar en trazabilidad
                                 log_trazabilidad(
@@ -459,7 +513,7 @@ def crear_ticket_cliente():
     if st.session_state.get('ticket_creado'):
         ticket_info = st.session_state.get('ticket_info', {})
 
-        st.toast(f"✅ **Ticket #{ticket_info.get('id')} creado correctamente**")
+        st.success(f"✅ **Ticket #{ticket_info.get('id')} creado correctamente**")
 
         # Mostrar resumen
         with st.expander("📋 Ver resumen del ticket", expanded=True):
@@ -674,7 +728,41 @@ Información adicional:
                     ))
 
                     conn.commit()
+
+                    # Obtener email del creador para notificación
+                    cursor.execute("SELECT email FROM usuarios WHERE id = ?", (user_id,))
+                    creador_info = cursor.fetchone()
+
                     conn.close()
+
+                    # Enviar notificaciones por correo
+                    try:
+                        # Obtener correos de todos los administradores
+                        admin_emails = obtener_emails_administradores()
+
+                        ticket_info = {
+                            'ticket_id': ticket_id,
+                            'titulo': titulo,
+                            'creado_por': st.session_state['username'],
+                            'prioridad': prioridad,
+                            'categoria': categoria,
+                            'estado': "Abierto",
+                            'descripcion': descripcion[:100] + '...' if len(descripcion) > 100 else descripcion,
+                            'enlace': f"https://tu-dominio.com/ticket/{ticket_id}"
+                        }
+
+                        # Notificar a todos los administradores
+                        for email in admin_emails:
+                            notificar_creacion_ticket(email, ticket_info)
+
+                        # Notificar al creador (gestor comercial)
+                        if creador_info and creador_info[0]:
+                            notificar_creacion_ticket(creador_info[0], ticket_info)
+
+                        st.toast(f"📧 Notificaciones enviadas a {len(admin_emails)} administrador(es)")
+
+                    except Exception as e:
+                        st.warning(f"No se pudieron enviar notificaciones: {str(e)[:100]}")
 
                     # Registrar en trazabilidad
                     log_trazabilidad(

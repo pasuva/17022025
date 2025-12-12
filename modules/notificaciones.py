@@ -304,16 +304,7 @@ def correo_excel_control(destinatario, bytes_excel, nombre_archivo="datos_uis_co
 # En notificaciones.py
 
 def notificar_asignacion_ticket(destinatario, ticket_info):
-    """
-    Envía notificación cuando un ticket es asignado.
-    ticket_info: diccionario con:
-        - ticket_id: ID del ticket
-        - titulo: Título del ticket
-        - asignado_por: Quien asignó el ticket
-        - prioridad: Prioridad del ticket
-        - categoria: Categoría del ticket
-        - enlace: Enlace al ticket (opcional)
-    """
+
     asunto = f"🎫 Nuevo Ticket Asignado: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
 
     contenido = {
@@ -342,17 +333,7 @@ def notificar_asignacion_ticket(destinatario, ticket_info):
 
 
 def notificar_actualizacion_ticket(destinatario, ticket_info):
-    """
-    Envía notificación cuando un ticket es actualizado.
-    ticket_info: diccionario con:
-        - ticket_id: ID del ticket
-        - titulo: Título del ticket
-        - actualizado_por: Quien actualizó el ticket
-        - tipo_actualizacion: "comentario", "cambio_estado", "cambio_prioridad", etc.
-        - descripcion_cambio: Descripción del cambio
-        - nuevo_estado: Nuevo estado (si aplica)
-        - enlace: Enlace al ticket (opcional)
-    """
+
     # Determinar el asunto según el tipo de actualización
     if ticket_info['tipo_actualizacion'] == 'comentario':
         asunto = f"💬 Nuevo comentario en Ticket #{ticket_info['ticket_id']}: {ticket_info['titulo']}"
@@ -386,17 +367,7 @@ def notificar_actualizacion_ticket(destinatario, ticket_info):
 
 
 def notificar_resolucion_ticket(destinatario, ticket_info):
-    """
-    Envía notificación cuando un ticket es resuelto.
-    ticket_info: diccionario con:
-        - ticket_id: ID del ticket
-        - titulo: Título del ticket
-        - resuelto_por: Quien resolvió el ticket
-        - fecha_resolucion: Fecha de resolución
-        - comentario_final: Comentario de cierre (opcional)
-        - calificacion: Calificación (opcional)
-        - enlace: Enlace al ticket (opcional)
-    """
+
     asunto = f"✅ Ticket Resuelto: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
 
     contenido = {
@@ -430,18 +401,7 @@ def notificar_resolucion_ticket(destinatario, ticket_info):
 
 
 def notificar_creacion_ticket(destinatario, ticket_info):
-    """
-    Envía notificación cuando se crea un nuevo ticket.
-    ticket_info: diccionario con:
-        - ticket_id: ID del ticket
-        - titulo: Título del ticket
-        - creado_por: Quien creó el ticket
-        - prioridad: Prioridad del ticket
-        - categoria: Categoría del ticket
-        - estado: Estado inicial
-        - descripcion: Descripción breve
-        - enlace: Enlace al ticket (opcional)
-    """
+
     asunto = f"🎫 Nuevo Ticket Creado: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
 
     contenido = {
@@ -474,17 +434,7 @@ def notificar_creacion_ticket(destinatario, ticket_info):
 
 
 def notificar_reasignacion_ticket(destinatario, ticket_info):
-    """
-    Envía notificación cuando un ticket es reasignado.
-    ticket_info: diccionario con:
-        - ticket_id: ID del ticket
-        - titulo: Título del ticket
-        - reasignado_por: Quien reasignó el ticket
-        - anterior_asignado: Técnico anterior
-        - nuevo_asignado: Nuevo técnico asignado
-        - motivo: Motivo de la reasignación
-        - enlace: Enlace al ticket (opcional)
-    """
+
     asunto = f"🔄 Ticket Reasignado: #{ticket_info['ticket_id']} - {ticket_info['titulo']}"
 
     contenido = {

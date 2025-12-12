@@ -1,4 +1,3 @@
-import re
 import streamlit as st
 import sqlitecloud
 from datetime import datetime
@@ -13,6 +12,8 @@ from email.message import EmailMessage
 import base64
 from PIL import Image as PILImage
 import numpy as np
+import folium
+from streamlit_folium import st_folium
 
 # Añadir el import para el canvas de firma
 try:
@@ -427,7 +428,8 @@ def generar_pdf(precontrato_datos, lineas=[]):
         "Población": precontrato_datos["poblacion"],
         "Provincia": precontrato_datos["provincia"],
         "IBAN": precontrato_datos["iban"],
-        "BIC": precontrato_datos["bic"]
+        "BIC": precontrato_datos["bic"],
+        "Coordenadas": precontrato_datos.get("coordendas", ""),
     }
 
     # Añadir sección de firma si existe
@@ -673,7 +675,7 @@ def formulario_cliente(precontrato_id=None, token=None):
                 poblacion = st.text_input("Población*", precontrato[15] or "")
 
             # TERCERA FILA: Provincia y documentos
-            col6, col7 = st.columns([2, 3])
+            col6, col7, col8 = st.columns([2, 3, 4])
 
             with col6:
                 provincia = st.text_input("Provincia*", precontrato[16] or "")
@@ -683,6 +685,49 @@ def formulario_cliente(precontrato_id=None, token=None):
                                             accept_multiple_files=True,
                                             type=['pdf', 'png', 'jpg', 'jpeg'],
                                             help="Debe adjuntar al menos un documento para continuar")
+
+            with col8:
+                # Mostrar coordenadas si ya existen
+                coordendas = st.text_input("Coordenadas (selecciona en el mapa)",
+                                            value=precontrato[24] if precontrato[24] else "",
+                                            key="coordenadas_input",
+                                            disabled=True)
+
+            # MAPA para seleccionar coordenadas
+            st.subheader("🗺️ Selecciona la ubicación de tu vivienda en el mapa")
+
+            # Inicializar el mapa en el estado de sesión si no existe
+            if 'map_center' not in st.session_state:
+                # Centro en España
+                st.session_state.map_center = [40.4168, -3.7038]
+
+            # Crear un mapa de Folium
+            m = folium.Map(location=st.session_state.map_center, zoom_start=6)
+
+            # Añadir control de escala
+            folium.plugins.MousePosition().add_to(m)
+
+            # Añadir un marcador inicial si hay coordenadas
+            if precontrato[24]:
+                try:
+                    lat, lon = precontrato[24].split(',')
+                    folium.Marker([float(lat), float(lon)], tooltip="Ubicación actual").add_to(m)
+                except:
+                    pass
+
+            # Mostrar el mapa y capturar interacciones
+            map_data = st_folium(m, width=700, height=500)
+
+            # Si se hizo clic en el mapa, actualizar las coordenadas
+            if map_data and map_data.get("last_clicked"):
+                lat = map_data["last_clicked"]["lat"]
+                lon = map_data["last_clicked"]["lng"]
+                coordendas_str = f"{lat},{lon}"
+                st.session_state.coordendas_input = coordendas_str
+                # Actualizar el mapa para centrar en la nueva ubicación
+                st.session_state.map_center = [lat, lon]
+                # También podemos añadir un marcador en tiempo real? (en la siguiente iteración se verá)
+                st.rerun()
 
             # Mostrar ejemplos de formato válido
             with st.expander("ℹ️ Formatos válidos esperados"):
@@ -924,10 +969,10 @@ def formulario_cliente(precontrato_id=None, token=None):
                             cursor.execute("""
                                 UPDATE precontratos
                                 SET nombre=?, nombre_legal=?, cif=?, nif=?, telefono1=?, telefono2=?, mail=?, direccion=?,
-                                    cp=?, poblacion=?, provincia=?, iban=?, bic=?, firma=?
+                                    cp=?, poblacion=?, provincia=?, iban=?, bic=?, firma=?, coordendas=?
                                 WHERE id=?
                             """, (nombre, nombre_legal, cif, nif, telefono1, telefono2, mail, direccion,
-                                  cp, poblacion, provincia, iban, bic, firma_base64,
+                                  cp, poblacion, provincia, iban, bic, firma_base64, coordendas,
                                   int(st.session_state.precontrato_id)))
 
                             # Marcar link como usado
