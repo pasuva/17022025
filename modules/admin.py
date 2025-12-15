@@ -7843,288 +7843,169 @@ def mostrar_kpis_seguimiento_contratos():
 
                         st.metric("Contratos últimos 30 días", contratos_30_dias)
 
-            # Después de la sección de Evolución Temporal (después del último with tab5:)
-            st.subheader("🔍 Análisis Avanzados")
-
             # Crear pestañas para análisis avanzados
-            tab_av1, tab_av2, tab_av3, tab_av4, tab_av5, tab_av6, tab_av8, tab_av9, tab_av10, tab_av11 = st.tabs(
+            tab_av4, tab_av6, tab_av8, tab_av9, tab_av10 = st.tabs(
                 [
-                    "📅 Ciclo de Vida", "⏱️ Tiempos Respuesta", "📈 Estacionalidad", "🗺️ Geográfico",
-                    "🔌 Puertos/Divisores", "👨‍🔧 Eficiencia Técnico",
-                    "👥 Dashboard Comercial", "📊 Tendencias Avanzadas", "📊 Benchmarking", "⚙️ Eficiencia Operativa"
+                    "🗺️ Geográfico",
+                    "👨‍🔧 Eficiencia Técnico",
+                    "👥 Dashboard Comercial", "📊 Tendencias Avanzadas", "📊 Benchmarking"
                 ])
-            #1. Análisis de Ciclo de Vida del Contrato
-            with tab_av1:
-                st.markdown("#### Análisis de Ciclo de Vida del Contrato")
 
-                # Verificar que tenemos las fechas necesarias
-                if all(col in df_contratos.columns for col in ['fecha_inicio_contrato', 'fecha_fin_contrato']):
-                    # Calcular duración
-                    df_ciclo = df_contratos.copy()
-                    df_ciclo['duracion_contrato'] = (
-                                df_ciclo['fecha_fin_contrato'] - df_ciclo['fecha_inicio_contrato']).dt.days
-
-                    # Filtrar valores negativos o nulos
-                    df_ciclo = df_ciclo[df_ciclo['duracion_contrato'] > 0]
-
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Duración Promedio", f"{df_ciclo['duracion_contrato'].mean():.0f} días")
-                    with col2:
-                        st.metric("Duración Máxima", f"{df_ciclo['duracion_contrato'].max():.0f} días")
-                    with col3:
-                        st.metric("Duración Mínima", f"{df_ciclo['duracion_contrato'].min():.0f} días")
-
-                    # Distribución de duraciones
-                    fig = px.histogram(df_ciclo, x='duracion_contrato', nbins=50,
-                                       title='Distribución de Duración de Contratos',
-                                       labels={'duracion_contrato': 'Días de duración'})
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    # Duración por tipo de cliente
-                    if 'Tipo_cliente' in df_ciclo.columns:
-                        fig2 = px.box(df_ciclo, x='Tipo_cliente', y='duracion_contrato',
-                                      title='Duración por Tipo de Cliente')
-                        fig2.update_layout(height=400, xaxis_tickangle=45)
-                        st.plotly_chart(fig2, use_container_width=True)
-                else:
-                    st.warning(
-                        "Se requieren las columnas 'fecha_inicio_contrato' y 'fecha_fin_contrato' para este análisis")
-
-            #2. Análisis de Tiempos de Respuesta
-            with tab_av2:
-                st.markdown("#### Análisis de Tiempos de Respuesta")
-
-                # Tiempo desde ingreso hasta instalación
-                if all(col in df_contratos.columns for col in ['fecha_ingreso', 'fecha_instalacion']):
-                    df_tiempos = df_contratos.copy()
-                    df_tiempos['tiempo_respuesta'] = (
-                                df_tiempos['fecha_instalacion'] - df_tiempos['fecha_ingreso']).dt.days
-
-                    # Filtrar valores negativos o extremos (por ejemplo, más de 1 año)
-                    df_tiempos = df_tiempos[
-                        (df_tiempos['tiempo_respuesta'] >= 0) & (df_tiempos['tiempo_respuesta'] < 365)]
-
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Tiempo Promedio", f"{df_tiempos['tiempo_respuesta'].mean():.1f} días")
-                    with col2:
-                        st.metric("Mediana", f"{df_tiempos['tiempo_respuesta'].median():.1f} días")
-                    with col3:
-                        # Porcentaje de instalaciones en menos de 7 días
-                        pct_menos_7 = (df_tiempos['tiempo_respuesta'] <= 7).mean() * 100
-                        st.metric("Instalaciones < 7 días", f"{pct_menos_7:.1f}%")
-
-                    # Histograma
-                    fig = px.histogram(df_tiempos, x='tiempo_respuesta', nbins=30,
-                                       title='Distribución del Tiempo de Respuesta (Ingreso a Instalación)',
-                                       labels={'tiempo_respuesta': 'Días'})
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    # Tiempo de respuesta por técnico (si hay datos)
-                    if 'tecnico' in df_tiempos.columns:
-                        tecnicos_top = df_tiempos['tecnico'].value_counts().head(10).index
-                        df_tecnicos_top = df_tiempos[df_tiempos['tecnico'].isin(tecnicos_top)]
-
-                        fig2 = px.box(df_tecnicos_top, x='tecnico', y='tiempo_respuesta',
-                                      title='Tiempo de Respuesta por Técnico (Top 10)')
-                        fig2.update_layout(height=400, xaxis_tickangle=45)
-                        st.plotly_chart(fig2, use_container_width=True)
-                else:
-                    st.warning("Se requieren las columnas 'fecha_ingreso' y 'fecha_instalacion' para este análisis")
-
-            #3.Análisis de Estacionalidad
-            with tab_av3:
-                st.markdown("#### Análisis de Estacionalidad")
-
-                if 'fecha_inicio_contrato' in df_contratos.columns:
-                    df_estacional = df_contratos.copy()
-                    df_estacional['mes'] = df_estacional['fecha_inicio_contrato'].dt.month
-                    df_estacional['dia_semana'] = df_estacional['fecha_inicio_contrato'].dt.dayofweek  # 0=Lunes
-
-                    # Contratos por mes - CORREGIDO para manejar NaN
-                    # Filtrar valores NaN en mes
-                    df_mes_valido = df_estacional.dropna(subset=['mes'])
-                    if not df_mes_valido.empty:
-                        contratos_mes = df_mes_valido['mes'].value_counts().sort_index()
-                        # Asegurar que tenemos todos los meses del 1 al 12
-                        meses_completos = pd.Series(0, index=range(1, 13))
-                        meses_completos.update(contratos_mes)
-
-                        nombres_meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-                                         'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-
-                        fig1 = px.bar(x=nombres_meses, y=meses_completos.values,
-                                      title='Contratos por Mes',
-                                      labels={'x': 'Mes', 'y': 'Número de Contratos'},
-                                      color=meses_completos.values,
-                                      color_continuous_scale='Viridis')
-                        fig1.update_layout(height=300, showlegend=False)
-                        st.plotly_chart(fig1, use_container_width=True)
-                    else:
-                        st.warning("No hay datos válidos para mostrar contratos por mes")
-
-                    # Contratos por día de la semana - CORREGIDO para manejar NaN
-                    # Filtrar valores NaN en dia_semana
-                    df_dia_valido = df_estacional.dropna(subset=['dia_semana'])
-                    if not df_dia_valido.empty:
-                        # Convertir a enteros y filtrar valores válidos (0-6)
-                        df_dia_valido['dia_semana'] = df_dia_valido['dia_semana'].astype(int)
-                        df_dia_valido = df_dia_valido[df_dia_valido['dia_semana'].between(0, 6)]
-
-                        if not df_dia_valido.empty:
-                            contratos_dia = df_dia_valido['dia_semana'].value_counts().sort_index()
-                            # Asegurar que tenemos todos los días del 0 al 6
-                            dias_completos = pd.Series(0, index=range(0, 7))
-                            dias_completos.update(contratos_dia)
-
-                            dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-
-                            fig2 = px.bar(x=[dias[i] for i in dias_completos.index],
-                                          y=dias_completos.values,
-                                          title='Contratos por Día de la Semana',
-                                          labels={'x': 'Día', 'y': 'Número de Contratos'},
-                                          color=dias_completos.values,
-                                          color_continuous_scale='Plasma')
-                            fig2.update_layout(height=300, showlegend=False)
-                            st.plotly_chart(fig2, use_container_width=True)
-                        else:
-                            st.warning("No hay datos válidos para días de la semana (valores deben estar entre 0-6)")
-                    else:
-                        st.warning("No hay datos válidos para mostrar contratos por día de la semana")
-
-                    # Heatmap de día vs mes (si hay datos suficientes) - CORREGIDO
-                    try:
-                        # Filtrar valores NaN en mes y dia_semana
-                        df_heatmap = df_estacional.dropna(subset=['mes', 'dia_semana']).copy()
-
-                        if not df_heatmap.empty:
-                            # Convertir a enteros y filtrar valores válidos
-                            df_heatmap['mes'] = df_heatmap['mes'].astype(int)
-                            df_heatmap['dia_semana'] = df_heatmap['dia_semana'].astype(int)
-                            df_heatmap = df_heatmap[
-                                (df_heatmap['mes'].between(1, 12)) &
-                                (df_heatmap['dia_semana'].between(0, 6))
-                                ]
-
-                            if not df_heatmap.empty:
-                                heatmap_data = df_heatmap.groupby(['mes', 'dia_semana']).size().unstack()
-
-                                # Asegurar que tenemos todos los meses (1-12) y días (0-6)
-                                heatmap_data = heatmap_data.reindex(
-                                    index=range(1, 13),
-                                    columns=range(0, 7),
-                                    fill_value=0
-                                )
-
-                                nombres_meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-                                                 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-                                nombres_dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-
-                                heatmap_data.index = nombres_meses
-                                heatmap_data.columns = nombres_dias
-
-                                fig3 = px.imshow(
-                                    heatmap_data,
-                                    title='Calor de Contratos: Mes vs Día de la Semana',
-                                    labels=dict(x="Día de la semana", y="Mes", color="Contratos"),
-                                    color_continuous_scale='YlOrRd',
-                                    aspect='auto'
-                                )
-                                fig3.update_layout(height=500)
-                                st.plotly_chart(fig3, use_container_width=True)
-                            else:
-                                st.info("No hay suficientes datos válidos para el heatmap")
-                        else:
-                            st.info("No hay datos suficientes para el heatmap")
-                    except Exception as e:
-                        st.info(f"No se pudo generar el heatmap: {str(e)}")
-                else:
-                    st.warning("Se requiere la columna 'fecha_inicio_contrato' para el análisis de estacionalidad")
-
-            #4.Análisis Geográfico
             with tab_av4:
-                st.markdown("#### Análisis Geográfico")
 
                 if 'coordenadas' in df_contratos.columns:
-                    # Asumimos que las coordenadas están en formato "lat, lon" o similar
-                    # Intentamos separarlas
                     df_geo = df_contratos.copy()
+
+                    # Eliminar valores nulos y vacíos
                     df_geo = df_geo.dropna(subset=['coordenadas'])
+                    df_geo['coordenadas'] = df_geo['coordenadas'].astype(str).str.strip()
+                    df_geo = df_geo[df_geo['coordenadas'] != '']
 
-                    # Intentar extraer latitud y longitud
-                    try:
-                        # Si las coordenadas son una cadena con coma
-                        df_geo[['lat', 'lon']] = df_geo['coordenadas'].str.split(',', expand=True).astype(float)
+                    if not df_geo.empty:
+                        # Intentar extraer coordenadas de manera más robusta
+                        coords_list = []
+                        valid_coords = []
+                        estados_list = []  # Nueva lista para almacenar estados
+                        colores_list = []  # Nueva lista para almacenar colores
 
-                        # Mostrar mapa
-                        st.map(df_geo[['lat', 'lon']].dropna())
+                        for idx, row in df_geo.iterrows():
+                            coord_str = row['coordenadas']
+                            try:
+                                # Dividir por coma
+                                parts = coord_str.split(',')
+                                if len(parts) == 2:
+                                    lat = float(parts[0].strip())
+                                    lon = float(parts[1].strip())
+                                    # Verificar que sean coordenadas razonables
+                                    if -90 <= lat <= 90 and -180 <= lon <= 180:
+                                        coords_list.append((lat, lon))
+                                        valid_coords.append(row)
 
-                        # Densidad por áreas (agrupamiento)
-                        st.markdown("##### Densidad de Contratos por Área")
+                                        # Obtener el estado y asignar color
+                                        estado = row.get('estado', 'DESCONOCIDO')
+                                        estados_list.append(estado)
 
-                        # Podemos agregar por zonas (redondeando coordenadas)
-                        df_geo['lat_round'] = df_geo['lat'].round(2)
-                        df_geo['lon_round'] = df_geo['lon'].round(2)
-                        densidad = df_geo.groupby(['lat_round', 'lon_round']).size().reset_index(name='contratos')
+                                        # Asignar color basado en el estado
+                                        if 'FINALIZADO' in str(estado).upper():
+                                            colores_list.append('#00FF00')  # Verde para FINALIZADO
+                                        else:
+                                            colores_list.append('#FF0000')  # Rojo para otros estados
+                            except (ValueError, AttributeError):
+                                continue
 
-                        # Mostrar tabla de áreas con más contratos
-                        st.dataframe(densidad.sort_values('contratos', ascending=False).head(10))
+                        if coords_list:
+                            # Crear DataFrame con coordenadas válidas
+                            df_valid = pd.DataFrame(valid_coords)
+                            df_valid[['lat', 'lon']] = pd.DataFrame(coords_list, index=df_valid.index)
+                            df_valid['estado'] = estados_list  # Agregar columna de estados
 
-                    except Exception as e:
-                        st.error(f"No se pudieron procesar las coordenadas: {e}")
-                        st.info("Formato esperado: 'latitud, longitud' (ejemplo: '40.4168, -3.7038')")
+                            st.info(f"Coordenadas válidas encontradas: {len(df_valid)} de {len(df_geo)}")
+
+                            # Opción 1: Mapa con colores usando plotly (más personalizable)
+                            try:
+                                import plotly.express as px
+                                import plotly.graph_objects as go
+
+                                # Crear columna de color para plotly
+                                df_valid['color_mapa'] = df_valid['estado'].apply(
+                                    lambda x: '#00FF00' if 'FINALIZADO' in str(x).upper() else '#FF0000'
+                                )
+
+                                # Crear columna con texto del marcador
+                                df_valid['texto_marcador'] = df_valid.apply(
+                                    lambda row: f"Contrato: {row.get('num_contrato', 'N/A')}<br>" +
+                                                f"Cliente: {row.get('cliente', 'N/A')}<br>" +
+                                                f"Estado: {row.get('estado', 'N/A')}<br>" +
+                                                f"Técnico: {row.get('tecnico', 'N/A')}",
+                                    axis=1
+                                )
+
+                                # Crear mapa con plotly
+                                fig = go.Figure()
+
+                                # Agregar puntos FINALIZADOS (verdes)
+                                df_finalizados = df_valid[df_valid['color_mapa'] == '#00FF00']
+                                if not df_finalizados.empty:
+                                    fig.add_trace(go.Scattermapbox(
+                                        lat=df_finalizados['lat'],
+                                        lon=df_finalizados['lon'],
+                                        mode='markers',
+                                        marker=dict(size=12, color='#00FF00'),
+                                        text=df_finalizados['texto_marcador'],
+                                        name='FINALIZADO',
+                                        hovertemplate='%{text}<extra></extra>'
+                                    ))
+
+                                # Agregar puntos OTROS ESTADOS (rojos)
+                                df_otros = df_valid[df_valid['color_mapa'] == '#FF0000']
+                                if not df_otros.empty:
+                                    fig.add_trace(go.Scattermapbox(
+                                        lat=df_otros['lat'],
+                                        lon=df_otros['lon'],
+                                        mode='markers',
+                                        marker=dict(size=10, color='#FF0000'),
+                                        text=df_otros['texto_marcador'],
+                                        name='Otros estados',
+                                        hovertemplate='%{text}<extra></extra>'
+                                    ))
+
+                                # Configurar el layout del mapa
+                                fig.update_layout(
+                                    mapbox=dict(
+                                        style="open-street-map",  # Estilo gratuito
+                                        center=dict(lat=df_valid['lat'].mean(), lon=df_valid['lon'].mean()),
+                                        zoom=10
+                                    ),
+                                    height=600,
+                                    title="Mapa de Contratos por Estado",
+                                    legend=dict(
+                                        yanchor="top",
+                                        y=0.99,
+                                        xanchor="left",
+                                        x=0.01
+                                    ),
+                                    margin={"r":0,"t":30,"l":0,"b":0}
+                                )
+
+                                st.plotly_chart(fig, use_container_width=True)
+
+                                # Leyenda de colores
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.markdown("""
+                                    <div style="background-color: #00FF00; padding: 10px; border-radius: 5px; color: black;">
+                                    <strong>🟢 FINALIZADO</strong>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                with col2:
+                                    st.markdown("""
+                                    <div style="background-color: #FF0000; padding: 10px; border-radius: 5px; color: white;">
+                                    <strong>🔴 Otros estados</strong>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+
+                            except Exception as e:
+                                st.warning(f"No se pudo crear el mapa interactivo: {e}")
+                                # Opción 2: Mapa simple de Streamlit (menos personalizable)
+                                st.map(df_valid[['lat', 'lon']])
+
+                                # Mostrar tabla con colores
+                                st.info("Usando mapa básico de Streamlit (todos los puntos en azul)")
+
+                        else:
+                            st.warning("No se encontraron coordenadas en formato válido")
+                            # Mostrar ejemplos
+                            st.write("Ejemplos encontrados:")
+                            st.write(df_geo['coordenadas'].head(5).tolist())
+                    else:
+                        st.warning("La columna 'coordenadas' está vacía o contiene solo valores nulos")
                 else:
                     st.warning("No hay columna 'coordenadas' para análisis geográfico")
 
-            #5. Análisis de Saturación de Puertos/Divisores
-            with tab_av5:
-                st.markdown("#### Análisis de Saturación de Puertos/Divisores")
+            
 
-                # Divisores
-                if 'divisor' in df_contratos.columns:
-                    st.markdown("##### Divisores")
-                    divisor_counts = df_contratos['divisor'].value_counts().reset_index()
-                    divisor_counts.columns = ['Divisor', 'Contratos']
-
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.dataframe(divisor_counts.head(10))
-
-                    with col2:
-                        fig = px.pie(divisor_counts.head(10), values='Contratos', names='Divisor',
-                                     title='Top 10 Divisores más Utilizados')
-                        fig.update_layout(height=400)
-                        st.plotly_chart(fig, use_container_width=True)
-
-                # Puertos
-                if 'puerto' in df_contratos.columns:
-                    st.markdown("##### Puertos")
-                    puerto_counts = df_contratos['puerto'].value_counts().reset_index()
-                    puerto_counts.columns = ['Puerto', 'Contratos']
-
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.dataframe(puerto_counts.head(10))
-
-                    with col2:
-                        fig = px.bar(puerto_counts.head(10), x='Puerto', y='Contratos',
-                                     title='Top 10 Puertos más Utilizados')
-                        fig.update_layout(height=400)
-                        st.plotly_chart(fig, use_container_width=True)
-
-                # Relación divisor-puerto
-                if all(col in df_contratos.columns for col in ['divisor', 'puerto']):
-                    st.markdown("##### Combinaciones Divisor-Puerto más Comunes")
-                    combinaciones = df_contratos.groupby(['divisor', 'puerto']).size().reset_index(name='Contratos')
-                    combinaciones = combinaciones.sort_values('Contratos', ascending=False)
-                    st.dataframe(combinaciones.head(20))
-
-            #6. Análisis de Eficiencia por Técnico
+            # 6. Análisis de Eficiencia por Técnico
             with tab_av6:
-                st.markdown("#### Análisis de Eficiencia por Técnico")
 
                 if 'tecnico' in df_contratos.columns:
                     # Contratos por técnico
@@ -8164,11 +8045,8 @@ def mostrar_kpis_seguimiento_contratos():
                 else:
                     st.warning("No hay datos de técnicos para el análisis")
 
-
-
             #8. Dashboard Interactivo por Comercial
             with tab_av8:
-                st.markdown("#### Dashboard por Comercial")
 
                 if 'comercial' in df_contratos.columns:
                     # Selector de comercial
@@ -8225,7 +8103,6 @@ def mostrar_kpis_seguimiento_contratos():
 
             #9. Análisis de Tendencias Temporales Avanzado
             with tab_av9:
-                st.markdown("#### Análisis de Tendencias Temporales Avanzado")
 
                 if 'fecha_inicio_contrato' in df_contratos.columns:
                     # Preparar datos
@@ -8303,11 +8180,9 @@ def mostrar_kpis_seguimiento_contratos():
 
             #10. Benchmarking Interno
             with tab_av10:
-                st.markdown("#### Benchmarking Interno")
 
                 # Comparar comerciales
                 if 'comercial' in df_contratos.columns:
-                    st.markdown("##### Benchmarking de Comerciales")
 
                     # Seleccionar métricas
                     metricas_comercial = df_contratos.groupby('comercial').agg({
@@ -8338,7 +8213,6 @@ def mostrar_kpis_seguimiento_contratos():
 
                 # Comparar técnicos (si hay datos)
                 if 'tecnico' in df_contratos.columns:
-                    st.markdown("##### Benchmarking de Técnicos")
 
                     # Similar a comerciales, pero para técnicos
                     metricas_tecnico = df_contratos.groupby('tecnico').agg({
@@ -8360,80 +8234,7 @@ def mostrar_kpis_seguimiento_contratos():
                     st.dataframe(metricas_tecnico.nlargest(10, 'Instalaciones/Día')[
                                      ['Total Instalaciones', 'Días Activo', 'Instalaciones/Día']])
 
-            #11. Análisis de Eficiencia Operativa
-            with tab_av11:
-                st.markdown("#### Análisis de Eficiencia Operativa")
-
-                # 1. Tasa de éxito en primera instalación (si hay datos de fecha_instalacion y fecha_ingreso)
-                if all(col in df_contratos.columns for col in ['fecha_ingreso', 'fecha_instalacion']):
-                    df_operativa = df_contratos.copy()
-
-                    # Calcular días desde ingreso hasta instalación
-                    df_operativa['dias_instalacion'] = (
-                                df_operativa['fecha_instalacion'] - df_operativa['fecha_ingreso']).dt.days
-
-                    # Definir "éxito" como instalación en menos de 14 días
-                    df_operativa['exito_rapido'] = df_operativa['dias_instalacion'] <= 14
-
-                    tasa_exito = df_operativa['exito_rapido'].mean() * 100
-
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Tasa de éxito rápido (<14 días)", f"{tasa_exito:.1f}%")
-
-                    with col2:
-                        # Tiempo promedio
-                        tiempo_promedio = df_operativa['dias_instalacion'].mean()
-                        st.metric("Tiempo promedio instalación", f"{tiempo_promedio:.1f} días")
-
-                    with col3:
-                        # Porcentaje de instalaciones con retraso (>30 días)
-                        retraso = (df_operativa['dias_instalacion'] > 30).mean() * 100
-                        st.metric("Instalaciones con retraso (>30 días)", f"{retraso:.1f}%")
-
-                    # Gráfico de distribución de tiempos
-                    fig = px.histogram(df_operativa, x='dias_instalacion', nbins=30,
-                                       title='Distribución del Tiempo de Instalación',
-                                       labels={'dias_instalacion': 'Días desde ingreso hasta instalación'})
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                # 2. Análisis de reincidencias (clientes con múltiples contratos)
-                st.markdown("##### Análisis de Reincidencia de Clientes")
-                if 'cliente' in df_contratos.columns:
-                    contratos_por_cliente = df_contratos['cliente'].value_counts()
-                    clientes_recurrentes = contratos_por_cliente[contratos_por_cliente > 1]
-
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Clientes recurrentes (2+ contratos)", len(clientes_recurrentes))
-
-                    with col2:
-                        st.metric("Porcentaje de clientes recurrentes",
-                                  f"{(len(clientes_recurrentes) / len(contratos_por_cliente) * 100):.1f}%")
-
-                    # Mostrar top clientes recurrentes
-                    st.markdown("**Top 20 Clientes Recurrentes**")
-                    st.dataframe(contratos_por_cliente.head(20).reset_index().rename(
-                        columns={'cliente': 'Cliente', 'count': 'Contratos'}))
-
-                # 3. Eficiencia en el uso de recursos (divisor/puerto)
-                if all(col in df_contratos.columns for col in ['divisor', 'puerto']):
-                    st.markdown("##### Eficiencia en Uso de Recursos")
-
-                    # Divisores más utilizados vs menos utilizados
-                    divisor_usage = df_contratos['divisor'].value_counts()
-
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown("**Divisores más utilizados**")
-                        st.dataframe(divisor_usage.head(10).reset_index().rename(
-                            columns={'divisor': 'Divisor', 'count': 'Contratos'}))
-
-                    with col2:
-                        st.markdown("**Divisores menos utilizados**")
-                        st.dataframe(divisor_usage.tail(10).reset_index().rename(
-                            columns={'divisor': 'Divisor', 'count': 'Contratos'}))
+            
 
             # Filtros
             col1, col2, col3 = st.columns(3)
