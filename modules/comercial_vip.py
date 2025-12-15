@@ -1160,8 +1160,8 @@ def comercial_dashboard_vip():
 
                                     conn.commit()
                                     conn.close()
-
-                                    base_url = "http://localhost:8501"
+                                    base_url = "https://one7022025.onrender.com"
+                                    #base_url = "http://localhost:8501"
                                     link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
                                     st.success(mensaje)
                                     st.code(link_cliente, language="text")
@@ -1197,11 +1197,6 @@ def generar_ticket():
     return ticket
 
 def guardar_viabilidad(datos):
-    """
-    Inserta los datos en la tabla Viabilidades.
-    Se espera que 'datos' sea una tupla con el siguiente orden:
-    (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
-    """
     # Guardar los datos en la base de datos
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1240,7 +1235,6 @@ def guardar_viabilidad(datos):
     else:
         cursor.execute("SELECT email FROM usuarios WHERE username = 'juan'")
     resultado_jefe = cursor.fetchone()
-    #email_comercial_jefe = resultado_jefe[0] if resultado_jefe else None
 
     conn.close()
 
@@ -1277,13 +1271,6 @@ def guardar_viabilidad(datos):
         )
     else:
         st.warning("⚠️ No se encontró ningún email de administrador, no se pudo enviar la notificación.")
-
-    # Notificar al comercial jefe específico
-    #if email_comercial_jefe:
-    #    correo_viabilidad_comercial(email_comercial_jefe, ticket_id, descripcion_viabilidad)
-    #    st.toast(f"📧 Notificación enviada al comercial jefe: {email_comercial_jefe}")
-    #else:
-    #    st.warning("⚠️ No se encontró email del comercial jefe, no se pudo enviar la notificación.")
 
     # Mostrar mensaje de éxito en Streamlit
     st.toast("✅ Los cambios para la viabilidad han sido guardados correctamente")
@@ -2432,11 +2419,6 @@ def mostrar_formulario(click_data):
                 nif = st.text_input("🪪 NIF / DNI", key=f"nif_{form_key}")
 
                 def es_nif_valido(nif):
-                    """
-                    Valida NIF/NIE español:
-                    - NIF: 8 dígitos + letra
-                    - NIE: X/Y/Z + 7 dígitos + letra
-                    """
                     nif = nif.upper()
                     patron_nif = r'^\d{8}[A-Z]$'
                     patron_nie = r'^[XYZ]\d{7}[A-Z]$'
