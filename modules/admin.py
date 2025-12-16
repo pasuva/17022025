@@ -23,6 +23,7 @@ from folium.plugins import MarkerCluster, Geocoder, Fullscreen
 from streamlit_folium import st_folium
 from branca.element import Template, MacroElement
 from typing import Tuple, Dict, List
+from modules.reportes_pdf import preparar_datos_para_pdf, generar_pdf_reportlab
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -7843,398 +7844,157 @@ def mostrar_kpis_seguimiento_contratos():
 
                         st.metric("Contratos últimos 30 días", contratos_30_dias)
 
-            # Crear pestañas para análisis avanzados
-            tab_av4, tab_av6, tab_av8, tab_av9, tab_av10 = st.tabs(
-                [
-                    "🗺️ Geográfico",
-                    "👨‍🔧 Eficiencia Técnico",
-                    "👥 Dashboard Comercial", "📊 Tendencias Avanzadas", "📊 Benchmarking"
-                ])
+            # Análisis Geográfico
+            st.subheader("🗺️ Análisis Geográfico")
 
-            with tab_av4:
+            if 'coordenadas' in df_contratos.columns:
+                df_geo = df_contratos.copy()
 
-                if 'coordenadas' in df_contratos.columns:
-                    df_geo = df_contratos.copy()
+                # Eliminar valores nulos y vacíos
+                df_geo = df_geo.dropna(subset=['coordenadas'])
+                df_geo['coordenadas'] = df_geo['coordenadas'].astype(str).str.strip()
+                df_geo = df_geo[df_geo['coordenadas'] != '']
 
-                    # Eliminar valores nulos y vacíos
-                    df_geo = df_geo.dropna(subset=['coordenadas'])
-                    df_geo['coordenadas'] = df_geo['coordenadas'].astype(str).str.strip()
-                    df_geo = df_geo[df_geo['coordenadas'] != '']
+                if not df_geo.empty:
+                    # Intentar extraer coordenadas de manera más robusta
+                    coords_list = []
+                    valid_coords = []
+                    estados_list = []  # Nueva lista para almacenar estados
+                    colores_list = []  # Nueva lista para almacenar colores
 
-                    if not df_geo.empty:
-                        # Intentar extraer coordenadas de manera más robusta
-                        coords_list = []
-                        valid_coords = []
-                        estados_list = []  # Nueva lista para almacenar estados
-                        colores_list = []  # Nueva lista para almacenar colores
+                    for idx, row in df_geo.iterrows():
+                        coord_str = row['coordenadas']
+                        try:
+                            # Dividir por coma
+                            parts = coord_str.split(',')
+                            if len(parts) == 2:
+                                lat = float(parts[0].strip())
+                                lon = float(parts[1].strip())
+                                # Verificar que sean coordenadas razonables
+                                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                                    coords_list.append((lat, lon))
+                                    valid_coords.append(row)
 
-                        for idx, row in df_geo.iterrows():
-                            coord_str = row['coordenadas']
-                            try:
-                                # Dividir por coma
-                                parts = coord_str.split(',')
-                                if len(parts) == 2:
-                                    lat = float(parts[0].strip())
-                                    lon = float(parts[1].strip())
-                                    # Verificar que sean coordenadas razonables
-                                    if -90 <= lat <= 90 and -180 <= lon <= 180:
-                                        coords_list.append((lat, lon))
-                                        valid_coords.append(row)
+                                    # Obtener el estado y asignar color
+                                    estado = row.get('estado', 'DESCONOCIDO')
+                                    estados_list.append(estado)
 
-                                        # Obtener el estado y asignar color
-                                        estado = row.get('estado', 'DESCONOCIDO')
-                                        estados_list.append(estado)
+                                    # Asignar color basado en el estado
+                                    if 'FINALIZADO' in str(estado).upper():
+                                        colores_list.append('#00FF00')  # Verde para FINALIZADO
+                                    else:
+                                        colores_list.append('#FF0000')  # Rojo para otros estados
+                        except (ValueError, AttributeError):
+                            continue
 
-                                        # Asignar color basado en el estado
-                                        if 'FINALIZADO' in str(estado).upper():
-                                            colores_list.append('#00FF00')  # Verde para FINALIZADO
-                                        else:
-                                            colores_list.append('#FF0000')  # Rojo para otros estados
-                            except (ValueError, AttributeError):
-                                continue
+                    if coords_list:
+                        # Crear DataFrame con coordenadas válidas
+                        df_valid = pd.DataFrame(valid_coords)
+                        df_valid[['lat', 'lon']] = pd.DataFrame(coords_list, index=df_valid.index)
+                        df_valid['estado'] = estados_list  # Agregar columna de estados
 
-                        if coords_list:
-                            # Crear DataFrame con coordenadas válidas
-                            df_valid = pd.DataFrame(valid_coords)
-                            df_valid[['lat', 'lon']] = pd.DataFrame(coords_list, index=df_valid.index)
-                            df_valid['estado'] = estados_list  # Agregar columna de estados
+                        st.info(f"Coordenadas válidas encontradas: {len(df_valid)} de {len(df_geo)}")
 
-                            st.info(f"Coordenadas válidas encontradas: {len(df_valid)} de {len(df_geo)}")
+                        # Opción 1: Mapa con colores usando plotly (más personalizable)
+                        try:
+                            import plotly.express as px
+                            import plotly.graph_objects as go
 
-                            # Opción 1: Mapa con colores usando plotly (más personalizable)
-                            try:
-                                import plotly.express as px
-                                import plotly.graph_objects as go
+                            # Crear columna de color para plotly
+                            df_valid['color_mapa'] = df_valid['estado'].apply(
+                                lambda x: '#00FF00' if 'FINALIZADO' in str(x).upper() else '#FF0000'
+                            )
 
-                                # Crear columna de color para plotly
-                                df_valid['color_mapa'] = df_valid['estado'].apply(
-                                    lambda x: '#00FF00' if 'FINALIZADO' in str(x).upper() else '#FF0000'
-                                )
+                            # Crear columna con texto del marcador
+                            df_valid['texto_marcador'] = df_valid.apply(
+                                lambda row: f"Contrato: {row.get('num_contrato', 'N/A')}<br>" +
+                                            f"Cliente: {row.get('cliente', 'N/A')}<br>" +
+                                            f"Estado: {row.get('estado', 'N/A')}<br>" +
+                                            f"Técnico: {row.get('tecnico', 'N/A')}",
+                                axis=1
+                            )
 
-                                # Crear columna con texto del marcador
-                                df_valid['texto_marcador'] = df_valid.apply(
-                                    lambda row: f"Contrato: {row.get('num_contrato', 'N/A')}<br>" +
-                                                f"Cliente: {row.get('cliente', 'N/A')}<br>" +
-                                                f"Estado: {row.get('estado', 'N/A')}<br>" +
-                                                f"Técnico: {row.get('tecnico', 'N/A')}",
-                                    axis=1
-                                )
+                            # Crear mapa con plotly
+                            fig = go.Figure()
 
-                                # Crear mapa con plotly
-                                fig = go.Figure()
+                            # Agregar puntos FINALIZADOS (verdes)
+                            df_finalizados = df_valid[df_valid['color_mapa'] == '#00FF00']
+                            if not df_finalizados.empty:
+                                fig.add_trace(go.Scattermapbox(
+                                    lat=df_finalizados['lat'],
+                                    lon=df_finalizados['lon'],
+                                    mode='markers',
+                                    marker=dict(size=12, color='#00FF00'),
+                                    text=df_finalizados['texto_marcador'],
+                                    name='FINALIZADO',
+                                    hovertemplate='%{text}<extra></extra>'
+                                ))
 
-                                # Agregar puntos FINALIZADOS (verdes)
-                                df_finalizados = df_valid[df_valid['color_mapa'] == '#00FF00']
-                                if not df_finalizados.empty:
-                                    fig.add_trace(go.Scattermapbox(
-                                        lat=df_finalizados['lat'],
-                                        lon=df_finalizados['lon'],
-                                        mode='markers',
-                                        marker=dict(size=12, color='#00FF00'),
-                                        text=df_finalizados['texto_marcador'],
-                                        name='FINALIZADO',
-                                        hovertemplate='%{text}<extra></extra>'
-                                    ))
+                            # Agregar puntos OTROS ESTADOS (rojos)
+                            df_otros = df_valid[df_valid['color_mapa'] == '#FF0000']
+                            if not df_otros.empty:
+                                fig.add_trace(go.Scattermapbox(
+                                    lat=df_otros['lat'],
+                                    lon=df_otros['lon'],
+                                    mode='markers',
+                                    marker=dict(size=10, color='#FF0000'),
+                                    text=df_otros['texto_marcador'],
+                                    name='Otros estados',
+                                    hovertemplate='%{text}<extra></extra>'
+                                ))
 
-                                # Agregar puntos OTROS ESTADOS (rojos)
-                                df_otros = df_valid[df_valid['color_mapa'] == '#FF0000']
-                                if not df_otros.empty:
-                                    fig.add_trace(go.Scattermapbox(
-                                        lat=df_otros['lat'],
-                                        lon=df_otros['lon'],
-                                        mode='markers',
-                                        marker=dict(size=10, color='#FF0000'),
-                                        text=df_otros['texto_marcador'],
-                                        name='Otros estados',
-                                        hovertemplate='%{text}<extra></extra>'
-                                    ))
+                            # Configurar el layout del mapa
+                            fig.update_layout(
+                                mapbox=dict(
+                                    style="open-street-map",  # Estilo gratuito
+                                    center=dict(lat=df_valid['lat'].mean(), lon=df_valid['lon'].mean()),
+                                    zoom=10
+                                ),
+                                height=600,
+                                title="Mapa de Contratos por Estado",
+                                legend=dict(
+                                    yanchor="top",
+                                    y=0.99,
+                                    xanchor="left",
+                                    x=0.01
+                                ),
+                                margin={"r": 0, "t": 30, "l": 0, "b": 0}
+                            )
 
-                                # Configurar el layout del mapa
-                                fig.update_layout(
-                                    mapbox=dict(
-                                        style="open-street-map",  # Estilo gratuito
-                                        center=dict(lat=df_valid['lat'].mean(), lon=df_valid['lon'].mean()),
-                                        zoom=10
-                                    ),
-                                    height=600,
-                                    title="Mapa de Contratos por Estado",
-                                    legend=dict(
-                                        yanchor="top",
-                                        y=0.99,
-                                        xanchor="left",
-                                        x=0.01
-                                    ),
-                                    margin={"r":0,"t":30,"l":0,"b":0}
-                                )
-
-                                st.plotly_chart(fig, use_container_width=True)
-
-                                # Leyenda de colores
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.markdown("""
-                                    <div style="background-color: #00FF00; padding: 10px; border-radius: 5px; color: black;">
-                                    <strong>🟢 FINALIZADO</strong>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                with col2:
-                                    st.markdown("""
-                                    <div style="background-color: #FF0000; padding: 10px; border-radius: 5px; color: white;">
-                                    <strong>🔴 Otros estados</strong>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-
-                            except Exception as e:
-                                st.warning(f"No se pudo crear el mapa interactivo: {e}")
-                                # Opción 2: Mapa simple de Streamlit (menos personalizable)
-                                st.map(df_valid[['lat', 'lon']])
-
-                                # Mostrar tabla con colores
-                                st.info("Usando mapa básico de Streamlit (todos los puntos en azul)")
-
-                        else:
-                            st.warning("No se encontraron coordenadas en formato válido")
-                            # Mostrar ejemplos
-                            st.write("Ejemplos encontrados:")
-                            st.write(df_geo['coordenadas'].head(5).tolist())
-                    else:
-                        st.warning("La columna 'coordenadas' está vacía o contiene solo valores nulos")
-                else:
-                    st.warning("No hay columna 'coordenadas' para análisis geográfico")
-
-            
-
-            # 6. Análisis de Eficiencia por Técnico
-            with tab_av6:
-
-                if 'tecnico' in df_contratos.columns:
-                    # Contratos por técnico
-                    tecnico_counts = df_contratos['tecnico'].value_counts().reset_index()
-                    tecnico_counts.columns = ['Técnico', 'Total Contratos']
-
-                    # Si tenemos fecha de instalación, podemos calcular la frecuencia
-                    if 'fecha_instalacion' in df_contratos.columns:
-                        # Ordenar por fecha
-                        df_tec = df_contratos.sort_values('fecha_instalacion')
-                        # Calcular días entre instalaciones por técnico
-                        df_tec['dias_entre_instalaciones'] = df_tec.groupby('tecnico')[
-                            'fecha_instalacion'].diff().dt.days
-
-                        # Resumen por técnico
-                        resumen_tecnico = df_tec.groupby('tecnico').agg({
-                            'id': 'count',
-                            'dias_entre_instalaciones': 'mean'
-                        }).round(1)
-                        resumen_tecnico.columns = ['Total Contratos', 'Días promedio entre instalaciones']
-                        resumen_tecnico = resumen_tecnico.sort_values('Total Contratos', ascending=False)
-
-                        st.dataframe(resumen_tecnico.head(20))
-
-                        # Gráfico de eficiencia: contratos vs tiempo promedio
-                        fig = px.scatter(resumen_tecnico.head(15),
-                                         x='Total Contratos',
-                                         y='Días promedio entre instalaciones',
-                                         text=resumen_tecnico.head(15).index,
-                                         title='Eficiencia de Técnicos: Contratos vs Tiempo entre Instalaciones')
-                        fig.update_traces(textposition='top center')
-                        fig.update_layout(height=500)
-                        st.plotly_chart(fig, use_container_width=True)
-
-                    else:
-                        st.dataframe(tecnico_counts.head(20))
-                else:
-                    st.warning("No hay datos de técnicos para el análisis")
-
-            #8. Dashboard Interactivo por Comercial
-            with tab_av8:
-
-                if 'comercial' in df_contratos.columns:
-                    # Selector de comercial
-                    comerciales = sorted(df_contratos['comercial'].dropna().unique())
-                    comercial_seleccionado = st.selectbox("Selecciona un comercial:", comerciales)
-
-                    if comercial_seleccionado:
-                        df_comercial = df_contratos[df_contratos['comercial'] == comercial_seleccionado]
-
-                        # KPIs del comercial
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Total Contratos", len(df_comercial))
-                        with col2:
-                            if 'fecha_inicio_contrato' in df_comercial.columns:
-                                antiguedad = (pd.Timestamp.now() - df_comercial['fecha_inicio_contrato'].min()).days
-                                st.metric("Días activo", antiguedad)
-                        with col3:
-                            if 'estado' in df_comercial.columns:
-                                estados_unicos = df_comercial['estado'].nunique()
-                                st.metric("Estados distintos", estados_unicos)
-                        with col4:
-                            if 'Tipo_cliente' in df_comercial.columns:
-                                tipos = df_comercial['Tipo_cliente'].nunique()
-                                st.metric("Tipos de cliente", tipos)
-
-                        # Gráfico de contratos por mes
-                        if 'fecha_inicio_contrato' in df_comercial.columns:
-                            df_comercial['mes'] = df_comercial['fecha_inicio_contrato'].dt.to_period('M')
-                            mensual = df_comercial.groupby('mes').size().reset_index(name='Contratos')
-                            mensual['mes'] = mensual['mes'].astype(str)
-
-                            fig = px.line(mensual, x='mes', y='Contratos', markers=True,
-                                          title=f'Contratos por Mes - {comercial_seleccionado}')
-                            fig.update_layout(height=300)
                             st.plotly_chart(fig, use_container_width=True)
 
-                        # Top clientes del comercial
-                        st.markdown("##### Top 10 Clientes (por número de contratos)")
-                        top_clientes = df_comercial['cliente'].value_counts().head(10).reset_index()
-                        top_clientes.columns = ['Cliente', 'Contratos']
-                        st.dataframe(top_clientes)
+                            # Leyenda de colores
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown("""
+                                <div style="background-color: #00FF00; padding: 10px; border-radius: 5px; color: black;">
+                                <strong>🟢 FINALIZADO</strong>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            with col2:
+                                st.markdown("""
+                                <div style="background-color: #FF0000; padding: 10px; border-radius: 5px; color: white;">
+                                <strong>🔴 Otros estados</strong>
+                                </div>
+                                """, unsafe_allow_html=True)
 
-                        # Métodos de entrada utilizados
-                        if 'metodo_entrada' in df_comercial.columns:
-                            st.markdown("##### Métodos de Entrada Utilizados")
-                            metodos = df_comercial['metodo_entrada'].value_counts().reset_index()
-                            metodos.columns = ['Método', 'Contratos']
-                            fig2 = px.pie(metodos, values='Contratos', names='Método')
-                            fig2.update_layout(height=300)
-                            st.plotly_chart(fig2, use_container_width=True)
+                        except Exception as e:
+                            st.warning(f"No se pudo crear el mapa interactivo: {e}")
+                            # Opción 2: Mapa simple de Streamlit (menos personalizable)
+                            st.map(df_valid[['lat', 'lon']])
+
+                            # Mostrar tabla con colores
+                            st.info("Usando mapa básico de Streamlit (todos los puntos en azul)")
+
+                    else:
+                        st.warning("No se encontraron coordenadas en formato válido")
+                        # Mostrar ejemplos
+                        st.write("Ejemplos encontrados:")
+                        st.write(df_geo['coordenadas'].head(5).tolist())
                 else:
-                    st.warning("No hay datos de comerciales para el dashboard")
-
-            #9. Análisis de Tendencias Temporales Avanzado
-            with tab_av9:
-
-                if 'fecha_inicio_contrato' in df_contratos.columns:
-                    # Preparar datos
-                    df_tendencias = df_contratos.copy()
-                    df_tendencias['fecha'] = df_tendencias['fecha_inicio_contrato']
-                    df_tendencias = df_tendencias.set_index('fecha')
-
-                    # Resample por mes y contar contratos
-                    mensual = df_tendencias.resample('M').size()
-
-                    # Calcular media móvil de 3 meses
-                    mensual_ma = mensual.rolling(window=3).mean()
-
-                    # Gráfico de línea con media móvil
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=mensual.index, y=mensual.values,
-                                             mode='lines+markers', name='Contratos mensuales'))
-                    fig.add_trace(go.Scatter(x=mensual_ma.index, y=mensual_ma.values,
-                                             mode='lines', name='Media móvil (3 meses)',
-                                             line=dict(color='red', dash='dash')))
-
-                    fig.update_layout(title='Tendencia Mensual con Media Móvil',
-                                      height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    # Descomposición estacional (si hay suficientes datos)
-                    if len(mensual) >= 24:  # Al menos 2 años de datos
-                        from statsmodels.tsa.seasonal import seasonal_decompose
-                        try:
-                            decomposition = seasonal_decompose(mensual.dropna(), model='additive', period=12)
-
-                            fig2 = go.Figure()
-                            fig2.add_trace(go.Scatter(x=decomposition.trend.index, y=decomposition.trend.values,
-                                                      name='Tendencia'))
-                            fig2.add_trace(go.Scatter(x=decomposition.seasonal.index, y=decomposition.seasonal.values,
-                                                      name='Estacionalidad'))
-                            fig2.add_trace(go.Scatter(x=decomposition.resid.index, y=decomposition.resid.values,
-                                                      name='Residual'))
-                            fig2.update_layout(title='Descomposición de la Serie Temporal',
-                                               height=500)
-                            st.plotly_chart(fig2, use_container_width=True)
-                        except:
-                            st.info("No se pudo realizar la descomposición estacional")
-
-                    # Pronóstico simple (regresión lineal)
-                    if len(mensual) >= 6:
-                        # Crear variable de tiempo
-                        X = np.arange(len(mensual)).reshape(-1, 1)
-                        y = mensual.values
-
-                        from sklearn.linear_model import LinearRegression
-                        model = LinearRegression()
-                        model.fit(X, y)
-
-                        # Pronosticar próximos 6 meses
-                        future_X = np.arange(len(mensual), len(mensual) + 6).reshape(-1, 1)
-                        future_y = model.predict(future_X)
-
-                        fig3 = go.Figure()
-                        fig3.add_trace(go.Scatter(x=mensual.index, y=mensual.values,
-                                                  mode='lines+markers', name='Histórico'))
-                        # Crear fechas futuras
-                        last_date = mensual.index[-1]
-                        future_dates = pd.date_range(start=last_date, periods=7, freq='M')[1:]
-
-                        fig3.add_trace(go.Scatter(x=future_dates, y=future_y,
-                                                  mode='lines+markers', name='Pronóstico',
-                                                  line=dict(color='green', dash='dot')))
-
-                        fig3.update_layout(title='Pronóstico Lineal (próximos 6 meses)',
-                                           height=400)
-                        st.plotly_chart(fig3, use_container_width=True)
-                else:
-                    st.warning("Se requiere fecha_inicio_contrato para análisis de tendencias")
-
-            #10. Benchmarking Interno
-            with tab_av10:
-
-                # Comparar comerciales
-                if 'comercial' in df_contratos.columns:
-
-                    # Seleccionar métricas
-                    metricas_comercial = df_contratos.groupby('comercial').agg({
-                        'id': 'count',
-                        'fecha_inicio_contrato': ['min', 'max']
-                    }).round(1)
-
-                    metricas_comercial.columns = ['Total Contratos', 'Primer Contrato', 'Último Contrato']
-                    metricas_comercial['Días Activo'] = (
-                                metricas_comercial['Último Contrato'] - metricas_comercial['Primer Contrato']).dt.days
-                    metricas_comercial['Contratos/Día'] = (
-                                metricas_comercial['Total Contratos'] / metricas_comercial['Días Activo']).round(2)
-
-                    # Filtrar comerciales con al menos 30 días de actividad
-                    metricas_comercial = metricas_comercial[metricas_comercial['Días Activo'] >= 30]
-
-                    # Top 10 por contratos/día
-                    st.markdown("**Top 10 Comerciales por Eficiencia (Contratos/Día)**")
-                    st.dataframe(metricas_comercial.nlargest(10, 'Contratos/Día')[
-                                     ['Total Contratos', 'Días Activo', 'Contratos/Día']])
-
-                    # Gráfico de comparación
-                    fig = px.bar(metricas_comercial.nlargest(15, 'Total Contratos').reset_index(),
-                                 x='comercial', y='Total Contratos',
-                                 title='Top 15 Comerciales por Total de Contratos')
-                    fig.update_layout(height=400, xaxis_tickangle=45)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                # Comparar técnicos (si hay datos)
-                if 'tecnico' in df_contratos.columns:
-
-                    # Similar a comerciales, pero para técnicos
-                    metricas_tecnico = df_contratos.groupby('tecnico').agg({
-                        'id': 'count',
-                        'fecha_instalacion': ['min', 'max']
-                    }).round(1)
-
-                    metricas_tecnico.columns = ['Total Instalaciones', 'Primera Instalación', 'Última Instalación']
-                    metricas_tecnico['Días Activo'] = (metricas_tecnico['Última Instalación'] - metricas_tecnico[
-                        'Primera Instalación']).dt.days
-                    metricas_tecnico['Instalaciones/Día'] = (
-                                metricas_tecnico['Total Instalaciones'] / metricas_tecnico['Días Activo']).round(2)
-
-                    # Filtrar técnicos con al menos 30 días de actividad
-                    metricas_tecnico = metricas_tecnico[metricas_tecnico['Días Activo'] >= 30]
-
-                    # Top 10 por instalaciones/día
-                    st.markdown("**Top 10 Técnicos por Eficiencia (Instalaciones/Día)**")
-                    st.dataframe(metricas_tecnico.nlargest(10, 'Instalaciones/Día')[
-                                     ['Total Instalaciones', 'Días Activo', 'Instalaciones/Día']])
-
-            
+                    st.warning("La columna 'coordenadas' está vacía o contiene solo valores nulos")
+            else:
+                st.warning("No hay columna 'coordenadas' para análisis geográfico")
 
             # Filtros
             col1, col2, col3 = st.columns(3)
@@ -8331,6 +8091,93 @@ def mostrar_kpis_seguimiento_contratos():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     width='stretch'
                 )
+            # ============================
+            # GENERAR INFORME PDF CON REPORTLAB
+            # ============================
+
+            # Información sobre el dataset
+            st.info(f"📊 Dataset actual: {len(df_contratos)} contratos | {len(df_contratos.columns)} columnas")
+
+            # Panel de control en dos columnas
+            col1, col2 = st.columns([1, 1])
+
+            with col1:
+                # Botón para preparar datos
+                if st.button("🔄 Preparar datos para informe", type="secondary", use_container_width=True):
+                    with st.spinner("Preparando datos para el informe PDF..."):
+                        try:
+                            # Preparar datos para el PDF
+                            datos_pdf = preparar_datos_para_pdf(df_contratos)
+
+                            # Guardar en session state
+                            st.session_state['datos_pdf'] = datos_pdf
+                            st.session_state['df_contratos_pdf'] = df_contratos.copy()
+
+                            st.success(f"✅ Datos preparados correctamente")
+                            st.balloons()
+
+                        except Exception as e:
+                            st.error(f"❌ Error preparando datos: {str(e)}")
+
+                with col2:
+                    # Estado de preparación
+                    datos_preparados = 'datos_pdf' in st.session_state and 'df_contratos_pdf' in st.session_state
+
+                    if datos_preparados:
+                        st.success("✅ Datos preparados y listos para generar PDF")
+
+                        # Botón para generar PDF
+                        if st.button("📥 Generar y Descargar PDF", type="primary", use_container_width=True):
+                            with st.spinner("Generando informe PDF con ReportLab..."):
+                                try:
+                                    # Generar el PDF usando ReportLab
+                                    pdf_file = generar_pdf_reportlab(
+                                        st.session_state['df_contratos_pdf'],
+                                        st.session_state['datos_pdf']
+                                    )
+
+                                    # Nombre del archivo
+                                    nombre_archivo = f"informe_kpis_contratos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+
+                                    # Botón de descarga
+                                    st.download_button(
+                                        label="⬇️ Descargar Informe PDF Completo",
+                                        data=pdf_file,
+                                        file_name=nombre_archivo,
+                                        mime="application/pdf",
+                                        use_container_width=True,
+                                        key="descarga_pdf_reportlab"
+                                    )
+
+                                    st.toast(f"✅ Informe PDF generado correctamente: {nombre_archivo}")
+
+                                except Exception as e:
+                                    st.toast(f"❌ Error generando PDF: {str(e)}")
+                                    import traceback
+                                    with st.expander("🔍 Ver detalles del error", expanded=False):
+                                        st.code(traceback.format_exc())
+                    else:
+                        st.info("ℹ️ Prepara los datos primero usando el botón 'Preparar datos para informe'")
+                        st.warning(
+                            "**Nota:** Este proceso puede tardar unos segundos dependiendo del tamaño del dataset.")
+
+                # Panel de configuración
+                with st.expander("⚙️ Configuración del informe", expanded=False):
+                    st.write("**Opciones de generación:**")
+
+                    # Opciones básicas
+                    incluir_graficos = st.checkbox("Incluir resumen ejecutivo", value=True)
+                    limitar_filas = st.slider("Límite de filas por tabla", 5, 50, 15)
+                    formato_fecha = st.selectbox("Formato de fecha", ["DD/MM/YYYY", "YYYY-MM-DD", "MM/DD/YYYY"])
+
+                    # Guardar configuración
+                    if st.button("💾 Guardar configuración", type="secondary"):
+                        st.session_state['pdf_config'] = {
+                            'incluir_graficos': incluir_graficos,
+                            'limitar_filas': limitar_filas,
+                            'formato_fecha': formato_fecha
+                        }
+                        st.toast("Configuración guardada")
 
         except Exception as e:
             st.toast(f"❌ Error al cargar datos de seguimiento de contratos: {str(e)}")
