@@ -2559,7 +2559,7 @@ def mostrar_formulario(click_data):
             # ============================================
             campos_obligatorios = [
                 ("cto_admin", "CTO Admin"),
-                ("id_cto", "ID CTO"),
+                #("id_cto", "ID CTO"),
                 ("serviciable", "Serviciable"),
                 ("resultado", "Resultado"),
                 ("justificacion", "Justificación")
