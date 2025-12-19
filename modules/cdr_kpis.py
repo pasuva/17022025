@@ -547,8 +547,22 @@ def mostrar_cdrs():
             # Usar Altair para gráfico apilado
             import altair as alt
 
+            # Alternativa simple
+            df_cdr['dia_semana'] = pd.to_datetime(df_cdr['calldate']).dt.strftime('%A')
+            # Luego reemplazar en inglés si es necesario
+            dias_traduccion = {
+                'Monday': 'Lunes',
+                'Tuesday': 'Martes',
+                'Wednesday': 'Miércoles',
+                'Thursday': 'Jueves',
+                'Friday': 'Viernes',
+                'Saturday': 'Sábado',
+                'Sunday': 'Domingo'
+            }
+            df_cdr['dia_semana'] = df_cdr['dia_semana'].map(dias_traduccion)
+
             # Preparar datos
-            df_cdr['dia_semana'] = pd.to_datetime(df_cdr['calldate']).dt.day_name()  # Días en español
+            #df_cdr['dia_semana'] = pd.to_datetime(df_cdr['calldate']).dt.day_name('spanish')  # Días en español
             dept_internos = ['Administración', 'Comercial', 'Soporte Técnico']
 
             # Crear categoría para llamadas sin departamento conocido
