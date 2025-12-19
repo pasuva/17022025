@@ -548,7 +548,7 @@ def mostrar_cdrs():
             import altair as alt
 
             # Preparar datos
-            df_cdr['dia_semana'] = pd.to_datetime(df_cdr['calldate']).dt.day_name('spanish')  # Días en español
+            df_cdr['dia_semana'] = pd.to_datetime(df_cdr['calldate']).dt.day_name()  # Días en español
             dept_internos = ['Administración', 'Comercial', 'Soporte Técnico']
 
             # Crear categoría para llamadas sin departamento conocido
