@@ -1,5 +1,3 @@
-import numpy as np
-
 from modules.notificaciones import correo_usuario, correo_nuevas_zonas_comercial, correo_excel_control, \
     correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, \
     correo_viabilidad_comercial, notificar_asignacion_ticket, notificar_actualizacion_ticket, \
@@ -24,6 +22,7 @@ from streamlit_folium import st_folium
 from branca.element import Template, MacroElement
 from typing import Tuple, Dict, List
 from modules.reportes_pdf import preparar_datos_para_pdf, generar_pdf_reportlab
+from modules.cdr_kpis import mostrar_cdrs
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -2558,7 +2557,7 @@ def mostrar_formulario(click_data):
             # 1. VALIDACIÓN DE CAMPOS OBLIGATORIOS
             # ============================================
             campos_obligatorios = [
-                ("cto_admin", "CTO Admin"),
+                #("cto_admin", "CTO Admin"),
                 #("id_cto", "ID CTO"),
                 ("serviciable", "Serviciable"),
                 ("resultado", "Resultado"),
@@ -4981,13 +4980,13 @@ def admin_dashboard():
             menu_title=None,
             options=[
                 "Home", "Ver Datos", "Ofertas Comerciales", "Viabilidades",
-                "Mapa UUIIs", "Cargar Nuevos Datos", "Generar Informe",
+                "Mapa UUIIs", "Cargar Nuevos Datos", "Generar Informe", "CDRs",
                 "Trazabilidad y logs", "Gestionar Usuarios", "Anuncios",
                 "Control de versiones", "Sistema de Ticketing"  # Nuevas opciones
             ],
             icons=[
                 "house", "graph-up", "bar-chart", "check-circle", "globe", "upload",
-                "file-earmark-text", "journal-text", "people", "megaphone",
+                "file-earmark-text", "journal-text", "journal-text", "people", "megaphone",
                 "arrow-clockwise", "ticket"  # Nuevos iconos
             ],
             menu_icon="list",
@@ -6213,6 +6212,10 @@ def admin_dashboard():
         if st.button("Generar Informe"):
             informe = generar_informe(str(fecha_inicio), str(fecha_fin))
             st.dataframe(informe)
+
+    elif opcion == "CDRs":
+        st.info("ℹ️ Aquí puedes generar informes basados en los datos disponibles.")
+        mostrar_cdrs()
 
     elif opcion == "Gestionar Usuarios":
         sub_seccion = option_menu(
