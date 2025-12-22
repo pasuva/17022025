@@ -132,6 +132,8 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
         # --- 6️⃣ Mapear columnas Excel -> Base de datos ---
         excel_to_db_map = {
             "SOLICITANTE": "usuario",
+            "FECHA DE ENTREGA": "fecha_entrega",
+            "ESTADO OBRA": "estado_obra",
             "Nueva Promoción": "nuevapromocion",
             "RESULTADO": "resultado",
             "JUSTIFICACIÓN": "justificacion",
@@ -2016,6 +2018,21 @@ def viabilidades_seccion():
                     id_olt, nombre_olt = opciones_olt[opcion_olt]
                 with col13:
                     apartment_id = st.text_input("🏘️ Apartment ID")
+
+                # 🔹 NUEVOS CAMPOS OPCIONALES
+                col14, col15 = st.columns(2)
+                with col14:
+                    fecha_entrega = st.text_input(
+                        "📅 Fecha de entrega (opcional)",
+                        placeholder="DD/MM/AAAA",
+                        help="Fecha estimada de entrega del proyecto (opcional)"
+                    )
+                with col15:
+                    estado_obra = st.text_input(
+                        "🏗️ Estado de la obra (opcional)",
+                        placeholder="Ej: En progreso, Finalizada, Pendiente...",
+                        help="Estado actual de la obra (opcional)"
+                    )
                 comentario = st.text_area("📝 Comentario")
 
                 # ✅ Campo para seleccionar el comercial
@@ -2066,7 +2083,9 @@ def viabilidades_seccion():
                         telefono,
                         comercial,
                         f"{id_olt}. {nombre_olt}",  # nuevo campo
-                        apartment_id  # nuevo campo
+                        apartment_id,  # nuevo campo
+                        fecha_entrega,  # 🔹 NUEVO: Fecha de entrega (opcional)
+                        estado_obra  # 🔹 NUEVO: Estado de la obra (opcional)
                     ))
 
                     st.toast(f"✅ Viabilidad guardada correctamente.\n\n📌 **Ticket:** `{ticket}`")
@@ -2129,8 +2148,10 @@ def guardar_viabilidad(datos):
             telefono, 
             usuario,
             olt,
-            apartment_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)
+            apartment_id,
+            fecha_entrega,  -- 🔹 NUEVO CAMPO
+            estado_obra     -- 🔹 NUEVO CAMPO
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)
     """, datos)
     conn.commit()
 
@@ -2168,6 +2189,16 @@ def guardar_viabilidad(datos):
         f"📞 Teléfono: {datos[12]}<br><br>"
         f"🏢 OLT: {datos[14]}<br>"
         f"🏘️ Apartment ID: {datos[15]}<br><br>"
+    )
+    # 🔹 Agregar los nuevos campos si tienen valor
+    if datos[16]:  # fecha_entrega
+        descripcion_viabilidad += f"📅 Fecha de entrega: {datos[16]}<br>"
+
+    if datos[17]:  # estado_obra
+        descripcion_viabilidad += f"🏗️ Estado de la obra: {datos[17]}<br>"
+
+    descripcion_viabilidad += (
+        f"<br>"
         f"ℹ️ Por favor, revise todos los detalles de la viabilidad para asegurar que toda la información esté correcta. "
         f"Si tiene alguna pregunta o necesita más detalles, no dude en ponerse en contacto con el comercial {nombre_comercial} o con el equipo responsable."
     )
@@ -2265,7 +2296,9 @@ def mostrar_formulario(click_data):
             "justificacion": click_data.get("justificacion", "SIN JUSTIFICACIÓN"),
             "contratos": click_data.get("contratos", ""),
             "respuesta_comercial": click_data.get("respuesta_comercial", ""),
-            "comentarios_gestor": click_data.get("comentarios_gestor", "")
+            "comentarios_gestor": click_data.get("comentarios_gestor", ""),
+            "fecha_entrega": click_data.get("fecha_entrega", ""),
+            "estado_obra": click_data.get("estado_obra", "")
         }
 
     # Obtener datos actuales del formulario
@@ -2376,7 +2409,29 @@ def mostrar_formulario(click_data):
 
             if usuario != form_data["usuario"]:
                 update_form_data("usuario", usuario)
+######################
+        col_nueva1, col_nueva2 = st.columns(2)
+        with col_nueva1:
+            fecha_entrega = st.text_input(
+                "📅 Fecha de entrega",
+                value=form_data.get("fecha_entrega", ""),
+                placeholder="DD/MM/AAAA",
+                key=f"fecha_entrega_{ticket}"
+            )
+            if fecha_entrega != form_data.get("fecha_entrega", ""):
+                update_form_data("fecha_entrega", fecha_entrega)
 
+        with col_nueva2:
+            estado_obra = st.text_input(
+                "🏗️ Estado de la obra",
+                value=form_data.get("estado_obra", ""),
+                placeholder="Ej: En progreso, Finalizada...",
+                key=f"estado_obra_{ticket}"
+            )
+            if estado_obra != form_data.get("estado_obra", ""):
+                update_form_data("estado_obra", estado_obra)
+
+        ######################
         # --- FECHAS Y CTO ---
         colf1, colf2 = st.columns(2)
         with colf1:
@@ -2593,7 +2648,7 @@ def mostrar_formulario(click_data):
                     cto_cercana=?, olt=?, cto_admin=?, id_cto=?, municipio_admin=?, serviciable=?, coste=?, comentarios_comercial=?, 
                     comentarios_internos=?, fecha_viabilidad=?, apartment_id=?, nombre_cliente=?, telefono=?, usuario=?, 
                     direccion_id=?, confirmacion_rafa=?, zona_estudio=?, estado=?, presupuesto_enviado=?, nuevapromocion=?, 
-                    resultado=?, justificacion=?, contratos=?, respuesta_comercial=?, comentarios_gestor=?
+                    resultado=?, justificacion=?, contratos=?, respuesta_comercial=?, comentarios_gestor=?, fecha_entrega=?, estado_obra=?
                 WHERE ticket=?
             """, (
                 current_data["latitud"],
@@ -2631,6 +2686,8 @@ def mostrar_formulario(click_data):
                 current_data["contratos"],
                 current_data["respuesta_comercial"],
                 current_data["comentarios_gestor"],
+                current_data.get("fecha_entrega", ""),  # 🔹 NUEVO CAMPO
+                current_data.get("estado_obra", ""),  # 🔹 NUEVO CAMPO
                 ticket
             ))
 
@@ -9302,10 +9359,6 @@ def mostrar_control_versiones():
 
     except Exception as e:
         st.toast(f"Ha ocurrido un error al cargar el control de versiones: {e}")
-
-
-
-
 
 # Función para crear el gráfico interactivo de Serviciabilidad
 def create_serviciable_graph(cursor) -> go.Figure:
