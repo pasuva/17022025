@@ -1,6 +1,6 @@
 from modules.notificaciones import correo_usuario, correo_nuevas_zonas_comercial, correo_excel_control, \
     correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, \
-    correo_viabilidad_comercial, notificar_asignacion_ticket, notificar_actualizacion_ticket, \
+    correo_viabilidad_comercial, notificar_asignacion_ticket, notificar_actualizacion_ticket, correo_respuesta_comercial,\
     notificar_resolucion_ticket, notificar_reasignacion_ticket
 from datetime import datetime as dt  # Para evitar conflicto con datetime
 from streamlit_option_menu import option_menu
@@ -2709,7 +2709,7 @@ def mostrar_formulario(click_data):
                     if correo_comercial:
                         # Importar la función de notificaciones
                         try:
-                            from notificaciones import correo_respuesta_comercial
+                            #from modules.notificaciones import correo_respuesta_comercial
 
                             # Preparar el comentario para la notificación
                             comentario_notificacion = (
@@ -3070,8 +3070,6 @@ def admin_ticketing_panel():
     )
 
     # Contenido dinámico según la subsección seleccionada
-    st.markdown(f"### 📍 {sub_seccion}")
-
     if sub_seccion == "Mis Tickets":
         mostrar_mis_tickets()
     elif sub_seccion == "Todos los Tickets":
@@ -4000,8 +3998,6 @@ def mostrar_tickets_asignados():
                     st.rerun()
 
         # --- ACCIONES GLOBALES ---
-        st.markdown("### ⚡ Acciones en Lote")
-
         col_glob1, col_glob2 = st.columns(2)
         with col_glob1:
             if st.button("✅ Marcar Todos como Resueltos", use_container_width=True):
@@ -4522,8 +4518,6 @@ def mostrar_todos_tickets():
             resueltos = len(df_filtrado[df_filtrado['estado'].isin(['Resuelto', 'Cancelado'])])
             st.metric("Resueltos", resueltos)
 
-        st.markdown("---")
-
         # --- TABLA DE TICKETS ---
         # Formatear datos para visualización
         df_display = df_filtrado.copy()
@@ -4699,7 +4693,6 @@ def crear_nuevo_ticket_form(user_id):
     """Formulario para crear un nuevo ticket con opción de asignación."""
 
     st.subheader("✨ Crear Nuevo Ticket")
-    st.markdown("---")
 
     # Obtener lista de agentes para asignación (solo si el usuario es admin)
     es_admin = st.session_state.get("role") == "admin"
@@ -4930,7 +4923,6 @@ Información adicional (sistema operativo, navegador, versión de la app, etc.):
 def user_ticketing_panel():
     """Panel simplificado para que los usuarios vean/creen sus tickets."""
     st.title("🎫 Mis Tickets")
-    st.markdown("---")
     st.info("""
     **Vista de usuario final:**
     - ✨ **Crear nuevo ticket**: Formulario simple para reportar problemas
@@ -9591,7 +9583,6 @@ def home_page():
     try:
         # Mostrar KPIs principales
         create_kpi_metrics(cursor)
-        st.markdown("---")
 
         # Organizar los gráficos en columnas
         col1, col2 = st.columns(2)

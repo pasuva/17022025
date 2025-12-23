@@ -1167,6 +1167,30 @@ def formulario_cliente(precontrato_id=None, token=None):
                     # Segundo: proceder con el envío del formulario
                     with st.spinner("📤 Enviando formulario..."):
                         try:
+                            #########################################PRUEBA#################################################
+                            # ============================================
+                            # VERIFICACIÓN PROACTIVA PARA MÓVILES
+                            # ============================================
+                            claves_requeridas = ['precontrato_id', 'token', 'precontrato_data']
+                            faltan_claves = [k for k in claves_requeridas if not st.session_state.get(k)]
+
+                            if faltan_claves:
+                                st.error(f"⚠️ **Error de sesión:** Faltan datos: {', '.join(faltan_claves)}")
+
+                                # Intentar recuperar de la URL
+                                params = st.query_params
+                                if 'precontrato_id' in params and 'token' in params:
+                                    if st.button("🔗 Recuperar sesión desde el enlace", key="recuperar_desde_url"):
+                                        st.session_state.precontrato_id = params['precontrato_id']
+                                        st.session_state.token = params['token']
+                                        st.toast("✅ Sesión recuperada. Continúa con el envío.")
+                                        st.rerun()
+                                else:
+                                    st.error(
+                                        "❌ No se puede recuperar la sesión. Vuelve a acceder con el enlace original.")
+                                return
+                            # ============================================
+                            #####################################################PRUEBA###########################################
                             # Preparar datos de líneas
                             movil = {
                                 "precontrato_id": int(st.session_state.precontrato_id),
@@ -1293,3 +1317,16 @@ def formulario_cliente(precontrato_id=None, token=None):
 
                         except Exception as e:
                             st.error(f"❌ Error al guardar los datos: {str(e)}")
+                            #####################################PRUEBA###############################
+                            # Después del mensaje de error, añade:
+                            if st.button("🔄 Intentar recuperar sesión", key="recuperar_sesion"):
+                                # Intentar recuperar datos de la URL
+                                params = st.query_params
+                                if 'precontrato_id' in params and 'token' in params:
+                                    st.session_state.precontrato_id = params['precontrato_id']
+                                    st.session_state.token = params['token']
+                                    st.toast("✅ Sesión recuperada. Intenta enviar nuevamente.")
+                                    st.rerun()
+                                else:
+                                    st.error("No se pudo recuperar la sesión. Necesitas el enlace original.")
+                                    #######################################PRUEBA#########################################
