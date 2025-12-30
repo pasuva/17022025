@@ -50,37 +50,50 @@ precontrato_id, token = get_url_params()
 if token and precontrato_id:
     # Verificar si el token parece válido (debería tener al menos 10 caracteres)
     if len(str(token)) >= 10:
-        #st.write("🔍 Token parece válido, cargando formulario...")
         formulario_cliente(precontrato_id, token)
-        st.stop()
+        st.stop()  # Esto está bien para este flujo
     else:
         st.error(f"❌ Token inválido o truncado: '{token}'")
         st.info("💡 El token parece estar incompleto. Por favor, verifica el enlace o contacta con el comercial.")
 
 # ==========================================================
-# 🔸 Si no hay token, sigue el flujo normal del login
+# 🔸 FLUJO PRINCIPAL CON BUCLE INFINITO DE ESPERA
 # ==========================================================
+import time
+
 if "login_ok" not in st.session_state:
     st.session_state["login_ok"] = False
 
-# Si no está logueado, mostramos el login
-if not st.session_state["login_ok"]:
-    login.login()
-else:
-    rol = st.session_state.get("role", "")
-
-    if rol == "admin":
-        admin.admin_dashboard()
-    elif rol == "comercial_jefe":
-        comercial_jefe.mapa_dashboard()
-    elif rol == "comercial_rafa":
-        comercial_rafa.comercial_dashboard()
-    elif rol == "comercial_vip":
-        comercial_vip.comercial_dashboard_vip()
-    elif rol == "demo":
-        demo.demo_dashboard()
-    elif rol == "tecnico":
-        perfil_tecnico.tecnico_dashboard()
+# Bucle principal que se repite, manteniendo el proceso vivo
+while True:
+    if not st.session_state["login_ok"]:
+        login.login()
+        # Si login() es exitoso, establecerá st.session_state["login_ok"] = True
+        # La magia de Streamlit: el bucle se repetirá en la siguiente interacción
     else:
-        st.error("Rol no reconocido")
+        rol = st.session_state.get("role", "")
+        if rol == "admin":
+            admin.admin_dashboard()
+        elif rol == "comercial_jefe":
+            comercial_jefe.mapa_dashboard()
+        elif rol == "comercial_rafa":
+            comercial_rafa.comercial_dashboard()
+        elif rol == "comercial_vip":
+            comercial_vip.comercial_dashboard_vip()
+        elif rol == "demo":
+            demo.demo_dashboard()
+        elif rol == "tecnico":
+            perfil_tecnico.tecnico_dashboard()
+        else:
+            st.error("Rol no reconocido")
+            # Opcional: ofrecer logout si el rol no es válido
+            if st.button("Cerrar sesión"):
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+    
+    # Punto de espera CRÍTICO: Previene que el bucle consuma 100% CPU
+    # También permite que Streamlit maneje sus eventos.
+    time.sleep(0.1)
+
 
