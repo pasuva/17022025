@@ -5447,7 +5447,7 @@ def marketing_dashboard():
             </style>
 
             <div class="user-circle">👤</div>
-            <div class="user-info">Rol: Administrador</div>
+            <div class="user-info">Rol: Marketing</div>
             <div class="welcome-msg">¡Bienvenido, <strong>{username}</strong>!</div>
             <hr>
             """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
