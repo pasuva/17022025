@@ -81,6 +81,8 @@ else:
         demo.demo_dashboard()
     elif rol == "tecnico":
         perfil_tecnico.tecnico_dashboard()
+    elif rol == "marketing":
+        marketing.marketing_dashboard()
     else:
         st.error("Rol no reconocido")
 
