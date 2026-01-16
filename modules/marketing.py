@@ -8504,7 +8504,7 @@ def mostrar_kpis_seguimiento_contratos():
                     "📈 Métricas Generales",
                     "📅 Evolución Temporal",
                     "👥 Análisis por Cliente",
-                    "🔍 Detalle de Tipos"
+                    "🔍 Detalle de Tipos",
                     "🔍 Tabla dato en bruto"
                 ])
 
@@ -9000,8 +9000,6 @@ def mostrar_kpis_seguimiento_contratos():
                             st.dataframe(df_busqueda[columnas_seleccionadas], height=400)
                     else:
                         st.warning("Por favor, selecciona al menos una columna para mostrar.")
-
-
             else:
                 st.warning(
                     "No se pudieron cargar los datos de Contratos por Tipo. Verifica la conexión y los permisos.")
