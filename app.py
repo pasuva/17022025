@@ -1,5 +1,5 @@
 import streamlit as st
-from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip, demo, perfil_tecnico
+from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip, demo, perfil_tecnico, marketing
 from modules.formulario_cliente import formulario_cliente
 
 st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
