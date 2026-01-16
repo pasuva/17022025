@@ -6619,9 +6619,9 @@ def admin_dashboard():
                 if usuario:
                     nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
                     nuevo_rol = st.selectbox("Nuevo Rol",
-                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo", "marketing","tecnico"],
+                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo", "marketing"],
                                              index=["admin", "comercial", "comercial_jefe",
-                                                    "comercial_rafa","comercial_vip","demo", "marketing","tecnico"].index(usuario[1]))
+                                                    "comercial_rafa","comercial_vip","demo", "marketing"].index(usuario[1]))
                     nuevo_email = st.text_input("Nuevo Email", value=usuario[2])
                     nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
 
