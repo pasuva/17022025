@@ -8500,11 +8500,12 @@ def mostrar_kpis_seguimiento_contratos():
                 excluidos = total_original - total_filtrado
 
                 # Crear pestañas para diferentes análisis
-                tab_tipo1, tab_tipo2, tab_tipo3, tab_tipo4 = st.tabs([
+                tab_tipo1, tab_tipo2, tab_tipo3, tab_tipo4, tab_tipo5 = st.tabs([
                     "📈 Métricas Generales",
                     "📅 Evolución Temporal",
                     "👥 Análisis por Cliente",
                     "🔍 Detalle de Tipos"
+                    "🔍 Tabla dato en bruto"
                 ])
 
                 with tab_tipo1:
