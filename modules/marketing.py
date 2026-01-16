@@ -377,6 +377,137 @@ def cargar_contratos_google():
         return pd.DataFrame()
 
 
+def cargar_contratos_tipo():
+    try:
+        # --- Detectar entorno y elegir archivo de credenciales ---
+        posibles_rutas = [
+            "modules/carga-contratos-verde-c5068516c7cf.json",  # Render: secret file
+            "/etc/secrets/carga-contratos-verde-c5068516c7cf.json",  # Otra ruta posible en Render
+            os.path.join(os.path.dirname(__file__), "carga-contratos-verde-c5068516c7cf.json"),  # Local
+        ]
+
+        ruta_credenciales = None
+        for r in posibles_rutas:
+            if os.path.exists(r):
+                ruta_credenciales = r
+                break
+
+        if not ruta_credenciales and "GOOGLE_APPLICATION_CREDENTIALS_JSON" in os.environ:
+            # Si no hay archivo pero sí variable de entorno
+            import json
+            from google.oauth2.service_account import Credentials
+
+            creds_dict = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(creds_dict, scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ])
+        elif ruta_credenciales:
+            print(f"🔑 Usando credenciales desde: {ruta_credenciales}")
+            from google.oauth2.service_account import Credentials
+
+            creds = Credentials.from_service_account_file(
+                ruta_credenciales,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive"
+                ]
+            )
+        else:
+            raise ValueError("❌ No se encontraron credenciales de Google Service Account.")
+
+        # Crear cliente
+        import gspread
+        client = gspread.authorize(creds)
+
+        # --- Abrir la hoja de Google Sheets ---
+        sheet = client.open("CONTRATOS POR TIPO").worksheet("CONTRATOS POR TIPO")
+        data = sheet.get_all_records()
+
+        if not data:
+            print("⚠️ Hoja cargada pero sin registros. Revisa si la primera fila tiene encabezados correctos.")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+
+        # --- Mapeo de columnas ---
+        column_mapping = {
+            'ID CONTRATOS': 'id_contrato',
+            'CLIENTE': 'cliente',
+            'NOMBRECOMPLETO': 'nombre_completo',
+            'FECHA CONTRATO INICIO': 'fecha_contrato_inicio',
+            'NOMBRE': 'nombre_servicio',
+            # Mapear posibles variaciones
+            'ID CONTRATO': 'id_contrato',
+            'ID': 'id_contrato',
+            'FECHA INICIO': 'fecha_contrato_inicio',
+            'FECHA': 'fecha_contrato_inicio',
+            'SERVICIO': 'nombre_servicio',
+            'TIPO': 'nombre_servicio',
+        }
+
+        # Primero, normalizar nombres de columnas del DataFrame (quitar espacios extra, convertir a mayúsculas)
+        df.columns = df.columns.map(lambda x: str(x).strip().upper() if x is not None else "")
+
+        # Aplicar el mapeo
+        for sheet_col, db_col in column_mapping.items():
+            if sheet_col in df.columns:
+                # Si la columna existe en el sheet, mantenerla
+                pass
+            else:
+                # Buscar variaciones (sin espacios, con/sin tildes, etc.)
+                normalized_sheet_col = sheet_col.replace(' ', '').replace('Á', 'A').replace('É', 'E').replace('Í',
+                                                                                                              'I').replace(
+                    'Ó', 'O').replace('Ú', 'U')
+                for actual_col in df.columns:
+                    normalized_actual_col = actual_col.replace(' ', '').replace('Á', 'A').replace('É', 'E').replace('Í',
+                                                                                                                    'I').replace(
+                        'Ó', 'O').replace('Ú', 'U')
+                    if normalized_sheet_col == normalized_actual_col:
+                        # Renombrar la columna actual al nombre esperado
+                        df.rename(columns={actual_col: sheet_col}, inplace=True)
+                        print(f"✅ Renombrada columna '{actual_col}' -> '{sheet_col}'")
+                        break
+
+        # Ahora aplicar el mapeo de nombres
+        df.rename(columns=column_mapping, inplace=True)
+
+        # Verificar qué columnas se han mapeado correctamente
+        print("🔍 Columnas después del mapeo:", df.columns.tolist())
+
+        # --- Normalizar fechas ---
+        if 'fecha_contrato_inicio' in df.columns:
+            try:
+                df['fecha_contrato_inicio'] = pd.to_datetime(df['fecha_contrato_inicio'], dayfirst=True).dt.strftime(
+                    '%Y-%m-%d')
+            except Exception as e:
+                print(f"⚠️ Error normalizando fechas: {e}")
+                df['fecha_contrato_inicio'] = df['fecha_contrato_inicio'].astype(str)
+
+        # --- Normalizar columnas de texto ---
+        text_columns = ['id_contrato', 'cliente', 'nombre_completo', 'nombre_servicio']
+        for col in text_columns:
+            if col in df.columns:
+                df[col] = df[col].fillna('').astype(str).str.strip()
+                print(f"✅ Columna '{col}' normalizada: {len(df[df[col] != ''])} valores no vacíos")
+
+        print(f"✅ Datos de CONTRATOS POR TIPO cargados. Columnas: {df.columns.tolist()}, Total filas: {len(df)}")
+
+        # Mostrar resumen de datos
+        if len(df) > 0:
+            print(f"📊 Muestra de datos cargados:")
+            print(df.head(3).to_string(index=False))
+
+        return df
+
+    except Exception as e:
+        print(f"❌ Error cargando contratos por tipo desde Google Sheets: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return pd.DataFrame()
+
+
 def cargar_usuarios():
     """Carga los usuarios desde la base de datos."""
     conn = obtener_conexion()
@@ -8349,6 +8480,456 @@ def mostrar_kpis_seguimiento_contratos():
                     st.warning("La columna 'coordenadas' está vacía o contiene solo valores nulos")
             else:
                 st.warning("No hay columna 'coordenadas' para análisis geográfico")
+
+            st.subheader("🗺️ Contratos por tipo")
+            # ============================
+            # CONTRATOS POR TIPO - NUEVA SECCIÓN DE KPIs
+            # ============================
+
+            # Cargar datos de contratos por tipo
+            df_tipos = cargar_contratos_tipo()
+
+            if not df_tipos.empty:
+                st.subheader("📊 KPIs - Contratos por Tipo de Servicio")
+
+                # Filtrar valores no deseados
+                valores_excluir = ["LINEA MOVIL", "Fijo Cabecera OPEFREË", "Fijo Cabecera BAYMA IT"]
+                df_tipos_filtrado = df_tipos[~df_tipos['nombre_servicio'].isin(valores_excluir)]
+
+                # Mostrar estadísticas de filtrado
+                total_original = len(df_tipos)
+                total_filtrado = len(df_tipos_filtrado)
+                excluidos = total_original - total_filtrado
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total contratos", total_original)
+                with col2:
+                    st.metric("Contratos válidos", total_filtrado)
+                with col3:
+                    st.metric("Excluidos", excluidos)
+
+                # Crear pestañas para diferentes análisis
+                tab_tipo1, tab_tipo2, tab_tipo3, tab_tipo4 = st.tabs([
+                    "📈 Métricas Generales",
+                    "📅 Evolución Temporal",
+                    "👥 Análisis por Cliente",
+                    "🔍 Detalle de Tipos"
+                ])
+
+                with tab_tipo1:
+                    st.markdown("### 📊 Métricas Generales por Tipo")
+
+                    if 'nombre_servicio' in df_tipos_filtrado.columns:
+                        # KPIs principales
+                        total_tipos = df_tipos_filtrado['nombre_servicio'].nunique()
+                        contratos_por_tipo = df_tipos_filtrado['nombre_servicio'].value_counts()
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Tipos de servicio únicos", total_tipos)
+                        with col2:
+                            tipo_mas_comun = contratos_por_tipo.index[0] if len(contratos_por_tipo) > 0 else "N/A"
+                            st.metric("Tipo más común", tipo_mas_comun,
+                                      contratos_por_tipo.iloc[0] if len(contratos_por_tipo) > 0 else 0)
+                        with col3:
+                            if len(contratos_por_tipo) > 1:
+                                concentracion = (contratos_por_tipo.iloc[0] / total_filtrado * 100)
+                                st.metric("Concentración top tipo", f"{concentracion:.1f}%")
+
+                        # Gráfico de distribución
+                        col_chart, col_stats = st.columns([2, 1])
+
+                        with col_chart:
+                            try:
+                                import plotly.express as px
+
+                                # Top 10 tipos más comunes
+                                top_tipos = contratos_por_tipo.head(10).reset_index()
+                                top_tipos.columns = ['Tipo de Servicio', 'Cantidad']
+
+                                fig = px.bar(
+                                    top_tipos,
+                                    x='Tipo de Servicio',
+                                    y='Cantidad',
+                                    title='Top 10 Tipos de Servicio',
+                                    color='Cantidad',
+                                    text='Cantidad'
+                                )
+                                fig.update_layout(height=400, xaxis_tickangle=45)
+                                st.plotly_chart(fig, use_container_width=True)
+                            except Exception as e:
+                                st.warning(f"No se pudo generar el gráfico: {e}")
+                                st.dataframe(contratos_por_tipo.head(10))
+
+                        with col_stats:
+                            st.markdown("**Estadísticas por tipo**")
+
+                            # Tabla resumen
+                            stats_df = pd.DataFrame({
+                                'Tipo': contratos_por_tipo.index,
+                                'Cantidad': contratos_por_tipo.values,
+                                '% Total': (contratos_por_tipo.values / total_filtrado * 100).round(1)
+                            }).head(8)
+
+                            st.dataframe(stats_df, height=350)
+
+                            # KPIs adicionales
+                            if len(contratos_por_tipo) > 0:
+                                st.metric("Promedio por tipo", f"{(total_filtrado / total_tipos):.1f}")
+
+                                if len(contratos_por_tipo) > 1:
+                                    st.metric("Mediana por tipo", f"{contratos_por_tipo.median():.1f}")
+
+                with tab_tipo2:
+                    st.markdown("### 📅 Evolución Temporal por Tipo")
+
+                    if 'fecha_contrato_inicio' in df_tipos_filtrado.columns:
+                        # Convertir fecha si es necesario
+                        if df_tipos_filtrado['fecha_contrato_inicio'].dtype == 'object':
+                            df_tipos_filtrado['fecha'] = pd.to_datetime(
+                                df_tipos_filtrado['fecha_contrato_inicio'],
+                                errors='coerce',
+                                dayfirst=True
+                            )
+                        else:
+                            df_tipos_filtrado['fecha'] = df_tipos_filtrado['fecha_contrato_inicio']
+
+                        # Filtrar fechas válidas
+                        df_fechas_validas = df_tipos_filtrado.dropna(subset=['fecha'])
+
+                        if not df_fechas_validas.empty:
+                            # Selector de período
+                            periodo = st.selectbox(
+                                "Selecciona período:",
+                                ["Mensual", "Trimestral", "Anual"],
+                                key="periodo_tipos"
+                            )
+
+                            # Agrupar por período
+                            if periodo == "Mensual":
+                                df_fechas_validas['periodo'] = df_fechas_validas['fecha'].dt.to_period('M').astype(str)
+                            elif periodo == "Trimestral":
+                                df_fechas_validas['periodo'] = df_fechas_validas['fecha'].dt.to_period('Q').astype(str)
+                            else:  # Anual
+                                df_fechas_validas['periodo'] = df_fechas_validas['fecha'].dt.year.astype(str)
+
+                            # Evolución total
+                            evolucion_total = df_fechas_validas.groupby('periodo').size().reset_index()
+                            evolucion_total.columns = ['Periodo', 'Contratos']
+
+                            col1, col2 = st.columns([2, 1])
+
+                            with col1:
+                                # Gráfico de evolución
+                                try:
+                                    fig = px.line(
+                                        evolucion_total,
+                                        x='Periodo',
+                                        y='Contratos',
+                                        title=f'Evolución {periodo} de Contratos por Tipo',
+                                        markers=True
+                                    )
+                                    fig.update_layout(height=400, xaxis_tickangle=45)
+                                    st.plotly_chart(fig, use_container_width=True)
+                                except Exception as e:
+                                    st.error(f"Error en gráfico: {e}")
+
+                            with col2:
+                                # Métricas de evolución
+                                st.markdown("**Métricas de Evolución**")
+
+                                if len(evolucion_total) >= 2:
+                                    ultimo = evolucion_total.iloc[-1]['Contratos']
+                                    anterior = evolucion_total.iloc[-2]['Contratos']
+                                    crecimiento = ((ultimo - anterior) / anterior * 100) if anterior > 0 else 0
+
+                                    st.metric(f"Último {periodo.lower()}", ultimo, f"{crecimiento:+.1f}%")
+                                    st.metric(f"Promedio por {periodo.lower()}",
+                                              f"{evolucion_total['Contratos'].mean():.1f}")
+
+                                    # Mejor período
+                                    mejor_periodo = evolucion_total.loc[evolucion_total['Contratos'].idxmax()]
+                                    st.metric("Mejor período", mejor_periodo['Periodo'],
+                                              f"{mejor_periodo['Contratos']} contratos")
+
+                            # Evolución por tipo de servicio (top 5)
+                            st.markdown("#### Evolución por Tipo de Servicio (Top 5)")
+
+                            # Identificar top 5 tipos
+                            top_5_tipos = df_fechas_validas['nombre_servicio'].value_counts().head(5).index.tolist()
+                            df_top_5 = df_fechas_validas[df_fechas_validas['nombre_servicio'].isin(top_5_tipos)]
+
+                            if not df_top_5.empty:
+                                evolucion_tipos = df_top_5.groupby(['periodo', 'nombre_servicio']).size().reset_index()
+                                evolucion_tipos.columns = ['Periodo', 'Tipo de Servicio', 'Contratos']
+
+                                # Gráfico de líneas por tipo
+                                try:
+                                    fig2 = px.line(
+                                        evolucion_tipos,
+                                        x='Periodo',
+                                        y='Contratos',
+                                        color='Tipo de Servicio',
+                                        title=f'Evolución {periodo} por Tipo (Top 5)',
+                                        markers=True
+                                    )
+                                    fig2.update_layout(height=400, xaxis_tickangle=45)
+                                    st.plotly_chart(fig2, use_container_width=True)
+                                except Exception as e:
+                                    st.warning(f"No se pudo generar el gráfico por tipo: {e}")
+                        else:
+                            st.warning("No hay fechas válidas para análisis temporal")
+                    else:
+                        st.warning("No hay columna de fecha para análisis temporal")
+
+                with tab_tipo3:
+                    st.markdown("### 👥 Análisis por Cliente")
+
+                    if 'cliente' in df_tipos_filtrado.columns and 'nombre_servicio' in df_tipos_filtrado.columns:
+                        # KPIs por cliente
+                        clientes_unicos = df_tipos_filtrado['cliente'].nunique()
+                        contratos_por_cliente = df_tipos_filtrado['cliente'].value_counts()
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Clientes únicos", clientes_unicos)
+                        with col2:
+                            promedio_contratos = (total_filtrado / clientes_unicos) if clientes_unicos > 0 else 0
+                            st.metric("Promedio contratos/cliente", f"{promedio_contratos:.1f}")
+                        with col3:
+                            if len(contratos_por_cliente) > 0:
+                                max_contratos = contratos_por_cliente.iloc[0]
+                                cliente_top = contratos_por_cliente.index[0]
+                                st.metric("Cliente con más contratos", cliente_top, f"{max_contratos}")
+
+                        # Top 10 clientes
+                        st.markdown("#### Top 10 Clientes por Número de Contratos")
+
+                        top_clientes = contratos_por_cliente.head(10).reset_index()
+                        top_clientes.columns = ['Cliente', 'Contratos']
+
+                        col_chart, col_table = st.columns([2, 1])
+
+                        with col_chart:
+                            try:
+                                fig = px.bar(
+                                    top_clientes,
+                                    x='Cliente',
+                                    y='Contratos',
+                                    title='Top 10 Clientes',
+                                    color='Contratos',
+                                    text='Contratos'
+                                )
+                                fig.update_layout(height=400, xaxis_tickangle=45)
+                                st.plotly_chart(fig, use_container_width=True)
+                            except Exception as e:
+                                st.warning(f"No se pudo generar el gráfico: {e}")
+
+                        with col_table:
+                            # Detalle de tipos por cliente (para el top 1)
+                            if len(top_clientes) > 0:
+                                cliente_top = top_clientes.iloc[0]['Cliente']
+                                st.markdown(f"**Tipos para {cliente_top}**")
+
+                                tipos_cliente_top = df_tipos_filtrado[
+                                    df_tipos_filtrado['cliente'] == cliente_top
+                                    ]['nombre_servicio'].value_counts().reset_index()
+                                tipos_cliente_top.columns = ['Tipo de Servicio', 'Cantidad']
+
+                                st.dataframe(tipos_cliente_top, height=300)
+
+                        # Análisis de diversificación
+                        st.markdown("#### Diversificación por Cliente")
+
+                        # Calcular número de tipos únicos por cliente
+                        diversificacion = df_tipos_filtrado.groupby('cliente')[
+                            'nombre_servicio'].nunique().reset_index()
+                        diversificacion.columns = ['Cliente', 'Tipos Únicos']
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            # Clientes con más diversificación
+                            top_diversificacion = diversificacion.sort_values('Tipos Únicos', ascending=False).head(10)
+                            st.dataframe(top_diversificacion, height=300)
+
+                        with col2:
+                            # Estadísticas de diversificación
+                            st.markdown("**Estadísticas de diversificación**")
+                            st.metric("Promedio tipos/cliente", f"{diversificacion['Tipos Únicos'].mean():.1f}")
+                            st.metric("Máxima diversificación", f"{diversificacion['Tipos Únicos'].max()}")
+
+                            # Porcentaje de clientes con múltiples tipos
+                            clientes_multiples = len(diversificacion[diversificacion['Tipos Únicos'] > 1])
+                            porcentaje_multiples = (
+                                        clientes_multiples / clientes_unicos * 100) if clientes_unicos > 0 else 0
+                            st.metric("Clientes con múltiples tipos", f"{porcentaje_multiples:.1f}%")
+
+                with tab_tipo4:
+                    st.markdown("### 🔍 Detalle y Filtrado de Tipos")
+
+                    # Selector de tipo para análisis detallado
+                    todos_tipos = sorted(df_tipos_filtrado['nombre_servicio'].unique())
+                    tipo_seleccionado = st.selectbox(
+                        "Selecciona un tipo de servicio para análisis detallado:",
+                        todos_tipos,
+                        key="tipo_detalle"
+                    )
+
+                    if tipo_seleccionado:
+                        # Filtrar por tipo seleccionado
+                        df_tipo_detalle = df_tipos_filtrado[df_tipos_filtrado['nombre_servicio'] == tipo_seleccionado]
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric(f"Total {tipo_seleccionado}", len(df_tipo_detalle))
+                        with col2:
+                            clientes_tipo = df_tipo_detalle['cliente'].nunique()
+                            st.metric("Clientes únicos", clientes_tipo)
+                        with col3:
+                            if 'fecha_contrato_inicio' in df_tipo_detalle.columns:
+                                # Encontrar fecha más reciente
+                                try:
+                                    if df_tipo_detalle['fecha_contrato_inicio'].dtype == 'object':
+                                        df_tipo_detalle['fecha_dt'] = pd.to_datetime(
+                                            df_tipo_detalle['fecha_contrato_inicio'],
+                                            errors='coerce',
+                                            dayfirst=True
+                                        )
+                                    else:
+                                        df_tipo_detalle['fecha_dt'] = df_tipo_detalle['fecha_contrato_inicio']
+
+                                    fecha_reciente = df_tipo_detalle['fecha_dt'].max()
+                                    if pd.notnull(fecha_reciente):
+                                        st.metric("Contrato más reciente", fecha_reciente.strftime('%Y-%m-%d'))
+                                except:
+                                    st.metric("Contrato más reciente", "N/A")
+
+                        # Tabla de contratos del tipo seleccionado
+                        st.markdown(f"#### Contratos de {tipo_seleccionado}")
+
+                        columnas_mostrar = ['id_contrato', 'cliente', 'nombre_completo', 'fecha_contrato_inicio']
+                        columnas_mostrar = [col for col in columnas_mostrar if col in df_tipo_detalle.columns]
+
+                        st.dataframe(
+                            df_tipo_detalle[columnas_mostrar].sort_values('fecha_contrato_inicio', ascending=False),
+                            height=300
+                        )
+
+                        # Distribución temporal del tipo seleccionado
+                        if 'fecha_contrato_inicio' in df_tipo_detalle.columns:
+                            st.markdown(f"#### Evolución Temporal de {tipo_seleccionado}")
+
+                            try:
+                                # Convertir fechas
+                                df_temporal = df_tipo_detalle.copy()
+                                if df_temporal['fecha_contrato_inicio'].dtype == 'object':
+                                    df_temporal['fecha'] = pd.to_datetime(
+                                        df_temporal['fecha_contrato_inicio'],
+                                        errors='coerce',
+                                        dayfirst=True
+                                    )
+                                else:
+                                    df_temporal['fecha'] = df_temporal['fecha_contrato_inicio']
+
+                                df_temporal = df_temporal.dropna(subset=['fecha'])
+
+                                if not df_temporal.empty:
+                                    # Agrupar por mes
+                                    df_temporal['mes'] = df_temporal['fecha'].dt.to_period('M').astype(str)
+                                    evolucion_mensual = df_temporal.groupby('mes').size().reset_index()
+                                    evolucion_mensual.columns = ['Mes', 'Contratos']
+
+                                    fig = px.bar(
+                                        evolucion_mensual,
+                                        x='Mes',
+                                        y='Contratos',
+                                        title=f'Evolución Mensual de {tipo_seleccionado}',
+                                        color='Contratos'
+                                    )
+                                    fig.update_layout(height=300, xaxis_tickangle=45)
+                                    st.plotly_chart(fig, use_container_width=True)
+                            except Exception as e:
+                                st.warning(f"No se pudo generar la evolución temporal: {e}")
+
+                    # Filtros interactivos
+                    st.markdown("#### 🔎 Filtros Avanzados")
+
+                    col_filtro1, col_filtro2 = st.columns(2)
+
+                    with col_filtro1:
+                        # Filtro por rango de fechas
+                        if 'fecha_contrato_inicio' in df_tipos_filtrado.columns:
+                            st.markdown("**Filtrar por rango de fechas**")
+
+                            # Extraer fechas mínima y máxima
+                            try:
+                                df_fechas = df_tipos_filtrado.copy()
+                                if df_fechas['fecha_contrato_inicio'].dtype == 'object':
+                                    df_fechas['fecha_dt'] = pd.to_datetime(
+                                        df_fechas['fecha_contrato_inicio'],
+                                        errors='coerce',
+                                        dayfirst=True
+                                    )
+                                else:
+                                    df_fechas['fecha_dt'] = df_fechas['fecha_contrato_inicio']
+
+                                fecha_min = df_fechas['fecha_dt'].min()
+                                fecha_max = df_fechas['fecha_dt'].max()
+
+                                if pd.notnull(fecha_min) and pd.notnull(fecha_max):
+                                    rango_fechas = st.date_input(
+                                        "Selecciona rango de fechas:",
+                                        value=[fecha_min, fecha_max],
+                                        min_value=fecha_min,
+                                        max_value=fecha_max,
+                                        key="filtro_fechas_tipos"
+                                    )
+
+                                    if len(rango_fechas) == 2:
+                                        df_filtrado_fechas = df_fechas[
+                                            (df_fechas['fecha_dt'] >= pd.Timestamp(rango_fechas[0])) &
+                                            (df_fechas['fecha_dt'] <= pd.Timestamp(rango_fechas[1]))
+                                            ]
+
+                                        st.metric("Contratos en rango", len(df_filtrado_fechas))
+                            except:
+                                st.info("No se pueden aplicar filtros de fecha")
+
+                    with col_filtro2:
+                        # Filtro por tipo específico
+                        st.markdown("**Filtrar por tipo específico**")
+
+                        tipo_filtro = st.multiselect(
+                            "Selecciona tipos:",
+                            options=todos_tipos,
+                            default=todos_tipos[:3] if len(todos_tipos) > 3 else todos_tipos,
+                            key="filtro_tipos_multiselect"
+                        )
+
+                        if tipo_filtro:
+                            df_filtrado_tipos = df_tipos_filtrado[
+                                df_tipos_filtrado['nombre_servicio'].isin(tipo_filtro)]
+                            st.metric("Contratos seleccionados", len(df_filtrado_tipos))
+
+                    # Resumen de los valores excluidos
+                    with st.expander("Ver valores excluidos del análisis"):
+                        df_excluidos = df_tipos[df_tipos['nombre_servicio'].isin(valores_excluir)]
+
+                        if not df_excluidos.empty:
+                            st.write(f"Se excluyeron {len(df_excluidos)} registros:")
+                            st.dataframe(df_excluidos[['nombre_servicio', 'cliente', 'fecha_contrato_inicio']].head(20))
+
+                            # Distribución de excluidos
+                            excluidos_por_tipo = df_excluidos['nombre_servicio'].value_counts()
+                            st.bar_chart(excluidos_por_tipo)
+                        else:
+                            st.info("No hay registros excluidos")
+
+            else:
+                st.warning(
+                    "No se pudieron cargar los datos de Contratos por Tipo. Verifica la conexión y los permisos.")
 
             # Filtros
             col1, col2, col3 = st.columns(3)
