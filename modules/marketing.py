@@ -8490,8 +8490,6 @@ def mostrar_kpis_seguimiento_contratos():
             df_tipos = cargar_contratos_tipo()
 
             if not df_tipos.empty:
-                st.subheader("📊 KPIs - Contratos por Tipo de Servicio")
-
                 # Filtrar valores no deseados
                 valores_excluir = ["LINEA MOVIL", "Fijo Cabecera OPEFREË", "Fijo Cabecera BAYMA IT"]
                 df_tipos_filtrado = df_tipos[~df_tipos['nombre_servicio'].isin(valores_excluir)]
@@ -8500,14 +8498,6 @@ def mostrar_kpis_seguimiento_contratos():
                 total_original = len(df_tipos)
                 total_filtrado = len(df_tipos_filtrado)
                 excluidos = total_original - total_filtrado
-
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total contratos", total_original)
-                with col2:
-                    st.metric("Contratos válidos", total_filtrado)
-                with col3:
-                    st.metric("Excluidos", excluidos)
 
                 # Crear pestañas para diferentes análisis
                 tab_tipo1, tab_tipo2, tab_tipo3, tab_tipo4 = st.tabs([
@@ -8927,9 +8917,95 @@ def mostrar_kpis_seguimiento_contratos():
                         else:
                             st.info("No hay registros excluidos")
 
+                with tab_tipo5:
+                    st.markdown("### 📋 Tabla Completa de Contratos por Tipo")
+
+                    # Mostrar el DataFrame completo con opciones de filtro y paginación
+                    st.info(
+                        f"Mostrando {len(df_tipos_filtrado)} registros (filtrados). Valores excluidos: {valores_excluir}")
+
+                    # Opción para mostrar todas las columnas o seleccionar
+                    columnas_disponibles = df_tipos_filtrado.columns.tolist()
+                    columnas_seleccionadas = st.multiselect(
+                        "Selecciona las columnas a mostrar:",
+                        options=columnas_disponibles,
+                        default=columnas_disponibles,
+                        key="columnas_tabla_completa"
+                    )
+
+                    if columnas_seleccionadas:
+                        # Mostrar el DataFrame con las columnas seleccionadas
+                        st.dataframe(
+                            df_tipos_filtrado[columnas_seleccionadas],
+                            height=600,
+                            use_container_width=True
+                        )
+
+                        # Mostrar estadísticas de la tabla
+                        col_stats1, col_stats2, col_stats3 = st.columns(3)
+                        with col_stats1:
+                            st.metric("Registros mostrados", len(df_tipos_filtrado))
+                        with col_stats2:
+                            st.metric("Columnas mostradas", len(columnas_seleccionadas))
+                        with col_stats3:
+                            if 'fecha_contrato_inicio' in columnas_seleccionadas:
+                                # Encontrar fechas extremas
+                                try:
+                                    df_temp = df_tipos_filtrado.copy()
+                                    if df_temp['fecha_contrato_inicio'].dtype == 'object':
+                                        df_temp['fecha_dt'] = pd.to_datetime(
+                                            df_temp['fecha_contrato_inicio'],
+                                            errors='coerce',
+                                            dayfirst=True
+                                        )
+                                    else:
+                                        df_temp['fecha_dt'] = df_temp['fecha_contrato_inicio']
+
+                                    fecha_min = df_temp['fecha_dt'].min()
+                                    fecha_max = df_temp['fecha_dt'].max()
+                                    if pd.notnull(fecha_min) and pd.notnull(fecha_max):
+                                        st.metric("Período cubierto",
+                                                  f"{fecha_min.strftime('%d/%m/%Y')} - {fecha_max.strftime('%d/%m/%Y')}")
+                                except:
+                                    pass
+
+                        # Opción para descargar los datos
+                        @st.cache_data
+                        def convert_df_to_csv(df):
+                            return df.to_csv(index=False, sep=';', encoding='utf-8-sig')
+
+                        csv = convert_df_to_csv(df_tipos_filtrado[columnas_seleccionadas])
+
+                        st.download_button(
+                            label="📥 Descargar datos como CSV",
+                            data=csv,
+                            file_name="contratos_por_tipo.csv",
+                            mime="text/csv",
+                        )
+
+                        # Búsqueda en la tabla
+                        st.markdown("#### 🔍 Búsqueda en la tabla")
+                        search_term = st.text_input("Buscar en toda la tabla:", key="search_tabla_completa")
+
+                        if search_term:
+                            # Filtrar por término de búsqueda
+                            mask = df_tipos_filtrado[columnas_seleccionadas].apply(
+                                lambda row: row.astype(str).str.contains(search_term, case=False, na=False).any(),
+                                axis=1
+                            )
+                            df_busqueda = df_tipos_filtrado[mask]
+
+                            st.metric("Resultados encontrados", len(df_busqueda))
+                            st.dataframe(df_busqueda[columnas_seleccionadas], height=400)
+                    else:
+                        st.warning("Por favor, selecciona al menos una columna para mostrar.")
+
+
             else:
                 st.warning(
                     "No se pudieron cargar los datos de Contratos por Tipo. Verifica la conexión y los permisos.")
+
+            st.subheader("Datos totales")
 
             # Filtros
             col1, col2, col3 = st.columns(3)
