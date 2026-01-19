@@ -1,6 +1,3 @@
-import os
-import psycopg2
-
 from modules.notificaciones import correo_usuario, correo_nuevas_zonas_comercial, correo_excel_control, \
     correo_envio_presupuesto_manual, correo_nueva_version, correo_asignacion_puntos_existentes, \
     correo_viabilidad_comercial, notificar_asignacion_ticket, notificar_actualizacion_ticket, correo_respuesta_comercial,\
@@ -33,20 +30,13 @@ cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos
 def obtener_conexion():
-    """Retorna una nueva conexión a la base de datos PostgreSQL."""
+    """Retorna una nueva conexión a la base de datos."""
     try:
-        # Configuración para CapRover
-        conn = psycopg2.connect(
-            host="srv-captain--verde-db",  # Nombre del servicio PostgreSQL en CapRover
-            port=5432,
-            database="usuarios",  # Nombre de la base de datos
-            user="postgres",
-            password="5c9691d50cde7659",
-            connect_timeout=10
-        )
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
         return conn
-    except psycopg2.Error as e:
-        print(f"Error al conectar con PostgreSQL: {e}")
+    except sqlite3.Error as e:
+        print(f"Error al conectar con la base de datos: {e}")
         return None
 
 def log_trazabilidad(usuario, accion, detalles):
@@ -57,7 +47,7 @@ def log_trazabilidad(usuario, accion, detalles):
         fecha = dt.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute("""
             INSERT INTO trazabilidad (usuario_id, accion, detalles, fecha)
-            VALUES (%s, %s, %s, %s)
+            VALUES (?, ?, ?, ?)
         """, (usuario, accion, detalles, fecha))
         conn.commit()
         conn.close()
@@ -400,7 +390,7 @@ def agregar_usuario(username, rol, password, email):
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     try:
-        cursor.execute("INSERT INTO usuarios (username, password, role, email) VALUES (%s, %s, %s, %s)", (username, hashed_pw, rol, email))
+        cursor.execute("INSERT INTO usuarios (username, password, role, email) VALUES (?, ?, ?, ?)", (username, hashed_pw, rol, email))
         conn.commit()
         st.toast(f"Usuario '{username}' creado con éxito.")
         log_trazabilidad(st.session_state["username"], "Agregar Usuario",
@@ -433,7 +423,7 @@ def editar_usuario(id, username, rol, password, email):
     cursor = conn.cursor()
 
     # Obtenemos los datos actuales del usuario
-    cursor.execute("SELECT username, role, email, password FROM usuarios WHERE id = %s", (id,))
+    cursor.execute("SELECT username, role, email, password FROM usuarios WHERE id = ?", (id,))
     usuario_actual = cursor.fetchone()
 
     if usuario_actual:
@@ -445,10 +435,10 @@ def editar_usuario(id, username, rol, password, email):
 
         # Si la contraseña fue cambiada, realizamos la actualización correspondiente
         if password:
-            cursor.execute("UPDATE usuarios SET username = %s, role = %s, password = %s, email = %s WHERE id = %s",
+            cursor.execute("UPDATE usuarios SET username = ?, role = ?, password = ?, email = ? WHERE id = ?",
                            (username, rol, hashed_pw, email, id))
         else:
-            cursor.execute("UPDATE usuarios SET username = %s, role = %s, email = %s WHERE id = %s",
+            cursor.execute("UPDATE usuarios SET username = ?, role = ?, email = ? WHERE id = ?",
                            (username, rol, email, id))
 
         conn.commit()
@@ -492,14 +482,14 @@ def editar_usuario(id, username, rol, password, email):
 def eliminar_usuario(id):
     conn = obtener_conexion()
     cursor = conn.cursor()
-    cursor.execute("SELECT username, email FROM usuarios WHERE id = %s", (id,))
+    cursor.execute("SELECT username, email FROM usuarios WHERE id = ?", (id,))
     usuario = cursor.fetchone()
 
     if usuario:
         nombre_usuario = usuario[0]
         email_usuario = usuario[1]
 
-        cursor.execute("DELETE FROM usuarios WHERE id = %s", (id,))
+        cursor.execute("DELETE FROM usuarios WHERE id = ?", (id,))
         conn.commit()
         conn.close()
         log_trazabilidad(st.session_state["username"], "Eliminar Usuario", f"El admin eliminó al usuario con ID {id}.")
@@ -530,7 +520,7 @@ def cargar_datos_uis():
 
     # Consulta de comercial_rafa
     query_rafa = """
-        SELECT apartment_id, serviciable, "Contrato", provincia, municipio, poblacion,
+        SELECT apartment_id, serviciable, Contrato, provincia, municipio, poblacion,
                motivo_serviciable, incidencia, motivo_incidencia, nombre_cliente,
                telefono, direccion_alternativa, observaciones, comercial, comentarios
         FROM comercial_rafa
@@ -559,14 +549,14 @@ def cargar_datos_por_provincia(provincia):
     query_datos_uis = """
         SELECT * 
         FROM datos_uis
-        WHERE provincia = %s
+        WHERE provincia = ?
     """
     datos_uis = pd.read_sql(query_datos_uis, conn, params=(provincia,))
 
     query_comercial_rafa = """
         SELECT * 
         FROM comercial_rafa
-        WHERE provincia = %s
+        WHERE provincia = ?
     """
     comercial_rafa_df = pd.read_sql(query_comercial_rafa, conn, params=(provincia,))
 
@@ -599,7 +589,7 @@ def cargar_datos_por_provincia(provincia: str) -> Tuple[pd.DataFrame, pd.DataFra
             SELECT apartment_id, latitud, longitud, provincia, municipio, 
                    poblacion, vial, numero
             FROM datos_uis 
-            WHERE provincia = %s 
+            WHERE provincia = ? 
             AND latitud IS NOT NULL 
             AND longitud IS NOT NULL
             AND latitud != 0 
@@ -613,7 +603,7 @@ def cargar_datos_por_provincia(provincia: str) -> Tuple[pd.DataFrame, pd.DataFra
             WHERE EXISTS (
                 SELECT 1 FROM datos_uis d 
                 WHERE d.apartment_id = c.apartment_id 
-                AND d.provincia = %s
+                AND d.provincia = ?
             )
         """
 
@@ -672,7 +662,7 @@ def buscar_por_id(apartment_id: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
             SELECT apartment_id, latitud, longitud, provincia, municipio, 
                    poblacion, vial, numero
             FROM datos_uis 
-            WHERE apartment_id = %s 
+            WHERE apartment_id = ? 
             AND latitud IS NOT NULL 
             AND longitud IS NOT NULL
         """
@@ -680,7 +670,7 @@ def buscar_por_id(apartment_id: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         query_comercial = f"""
             SELECT apartment_id, comercial, serviciable, incidencia, contrato
             FROM comercial_rafa
-            WHERE apartment_id = %s
+            WHERE apartment_id = ?
         """
 
         datos_uis = pd.read_sql(query_uis, conn, params=(apartment_id,))
@@ -1320,7 +1310,7 @@ def guardar_comentario(apartment_id, comentario, tabla):
         cursor = conn.cursor()
 
         # Actualizar el comentario para el registro con el apartment_id dado
-        query = f"UPDATE {tabla} SET comentarios = %s WHERE apartment_id = %s"
+        query = f"UPDATE {tabla} SET comentarios = ? WHERE apartment_id = ?"
         cursor.execute(query, (comentario, apartment_id))
         conn.commit()
         conn.close()
@@ -1399,12 +1389,7 @@ def viabilidades_seccion():
         with st.spinner("⏳ Cargando los datos de viabilidades..."):
             try:
                 conn = obtener_conexion()
-                tables = pd.read_sql("""
-                    SELECT table_name 
-                    FROM information_schema.tables 
-                    WHERE table_schema = 'public' 
-                    AND table_type = 'BASE TABLE'
-                """, conn)
+                tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
                 if 'viabilidades' not in tables['name'].values:
                     st.toast("❌ La tabla 'viabilidades' no se encuentra en la base de datos.")
                     conn.close()
@@ -1824,7 +1809,7 @@ def viabilidades_seccion():
                                     cursor.execute("""
                                         INSERT INTO envios_presupuesto_viabilidad 
                                         (ticket, destinatario, proyecto, fecha_envio, archivo_nombre, archivo_url)
-                                        VALUES (%s, %s, %s, %s, %s, %s)
+                                        VALUES (?, ?, ?, ?, ?, ?)
                                     """, (
                                         st.session_state["selected_ticket"],
                                         correo,
@@ -1847,7 +1832,7 @@ def viabilidades_seccion():
                                 cursor.execute("""
                                     UPDATE viabilidades
                                     SET presupuesto_enviado = 1
-                                    WHERE ticket = %s
+                                    WHERE ticket = ?
                                 """, (st.session_state["selected_ticket"],))
                                 conn.commit()
                                 conn.close()
@@ -1867,7 +1852,7 @@ def viabilidades_seccion():
                 df_historial = pd.read_sql_query("""
                     SELECT fecha_envio, destinatario, proyecto, archivo_nombre
                     FROM envios_presupuesto_viabilidad
-                    WHERE ticket = %s
+                    WHERE ticket = ?
                     ORDER BY datetime(fecha_envio) DESC
                 """, conn, params=(st.session_state["selected_ticket"],))
                 conn.close()
@@ -2111,20 +2096,9 @@ def viabilidades_seccion():
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)
 def get_db_connection():
-    try:
-        # Configuración para CapRover
-        conn = psycopg2.connect(
-            host="srv-captain--verde-db",  # Nombre del servicio PostgreSQL en CapRover
-            port=5432,
-            database="usuarios",  # Nombre de la base de datos
-            user="postgres",
-            password="5c9691d50cde7659",
-            connect_timeout=10
-        )
-        return conn
-    except psycopg2.Error as e:
-        print(f"Error al conectar con PostgreSQL: {e}")
-        return None
+    return sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+    )
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
@@ -2133,7 +2107,7 @@ def generar_ticket():
     fecha_actual = datetime.now().strftime("%Y%m%d")
 
     # Buscar el mayor número consecutivo para la fecha actual
-    cursor.execute("SELECT MAX(CAST(SUBSTR(ticket, 9, 3) AS INTEGER)) FROM viabilidades WHERE ticket LIKE %s",
+    cursor.execute("SELECT MAX(CAST(SUBSTR(ticket, 9, 3) AS INTEGER)) FROM viabilidades WHERE ticket LIKE ?",
                    (f"{fecha_actual}%",))
     max_consecutivo = cursor.fetchone()[0]
 
@@ -2176,7 +2150,7 @@ def guardar_viabilidad(datos):
             apartment_id,
             fecha_entrega,  -- 🔹 NUEVO CAMPO
             estado_obra     -- 🔹 NUEVO CAMPO
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)
     """, datos)
     conn.commit()
 
@@ -2187,7 +2161,7 @@ def guardar_viabilidad(datos):
 
     # Obtener email del comercial seleccionado
     comercial_email = None
-    cursor.execute("SELECT email FROM usuarios WHERE username = %s", (datos[13],))
+    cursor.execute("SELECT email FROM usuarios WHERE username = ?", (datos[13],))
     fila = cursor.fetchone()
     if fila:
         comercial_email = fila[0]
@@ -2669,12 +2643,12 @@ def mostrar_formulario(click_data):
             # Actualización completa de la viabilidad
             cursor.execute("""
                 UPDATE viabilidades SET
-                    latitud=%s, longitud=%s, provincia=%s, municipio=%s, poblacion=%s, vial=%s, numero=%s, letra=%s, cp=%s, comentario=%s,
-                    cto_cercana=%s, olt=%s, cto_admin=%s, id_cto=%s, municipio_admin=%s, serviciable=%s, coste=%s, comentarios_comercial=%s, 
-                    comentarios_internos=%s, fecha_viabilidad=%s, apartment_id=%s, nombre_cliente=%s, telefono=%s, usuario=%s, 
-                    direccion_id=%s, confirmacion_rafa=%s, zona_estudio=%s, estado=%s, presupuesto_enviado=%s, nuevapromocion=%s, 
-                    resultado=%s, justificacion=%s, contratos=%s, respuesta_comercial=%s, comentarios_gestor=%s, fecha_entrega=%s, estado_obra=%s
-                WHERE ticket=%s
+                    latitud=?, longitud=?, provincia=?, municipio=?, poblacion=?, vial=?, numero=?, letra=?, cp=?, comentario=?,
+                    cto_cercana=?, olt=?, cto_admin=?, id_cto=?, municipio_admin=?, serviciable=?, coste=?, comentarios_comercial=?, 
+                    comentarios_internos=?, fecha_viabilidad=?, apartment_id=?, nombre_cliente=?, telefono=?, usuario=?, 
+                    direccion_id=?, confirmacion_rafa=?, zona_estudio=?, estado=?, presupuesto_enviado=?, nuevapromocion=?, 
+                    resultado=?, justificacion=?, contratos=?, respuesta_comercial=?, comentarios_gestor=?, fecha_entrega=?, estado_obra=?
+                WHERE ticket=?
             """, (
                 current_data["latitud"],
                 current_data["longitud"],
@@ -2727,7 +2701,7 @@ def mostrar_formulario(click_data):
 
                 if comercial_asignado and comercial_asignado.strip():
                     # Obtener el email del comercial desde la tabla usuarios
-                    cursor.execute("SELECT email FROM usuarios WHERE username = %s", (comercial_asignado,))
+                    cursor.execute("SELECT email FROM usuarios WHERE username = ?", (comercial_asignado,))
                     row = cursor.fetchone()
                     correo_comercial = row[0] if row else None
 
@@ -2934,7 +2908,7 @@ def eliminar_oferta_comercial(df_ofertas):
 
                 # Usar parámetros para prevenir SQL injection
                 cursor.execute(
-                    "DELETE FROM comercial_rafa WHERE apartment_id = %s",
+                    "DELETE FROM comercial_rafa WHERE apartment_id = ?",
                     (selected_apartment_id,)
                 )
 
@@ -3381,19 +3355,13 @@ def actualizar_estado_ticket(ticket_id, nuevo_estado):
         cursor = conn.cursor()
 
         # Obtener estado anterior
-        cursor.execute("SELECT estado, titulo FROM tickets WHERE ticket_id = %s", (ticket_id,))
+        cursor.execute("SELECT estado, titulo FROM tickets WHERE ticket_id = ?", (ticket_id,))
         ticket_info = cursor.fetchone()
         estado_anterior = ticket_info[0] if ticket_info else "Desconocido"
         titulo_ticket = ticket_info[1] if ticket_info else f"#{ticket_id}"
 
         # Verificar si existe el campo fecha_cierre
-        cursor.execute("""
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'tickets' 
-            ORDER BY ordinal_position
-        """)
+        cursor.execute("PRAGMA table_info(tickets)")
         columnas = cursor.fetchall()
         tiene_fecha_cierre = any(col[1] == 'fecha_cierre' for col in columnas)
 
@@ -3401,21 +3369,21 @@ def actualizar_estado_ticket(ticket_id, nuevo_estado):
         if nuevo_estado in ['Resuelto', 'Cancelado'] and tiene_fecha_cierre:
             cursor.execute("""
                 UPDATE tickets 
-                SET estado = %s, fecha_cierre = CURRENT_TIMESTAMP 
-                WHERE ticket_id = %s
+                SET estado = ?, fecha_cierre = CURRENT_TIMESTAMP 
+                WHERE ticket_id = ?
             """, (nuevo_estado, ticket_id))
         else:
             cursor.execute("""
                 UPDATE tickets 
-                SET estado = %s 
-                WHERE ticket_id = %s
+                SET estado = ? 
+                WHERE ticket_id = ?
             """, (nuevo_estado, ticket_id))
 
         # Registrar el cambio de estado como comentario
         cursor.execute("""
             INSERT INTO comentarios_tickets 
             (ticket_id, usuario_id, tipo, contenido)
-            VALUES (%s, %s, %s, %s)
+            VALUES (?, ?, ?, ?)
         """, (
             ticket_id,
             user_id,
@@ -3448,7 +3416,7 @@ def generar_reporte_actividad(user_id):
 
         # Obtener información del usuario
         cursor = conn.cursor()
-        cursor.execute("SELECT username FROM usuarios WHERE id = %s", (user_id,))
+        cursor.execute("SELECT username FROM usuarios WHERE id = ?", (user_id,))
         user_info = cursor.fetchone()
         username = user_info[0] if user_info else f"Usuario #{user_id}"
 
@@ -3463,7 +3431,7 @@ def generar_reporte_actividad(user_id):
                 asignado_a,
                 titulo
             FROM tickets
-            WHERE usuario_id = %s
+            WHERE usuario_id = ?
             ORDER BY fecha_creacion DESC
         """, conn, params=(user_id,))
 
@@ -3479,7 +3447,7 @@ def generar_reporte_actividad(user_id):
                 t.titulo
             FROM tickets t
             LEFT JOIN usuarios u ON t.usuario_id = u.id
-            WHERE t.asignado_a = %s
+            WHERE t.asignado_a = ?
             ORDER BY t.fecha_creacion DESC
         """, conn, params=(user_id,))
 
@@ -3603,7 +3571,7 @@ def generar_reporte_actividad(user_id):
                         DATE(fecha_creacion) as fecha,
                         COUNT(*) as cantidad
                     FROM tickets
-                    WHERE usuario_id = %s 
+                    WHERE usuario_id = ? 
                         AND fecha_creacion >= DATE('now', '-30 days')
                     GROUP BY DATE(fecha_creacion)
                     ORDER BY fecha
@@ -3689,7 +3657,7 @@ def mostrar_tickets_asignados():
             t.comentarios
         FROM tickets t
         LEFT JOIN usuarios u ON t.usuario_id = u.id
-        WHERE t.asignado_a = %s 
+        WHERE t.asignado_a = ? 
             AND t.estado IN ('Abierto', 'En Progreso')
         ORDER BY 
             CASE t.prioridad 
@@ -3824,8 +3792,8 @@ def mostrar_tickets_asignados():
                             cursor = conn.cursor()
                             cursor.execute("""
                                 UPDATE tickets 
-                                SET comentarios = COALESCE(comentarios || %s, %s)
-                                WHERE ticket_id = %s
+                                SET comentarios = COALESCE(comentarios || ?, ?)
+                                WHERE ticket_id = ?
                             """, (
                                 nuevo_comentario_formateado,
                                 f"[{timestamp}] {usuario} {tipo}:\n{nuevo_comentario.strip()}",
@@ -3844,7 +3812,7 @@ def mostrar_tickets_asignados():
                                     FROM tickets t
                                     LEFT JOIN usuarios u ON t.usuario_id = u.id
                                     LEFT JOIN usuarios u2 ON t.asignado_a = u2.id
-                                    WHERE t.ticket_id = %s
+                                    WHERE t.ticket_id = ?
                                 """, (ticket['ticket_id'],))
 
                                 ticket_data = cursor.fetchone()
@@ -3948,22 +3916,22 @@ def mostrar_tickets_asignados():
                             FROM tickets t
                             LEFT JOIN usuarios u ON t.usuario_id = u.id
                             LEFT JOIN usuarios u2 ON t.asignado_a = u2.id
-                            WHERE t.ticket_id = %s
+                            WHERE t.ticket_id = ?
                         """, (ticket_id,))
 
                         ticket_data = cursor.fetchone()
 
                         # Actualizar asignación
                         cursor.execute(
-                            "UPDATE tickets SET asignado_a = %s, estado = 'En Progreso' WHERE ticket_id = %s",
+                            "UPDATE tickets SET asignado_a = ?, estado = 'En Progreso' WHERE ticket_id = ?",
                             (id_agente, ticket_id)
                         )
 
                         # Añadir comentario sobre la reasignación
                         cursor.execute("""
                             UPDATE tickets 
-                            SET comentarios = COALESCE(comentarios || '\n\n', '') || %s
-                            WHERE ticket_id = %s
+                            SET comentarios = COALESCE(comentarios || '\n\n', '') || ?
+                            WHERE ticket_id = ?
                         """, (
                             f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {st.session_state['username']} reasignó el ticket a {agente_seleccionado}.",
                             ticket_id
@@ -4031,7 +3999,7 @@ def mostrar_tickets_asignados():
                 conn = obtener_conexion()
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE tickets SET estado = 'Resuelto' WHERE asignado_a = %s AND estado IN ('Abierto', 'En Progreso')",
+                    "UPDATE tickets SET estado = 'Resuelto' WHERE asignado_a = ? AND estado IN ('Abierto', 'En Progreso')",
                     (user_id,)
                 )
                 conn.commit()
@@ -4225,7 +4193,7 @@ def mostrar_tickets_abiertos():
                                 FROM tickets t
                                 LEFT JOIN usuarios u ON t.usuario_id = u.id
                                 LEFT JOIN usuarios u2 ON t.asignado_a = u2.id
-                                WHERE t.ticket_id = %s
+                                WHERE t.ticket_id = ?
                             """, (ticket['ticket_id'],))
 
                             ticket_data = cursor.fetchone()
@@ -4233,8 +4201,8 @@ def mostrar_tickets_abiertos():
                             # Actualizar comentarios
                             cursor.execute("""
                                 UPDATE tickets 
-                                SET comentarios = COALESCE(comentarios || %s, %s)
-                                WHERE ticket_id = %s
+                                SET comentarios = COALESCE(comentarios || ?, ?)
+                                WHERE ticket_id = ?
                             """, (
                                 nuevo_comentario_formateado,
                                 f"[{timestamp}] {usuario} {tipo}:\n{nuevo_comentario.strip()}",
@@ -4290,7 +4258,7 @@ def mostrar_tickets_abiertos():
                                 FROM tickets t
                                 LEFT JOIN usuarios u ON t.usuario_id = u.id
                                 LEFT JOIN usuarios u2 ON t.asignado_a = u2.id
-                                WHERE t.ticket_id = %s
+                                WHERE t.ticket_id = ?
                             """, (ticket['ticket_id'],))
 
                             ticket_data = cursor.fetchone()
@@ -4301,8 +4269,8 @@ def mostrar_tickets_abiertos():
                             # Añadir comentario automático
                             cursor.execute("""
                                 UPDATE tickets 
-                                SET comentarios = COALESCE(comentarios || '\n\n', '') || %s
-                                WHERE ticket_id = %s
+                                SET comentarios = COALESCE(comentarios || '\n\n', '') || ?
+                                WHERE ticket_id = ?
                             """, (
                                 f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {st.session_state['username']} marcó el ticket como RESUELTO.",
                                 ticket['ticket_id']
@@ -4380,22 +4348,22 @@ def mostrar_tickets_abiertos():
                                    u.email as creador_email, u.username as creador
                             FROM tickets t
                             LEFT JOIN usuarios u ON t.usuario_id = u.id
-                            WHERE t.ticket_id = %s
+                            WHERE t.ticket_id = ?
                         """, (ticket_id,))
 
                         ticket_data = cursor.fetchone()
 
                         # Actualizar el ticket
                         cursor.execute(
-                            "UPDATE tickets SET asignado_a = %s, estado = 'En Progreso' WHERE ticket_id = %s",
+                            "UPDATE tickets SET asignado_a = ?, estado = 'En Progreso' WHERE ticket_id = ?",
                             (id_agente, ticket_id)
                         )
 
                         # Añadir comentario sobre la asignación
                         cursor.execute("""
                                         UPDATE tickets 
-                                        SET comentarios = COALESCE(comentarios || '\n\n', '') || %s
-                                        WHERE ticket_id = %s
+                                        SET comentarios = COALESCE(comentarios || '\n\n', '') || ?
+                                        WHERE ticket_id = ?
                                     """, (
                             f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {st.session_state['username']} asignó el ticket a {agente_seleccionado}.",
                             ticket_id
@@ -4769,15 +4737,15 @@ def mostrar_todos_tickets():
                                         cursor = conn.cursor()
                                         cursor.execute("""
                                             UPDATE tickets 
-                                            SET asignado_a = %s, estado = 'En Progreso' 
-                                            WHERE ticket_id = %s
+                                            SET asignado_a = ?, estado = 'En Progreso' 
+                                            WHERE ticket_id = ?
                                         """, (id_tecnico, ticket['ticket_id']))
 
                                         # Añadir comentario
                                         cursor.execute("""
                                             UPDATE tickets 
-                                            SET comentarios = COALESCE(comentarios || '\n\n', '') || %s
-                                            WHERE ticket_id = %s
+                                            SET comentarios = COALESCE(comentarios || '\n\n', '') || ?
+                                            WHERE ticket_id = ?
                                         """, (
                                             f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] {st.session_state['username']} asignó el ticket a {tecnico_seleccionado}.",
                                             ticket['ticket_id']
@@ -4821,8 +4789,8 @@ def mostrar_todos_tickets():
                                     cursor = conn.cursor()
                                     cursor.execute("""
                                         UPDATE tickets 
-                                        SET comentarios = COALESCE(comentarios || %s, %s)
-                                        WHERE ticket_id = %s
+                                        SET comentarios = COALESCE(comentarios || ?, ?)
+                                        WHERE ticket_id = ?
                                     """, (
                                         comentario_formateado,
                                         f"[{timestamp}] {usuario} [Comentario]:\n{comentario_rapido.strip()}",
@@ -4923,7 +4891,7 @@ def mostrar_mis_tickets():
             titulo,
             descripcion
         FROM tickets 
-        WHERE usuario_id = %s
+        WHERE usuario_id = ?
         ORDER BY fecha_creacion DESC
         """
 
@@ -5069,10 +5037,10 @@ def crear_nuevo_ticket_form(user_id):
             "📄 **Descripción detallada** *",
             placeholder="""Describe el problema o solicitud con el mayor detalle posible:
 
-• ¿Qué pasó exactamente%s
-• ¿Cuándo ocurrió%s (Fecha y hora aproximada)
-• ¿Qué esperabas que sucediera%s
-• ¿Qué pasó en su lugar%s
+• ¿Qué pasó exactamente?
+• ¿Cuándo ocurrió? (Fecha y hora aproximada)
+• ¿Qué esperabas que sucediera?
+• ¿Qué pasó en su lugar?
 • Pasos para reproducir el problema (si aplica):
   1. 
   2. 
@@ -5120,7 +5088,7 @@ Información adicional (sistema operativo, navegador, versión de la app, etc.):
                         cursor.execute("""
                             INSERT INTO tickets 
                             (usuario_id, categoria, prioridad, estado, asignado_a, titulo, descripcion)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
                         """, (
                             user_id,
                             categoria,
@@ -5135,7 +5103,7 @@ Información adicional (sistema operativo, navegador, versión de la app, etc.):
                         cursor.execute("""
                             INSERT INTO tickets 
                             (usuario_id, categoria, prioridad, estado, titulo, descripcion)
-                            VALUES (%s, %s, %s, %s, %s, %s)
+                            VALUES (?, ?, ?, ?, ?, ?)
                         """, (
                             user_id,
                             categoria,
@@ -5152,8 +5120,8 @@ Información adicional (sistema operativo, navegador, versión de la app, etc.):
                     if asignado_id:
                         cursor.execute("""
                             UPDATE tickets 
-                            SET comentarios = %s 
-                            WHERE ticket_id = %s
+                            SET comentarios = ? 
+                            WHERE ticket_id = ?
                         """, (
                             f"Asignado automáticamente a ID {asignado_id} por {st.session_state['username']} al crear el ticket.",
                             ticket_id
@@ -5248,7 +5216,7 @@ def crear_ticket_ejemplo():
         cursor.execute("""
             INSERT INTO tickets 
             (usuario_id, categoria, prioridad, estado, titulo, descripcion)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?)
         """, (
             1,  # ID de usuario de ejemplo
             "Soporte Técnico",
@@ -5466,25 +5434,24 @@ def admin_dashboard():
                 # Retornar en formato P + 10 dígitos
                 return f"P{numeros_10}"
 
-            # Versión segura sin elementos UI dentro
-            def cargar_datos_seguro():
-                """Carga todos los datos de la base de datos SIN elementos de UI"""
+            @st.cache_data(ttl=300)
+            def cargar_datos():
+                """Carga todos los datos de la base de datos"""
                 try:
                     conn = obtener_conexion()
 
-                    # Cargar datos (SIN st.toast aquí)
+                    # Cargar datos
                     df_uis = pd.read_sql("SELECT * FROM datos_uis", conn)
                     df_uis["apartment_id_normalizado"] = df_uis["apartment_id"].apply(normalizar_apartment_id)
                     df_uis["fuente"] = "UIS"
 
                     df_via = pd.read_sql("SELECT * FROM viabilidades", conn)
                     # Expandir múltiples IDs
-                    if 'apartment_id' in df_via.columns:
-                        df_via_exp = df_via.assign(
-                            apartment_id=df_via['apartment_id'].str.split(',')
-                        ).explode('apartment_id')
-                        df_via_exp['apartment_id'] = df_via_exp['apartment_id'].str.strip()
-                        df_via = df_via_exp[df_via_exp['apartment_id'] != ''].copy()
+                    df_via_exp = df_via.assign(
+                        apartment_id=df_via['apartment_id'].str.split(',')
+                    ).explode('apartment_id')
+                    df_via_exp['apartment_id'] = df_via_exp['apartment_id'].str.strip()
+                    df_via = df_via_exp[df_via_exp['apartment_id'] != ''].copy()
                     df_via["apartment_id_normalizado"] = df_via["apartment_id"].apply(normalizar_apartment_id)
                     df_via["fuente"] = "Viabilidad"
 
@@ -5493,18 +5460,7 @@ def admin_dashboard():
                         normalizar_apartment_id)
                     df_contratos["fuente"] = "Contrato"
 
-                    # Para PostgreSQL - probar diferentes nombres de tabla
-                    try:
-                        # Intentar con mayúsculas y comillas
-                        df_tirc = pd.read_sql('SELECT * FROM "TIRC"', conn)
-                    except:
-                        try:
-                            # Intentar con minúsculas
-                            df_tirc = pd.read_sql('SELECT * FROM tirc', conn)
-                        except:
-                            # Intentar con esquema completo
-                            df_tirc = pd.read_sql('SELECT * FROM public."TIRC"', conn)
-
+                    df_tirc = pd.read_sql("SELECT * FROM TIRC", conn)
                     df_tirc["apartment_id_normalizado"] = df_tirc["apartment_id"].apply(normalizar_apartment_id)
                     df_tirc["fuente"] = "TIRC"
 
@@ -5518,20 +5474,16 @@ def admin_dashboard():
                     }
 
                 except Exception as e:
-                    # NO usar st.toast aquí - solo registrar error
-                    print(f"Error al cargar datos: {str(e)[:200]}")
+                    st.toast(f"❌ Error al cargar datos: {str(e)[:200]}")
                     return None
 
-            # CARGAR DATOS con manejo de errores
+            # CARGAR DATOS
             with st.spinner("🔄 Cargando datos..."):
-                datos = cargar_datos_seguro()
+                datos = cargar_datos()
                 if not datos:
-                    st.error("❌ Error al cargar los datos. Verifica la conexión a la base de datos.")
                     st.stop()
-                else:
-                    st.toast("✅ Datos cargados correctamente")
 
-            # Crear tabla maestra simple
+            # CREAR TABLA MAESTRA SIMPLE
             st.toast("🔄 Creando tabla maestra...")
 
             # Recolectar todos los IDs únicos
@@ -5907,8 +5859,8 @@ def admin_dashboard():
                         insert_sql = '''INSERT INTO seguimiento_contratos (
                             num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
                             comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios,
-                            "SAT", Tipo_cliente, tecnico, metodo_entrada, billing
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
+                            SAT, Tipo_cliente, tecnico, metodo_entrada, billing
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
                         inserted_divisor = 0
                         inserted_puerto = 0
@@ -6038,8 +5990,8 @@ def admin_dashboard():
                             WHERE fecha_fin_contrato IS NOT NULL 
                                OR divisor IS NOT NULL 
                                OR puerto IS NOT NULL
-                               OR "SAT" IS NOT NULL
-                               OR "Tipo_cliente" IS NOT NULL
+                               OR SAT IS NOT NULL
+                               OR Tipo_cliente IS NOT NULL
                                OR tecnico IS NOT NULL
                             LIMIT 5
                         """)
@@ -6203,7 +6155,7 @@ def admin_dashboard():
 
                                     while not token_valido and intentos < max_intentos:
                                         token = st.secrets.token_urlsafe(16)
-                                        cursor.execute("SELECT id FROM precontrato_links WHERE token = %s", (token,))
+                                        cursor.execute("SELECT id FROM precontrato_links WHERE token = ?", (token,))
                                         if cursor.fetchone() is None:
                                             token_valido = True
                                         intentos += 1
@@ -6214,13 +6166,13 @@ def admin_dashboard():
                                         # Actualizar el token existente
                                         cursor.execute("""
                                                         UPDATE precontrato_links 
-                                                        SET token = %s, expiracion = %s, usado = 0
-                                                        WHERE precontrato_id = %s
+                                                        SET token = ?, expiracion = ?, usado = 0
+                                                        WHERE precontrato_id = ?
                                                     """, (token, expiracion, precontrato[0]))
                                         conn.commit()
                                         conn.close()
                                         base_url = "https://one7022025.onrender.com"
-                                        link_cliente = f"{base_url}%sprecontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
+                                        link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
                                         st.toast("✅ Nuevo enlace generado correctamente.")
                                         st.code(link_cliente, language="text")
                                         st.info("💡 Copia este nuevo enlace y envíalo al cliente.")
@@ -6238,7 +6190,7 @@ def admin_dashboard():
             # --- 1️⃣ Leer datos de la base de datos ---
             try:
                 conn = obtener_conexion()
-                df_tirc = pd.read_sql('SELECT * FROM "TIRC"', conn)
+                df_tirc = pd.read_sql("SELECT * FROM TIRC", conn)
                 df_viabilidades = pd.read_sql("SELECT * FROM viabilidades", conn)
                 conn.close()
             except Exception as e:
@@ -6641,7 +6593,7 @@ def admin_dashboard():
         elif sub_seccion == "Agregar usuarios":
             st.info("ℹ️ Desde esta sección puedes agregar nuevos usuarios al sistema.")
             nombre = st.text_input("Nombre del Usuario")
-            rol = st.selectbox("Rol", ["admin", "comercial", "comercial_jefe", "comercial_rafa", "comercial_vip","demo","tecnico"])
+            rol = st.selectbox("Rol", ["admin", "comercial", "comercial_jefe", "comercial_rafa", "comercial_vip","demo", "marketing","tecnico"])
             email = st.text_input("Email del Usuario")
             password = st.text_input("Contraseña", type="password")
 
@@ -6660,16 +6612,16 @@ def admin_dashboard():
             if usuario_id:
                 conn = obtener_conexion()
                 cursor = conn.cursor()
-                cursor.execute("SELECT username, role, email FROM usuarios WHERE id = %s", (usuario_id,))
+                cursor.execute("SELECT username, role, email FROM usuarios WHERE id = ?", (usuario_id,))
                 usuario = cursor.fetchone()
                 conn.close()
 
                 if usuario:
                     nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
                     nuevo_rol = st.selectbox("Nuevo Rol",
-                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo","tecnico"],
+                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo", "marketing"],
                                              index=["admin", "comercial", "comercial_jefe",
-                                                    "comercial_rafa","comercial_vip","demo","tecnico"].index(usuario[1]))
+                                                    "comercial_rafa","comercial_vip","demo", "marketing"].index(usuario[1]))
                     nuevo_email = st.text_input("Nuevo Email", value=usuario[2])
                     nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
 
@@ -6772,7 +6724,7 @@ def admin_dashboard():
 
                             insert_query = f"""
                                 INSERT INTO TIRC ({', '.join([f'"{c}"' for c in columnas_tirc])})
-                                VALUES ({', '.join(['%s'] * len(columnas_tirc))})
+                                VALUES ({', '.join(['?'] * len(columnas_tirc))})
                                 ON CONFLICT(id) DO UPDATE SET
                                 {', '.join([f'"{c}"=excluded."{c}"' for c in columnas_tirc if c != "id"])}
                             """
@@ -7010,7 +6962,7 @@ def admin_dashboard():
 
                             cursor = conn.cursor()
                             cursor.execute("DELETE FROM datos_uis")
-                            cursor.execute("ALTER SEQUENCE datos_uis_id_seq RESTART WITH 1")
+                            cursor.execute("DELETE FROM sqlite_sequence WHERE name='datos_uis'")
                             conn.commit()
 
                             total_registros = len(data_filtrada)
@@ -7024,7 +6976,7 @@ def admin_dashboard():
                                     parcela_catastral, letra, cp, site_operational_state, apartment_operational_state,
                                     cto_id, olt, cto, latitud, longitud, tipo_olt_rental, CERTIFICABLE, comercial,
                                     zona, fecha, serviciable, motivo, contrato_uis
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """
 
                             progress_bar = st.progress(0)
@@ -7052,7 +7004,7 @@ def admin_dashboard():
                                 cursor.execute("""
                                     SELECT apartment_id
                                     FROM comercial_rafa
-                                    WHERE provincia = %s AND municipio = %s AND poblacion = %s AND comercial = %s
+                                    WHERE provincia = ? AND municipio = ? AND poblacion = ? AND comercial = ?
                                 """, (provincia, municipio, poblacion, comercial))
                                 asignados_ids = {fila[0] for fila in cursor.fetchall()}
 
@@ -7060,7 +7012,7 @@ def admin_dashboard():
                                 cursor.execute("""
                                     SELECT apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud
                                     FROM datos_uis
-                                    WHERE provincia = %s AND municipio = %s AND poblacion = %s
+                                    WHERE provincia = ? AND municipio = ? AND poblacion = ?
                                 """, (provincia, municipio, poblacion))
                                 puntos_zona = cursor.fetchall()
 
@@ -7076,7 +7028,7 @@ def admin_dashboard():
                                     cursor.execute("""
                                         INSERT INTO comercial_rafa
                                         (apartment_id, provincia, municipio, poblacion, vial, numero, letra, cp, latitud, longitud, comercial, Contrato)
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                     """, (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], comercial,
                                           'Pendiente'))
 
@@ -7086,7 +7038,7 @@ def admin_dashboard():
                                     )
 
                                     # 🔹 Notificación al comercial
-                                    cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = %s",
+                                    cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?",
                                                    (comercial.lower(),))
                                     resultado = cursor.fetchone()
                                     if resultado:
@@ -7151,7 +7103,7 @@ def admin_dashboard():
                                 poblaciones_nuevas = row["poblaciones_nuevas"]
 
                                 comercial_normalizado = comercial.lower()
-                                cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = %s",
+                                cursor.execute("SELECT email FROM usuarios WHERE LOWER(username) = ?",
                                                (comercial_normalizado,))
                                 resultado = cursor.fetchone()
 
@@ -7293,7 +7245,7 @@ def admin_dashboard():
                         fecha_actual = pd.Timestamp.now(tz="Europe/Madrid").strftime("%Y-%m-%d %H:%M:%S")
                         cursor.execute("""
                                 INSERT INTO anuncios (titulo, descripcion, fecha)
-                                VALUES (%s, %s, %s)
+                                VALUES (?, ?, ?)
                             """, (titulo, descripcion, fecha_actual))
                         conn.commit()
                         st.toast("✅ Anuncio publicado correctamente.")
@@ -7353,7 +7305,7 @@ def mostrar_kpis_seguimiento_contratos():
             cursor = conn.cursor()
 
             # Verificar que la tabla existe
-            cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'seguimiento_contratos'")
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='seguimiento_contratos'")
             if not cursor.fetchone():
                 st.warning("⚠️ La tabla 'seguimiento_contratos' no existe en la base de datos")
                 conn.close()
@@ -7366,7 +7318,7 @@ def mostrar_kpis_seguimiento_contratos():
                 fecha_inicio_contrato, fecha_ingreso, comercial,
                 fecha_instalacion, apartment_id, fecha_estado,
                 fecha_fin_contrato, comentarios, divisor, puerto,
-                "SAT", "Tipo_cliente", tecnico, metodo_entrada, billing
+                SAT, Tipo_cliente, tecnico, metodo_entrada, billing
             FROM seguimiento_contratos
             """
 
@@ -8575,14 +8527,9 @@ def mostrar_certificacion():
             # Primero, obtener las columnas disponibles de comercial_rafa
             cursor = conn.cursor()
 
-
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'comercial_rafa' 
-                ORDER BY ordinal_position
-            """)
-            columnas_comercial_rafa = [row[0] for row in cursor.fetchall()]
+            # Método 1: Usar PRAGMA para SQLite
+            cursor.execute("PRAGMA table_info(comercial_rafa)")
+            columnas_comercial_rafa = [row[1] for row in cursor.fetchall()]
 
             # Método alternativo: Usar consulta SELECT con LIMIT 0
             # cursor.execute("SELECT * FROM comercial_rafa LIMIT 0")
@@ -8995,7 +8942,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_total = """
         SELECT COUNT(DISTINCT apartment_id) 
         FROM datos_uis
-        WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN %s AND %s
+        WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
     """
     total_asignaciones = ejecutar_consulta(query_total, (fecha_inicio, fecha_fin))
 
@@ -9121,7 +9068,7 @@ def generar_informe(fecha_inicio, fecha_fin):
                END AS serviciable,
                COUNT(*) as total
            FROM viabilidades
-           WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN %s AND %s
+           WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
            GROUP BY serviciable
        """
     df_viabilidades = pd.read_sql_query(query_viabilidades, conn, params=(fecha_inicio, fecha_fin))
@@ -9155,13 +9102,13 @@ def generar_informe(fecha_inicio, fecha_fin):
         SELECT COUNT(*) 
         FROM trazabilidad
         WHERE LOWER(accion) LIKE '%asignación%' 
-          AND STRFTIME('%Y-%m-%d', fecha) BETWEEN %s AND %s
+          AND STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
     """
     query_desasignaciones = """
         SELECT COUNT(*) 
         FROM trazabilidad
         WHERE LOWER(accion) LIKE '%desasignación%' 
-          AND STRFTIME('%Y-%m-%d', fecha) BETWEEN %s AND %s
+          AND STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
     """
     total_asignaciones_trazabilidad = ejecutar_consulta(query_asignaciones_trazabilidad, (fecha_inicio, fecha_fin))
     total_desasignaciones = ejecutar_consulta(query_desasignaciones, (fecha_inicio, fecha_fin))
@@ -9257,7 +9204,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             END AS Serviciable,
             COUNT(*) AS Total
         FROM viabilidades
-        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN %s AND %s
+        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
         GROUP BY Serviciable
     """
     df_serviciable = pd.read_sql_query(query_serviciable, conn, params=(fecha_inicio, fecha_fin))
@@ -9269,7 +9216,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             COALESCE(estado, 'Sin estado') AS Estado,
             COUNT(*) AS Total
         FROM viabilidades
-        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN %s AND %s
+        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
         GROUP BY Estado
         ORDER BY Total DESC
     """
@@ -9281,7 +9228,7 @@ def generar_informe(fecha_inicio, fecha_fin):
             COALESCE(resultado, 'Sin resultado') AS Resultado,
             COUNT(*) AS Total
         FROM viabilidades
-        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN %s AND %s
+        WHERE STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
         GROUP BY Resultado
         ORDER BY Total DESC
     """
@@ -9291,7 +9238,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_comentarios = """
         SELECT COUNT(*) FROM viabilidades 
         WHERE comentarios_gestor IS NOT NULL AND TRIM(comentarios_gestor) <> ''
-          AND STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN %s AND %s
+          AND STRFTIME('%Y-%m-%d', fecha_viabilidad) BETWEEN ? AND ?
     """
     total_comentarios = ejecutar_consulta(query_comentarios, (fecha_inicio, fecha_fin))
     porcentaje_comentarios = (total_comentarios / total_viabilidades * 100) if total_viabilidades > 0 else 0
@@ -9392,7 +9339,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_total_precontratos = """
            SELECT COUNT(*) 
            FROM precontratos 
-           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN %s AND %s
+           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
        """
     total_precontratos = ejecutar_consulta(query_total_precontratos, (fecha_inicio, fecha_fin))
 
@@ -9400,7 +9347,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_precontratos_comercial = """
            SELECT comercial, COUNT(*) as total
            FROM precontratos
-           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN %s AND %s
+           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
            GROUP BY comercial
            ORDER BY total DESC
        """
@@ -9410,7 +9357,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_precontratos_tarifa = """
            SELECT tarifas, COUNT(*) as total
            FROM precontratos
-           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN %s AND %s
+           WHERE STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
            GROUP BY tarifas
            ORDER BY total DESC
        """
@@ -9422,7 +9369,7 @@ def generar_informe(fecha_inicio, fecha_fin):
            FROM precontratos 
            WHERE firma IS NOT NULL 
              AND TRIM(firma) <> ''
-             AND STRFTIME('%Y-%m-%d', fecha) BETWEEN %s AND %s
+             AND STRFTIME('%Y-%m-%d', fecha) BETWEEN ? AND ?
        """
     total_precontratos_completados = ejecutar_consulta(query_precontratos_completados, (fecha_inicio, fecha_fin))
     porcentaje_completados = (
@@ -9503,7 +9450,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_total_contratos = """
            SELECT COUNT(*) 
            FROM seguimiento_contratos 
-           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN %s AND %s
+           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
        """
     total_contratos = ejecutar_consulta(query_total_contratos, (fecha_inicio, fecha_fin))
 
@@ -9511,7 +9458,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_contratos_estado = """
            SELECT estado, COUNT(*) as total
            FROM seguimiento_contratos
-           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN %s AND %s
+           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
            GROUP BY estado
            ORDER BY total DESC
        """
@@ -9521,7 +9468,7 @@ def generar_informe(fecha_inicio, fecha_fin):
     query_contratos_comercial = """
            SELECT comercial, COUNT(*) as total
            FROM seguimiento_contratos
-           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN %s AND %s
+           WHERE STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
            GROUP BY comercial
            ORDER BY total DESC
        """
@@ -9532,7 +9479,7 @@ def generar_informe(fecha_inicio, fecha_fin):
            SELECT COUNT(*) 
            FROM seguimiento_contratos 
            WHERE estado IN ('Activo', 'En proceso', 'Pendiente')
-             AND STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN %s AND %s
+             AND STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
        """
     total_contratos_activos = ejecutar_consulta(query_contratos_activos, (fecha_inicio, fecha_fin))
     porcentaje_activos = (total_contratos_activos / total_contratos * 100) if total_contratos > 0 else 0
@@ -9543,7 +9490,7 @@ def generar_informe(fecha_inicio, fecha_fin):
            FROM seguimiento_contratos 
            WHERE fecha_instalacion IS NOT NULL 
              AND TRIM(fecha_instalacion) <> ''
-             AND STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN %s AND %s
+             AND STRFTIME('%Y-%m-%d', fecha_ingreso) BETWEEN ? AND ?
        """
     total_contratos_instalados = ejecutar_consulta(query_contratos_instalados, (fecha_inicio, fecha_fin))
     porcentaje_instalados = (total_contratos_instalados / total_contratos * 100) if total_contratos > 0 else 0
@@ -9616,7 +9563,7 @@ def mostrar_control_versiones():
     try:
         # Conexión a la base de datos
         conn = sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db%sapikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
         )
         cursor = conn.cursor()
 
@@ -9636,7 +9583,7 @@ def mostrar_control_versiones():
                     fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     # Insertar en base de datos
                     cursor.execute(
-                        "INSERT INTO versiones (version, descripcion, fecha) VALUES (%s, %s, %s)",
+                        "INSERT INTO versiones (version, descripcion, fecha) VALUES (?, ?, ?)",
                         (nueva_version.strip(), descripcion.strip(), fecha)
                     )
                     conn.commit()
@@ -9774,26 +9721,25 @@ def create_tipo_vivienda_distribution_graph(cursor) -> go.Figure:
     """Crea gráfico de distribución de tipos de vivienda"""
     cursor.execute("""
         SELECT 
-            COALESCE(NULLIF("Tipo_Vivienda", ''), 'No especificado') as tipo_vivienda,
+            COALESCE(NULLIF(Tipo_Vivienda, ''), 'No especificado') as Tipo_Vivienda,
             COUNT(*) as count
         FROM comercial_rafa 
-        WHERE "Tipo_Vivienda" IS NOT NULL
-        GROUP BY "Tipo_Vivienda"
+        GROUP BY Tipo_Vivienda
         ORDER BY count DESC
         LIMIT 8
     """)
 
     data = cursor.fetchall()
-    df = pd.DataFrame(data, columns=["tipo_vivienda", "count"])
+    df = pd.DataFrame(data, columns=["Tipo_Vivienda", "count"])
 
     # Crear gráfico de barras horizontales para mejor lectura
     fig = px.bar(
         df,
         x="count",
-        y="tipo_vivienda",
+        y="Tipo_Vivienda",
         title="Top 8 - Distribución de Tipos de Vivienda",
-        labels={"tipo_vivienda": "Tipo de Vivienda", "count": "Cantidad"},
-        color="tipo_vivienda",
+        labels={"Tipo_Vivienda": "Tipo de Vivienda", "count": "Cantidad"},
+        color="Tipo_Vivienda",
         orientation='h',
         color_discrete_sequence=px.colors.sequential.Blues
     )
@@ -9937,10 +9883,10 @@ def home_page():
                     municipio,
                     serviciable,
                     incidencia,
-                    "Tipo_Vivienda",
+                    Tipo_Vivienda,
                     COUNT(*) as total
                 FROM comercial_rafa
-                GROUP BY provincia, municipio, serviciable, incidencia, "Tipo_Vivienda"
+                GROUP BY provincia, municipio, serviciable, incidencia, Tipo_Vivienda
                 ORDER BY total DESC
                 LIMIT 20
             """)
