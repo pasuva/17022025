@@ -8921,6 +8921,21 @@ def mostrar_kpis_seguimiento_contratos():
                 with tab_tipo5:
                     st.markdown("### 📋 Tabla Completa de Contratos por Tipo")
 
+                    # Botón de actualización
+                    col_actualizar, col_info = st.columns([1, 4])
+                    with col_actualizar:
+                        if st.button("🔄 Actualizar datos", key="btn_actualizar_tabla"):
+                            # Limpiar el caché de esta función específica
+                            if 'cargar_contratos_tipo' in st.session_state:
+                                del st.session_state.cargar_contratos_tipo
+
+                            # Forzar recarga de datos
+                            st.cache_data.clear()  # Opcional: limpiar todo el caché
+                            st.rerun()
+
+                    with col_info:
+                        st.info("⚠️ Nota: Los cambios en Google Sheets pueden tardar unos segundos en reflejarse.")
+
                     # Mostrar el DataFrame completo con opciones de filtro y paginación
                     st.info(
                         f"Mostrando {len(df_tipos_filtrado)} registros (filtrados). Valores excluidos: {valores_excluir}")
