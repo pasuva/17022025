@@ -8921,6 +8921,55 @@ def mostrar_kpis_seguimiento_contratos():
                 with tab_tipo5:
                     st.markdown("### 📋 Tabla Completa de Contratos por Tipo")
 
+                    # ============================
+                    # AGREGAR MÉTODO DE ENTRADA AL DATAFRAME
+                    # ============================
+
+                    # Intentar hacer merge con df_contratos para obtener metodo_entrada
+                    if not df_tipos_filtrado.empty and not df_contratos.empty:
+                        # Verificar columnas comunes para el merge
+                        columnas_comunes = ['num_contrato', 'cliente']
+                        columna_merge = None
+
+                        # Buscar columna común para hacer el merge
+                        for col in columnas_comunes:
+                            if col in df_tipos_filtrado.columns and col in df_contratos.columns:
+                                columna_merge = col
+                                break
+
+                        if columna_merge:
+                            # Realizar el merge para obtener metodo_entrada
+                            try:
+                                # Seleccionar solo las columnas necesarias de df_contratos
+                                columnas_merge = ['metodo_entrada', columna_merge]
+                                if 'estado' in df_contratos.columns:
+                                    columnas_merge.append('estado')
+                                if 'comercial' in df_contratos.columns:
+                                    columnas_merge.append('comercial')
+
+                                # Crear DataFrame reducido para el merge
+                                df_metodos = df_contratos[columnas_merge].copy()
+
+                                # Eliminar duplicados manteniendo el primero
+                                df_metodos = df_metodos.drop_duplicates(subset=[columna_merge], keep='first')
+
+                                # Realizar el merge
+                                df_tipos_filtrado = pd.merge(
+                                    df_tipos_filtrado,
+                                    df_metodos,
+                                    on=columna_merge,
+                                    how='left'
+                                )
+
+                                st.success(f"✅ Método de entrada añadido usando columna '{columna_merge}'")
+
+                            except Exception as e:
+                                st.warning(f"No se pudo añadir método de entrada: {e}")
+                        else:
+                            st.info("⚠️ No se encontró columna común para añadir método de entrada")
+                    else:
+                        st.info("ℹ️ No hay datos suficientes para añadir método de entrada")
+
                     # Botón de actualización
                     col_actualizar, col_info = st.columns([1, 4])
                     with col_actualizar:
