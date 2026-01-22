@@ -7673,60 +7673,272 @@ def mostrar_kpis_seguimiento_contratos():
                         df_comercial_metodo['metodo_entrada'] = df_comercial_metodo['metodo_entrada'].replace('',
                                                                                                               'No especificado')
 
+                        # Añadir columna para identificar contratos finalizados
+                        if 'estado' in df_comercial_metodo.columns:
+                            df_comercial_metodo['es_finalizado'] = df_comercial_metodo['estado'].str.contains(
+                                'FINALIZADO', case=False, na=False
+                            )
+                            tiene_estado = True
+                        else:
+                            tiene_estado = False
+
                         # Filtrar comerciales con más de X contratos
                         comercial_counts = df_comercial_metodo['comercial'].value_counts()
                         comerciales_top = comercial_counts[comercial_counts >= 5].index.tolist()
                         df_top = df_comercial_metodo[df_comercial_metodo['comercial'].isin(comerciales_top)]
 
                         if not df_top.empty:
-                            # Crear tabla pivot
-                            pivot_table = pd.crosstab(
-                                df_top['comercial'],
-                                df_top['metodo_entrada'],
-                                margins=True,
-                                margins_name='Total'
-                            )
+                            # Crear pestañas para diferentes vistas
+                            tab3_1, tab3_2, tab3_3 = st.tabs(
+                                ["📊 Distribución Total", "✅ Solo Finalizados", "📈 Comparativa"])
 
-                            # Calcular porcentajes por fila
-                            pivot_percent = pivot_table.div(pivot_table.sum(axis=1), axis=0) * 100
-                            pivot_percent = pivot_percent.round(1)
-
-                            col1, col2 = st.columns(2)
-
-                            with col1:
-                                st.markdown("**Cantidad de Contratos**")
-                                st.dataframe(
-                                    pivot_table,
-                                    height=300,
-                                    width='stretch'
+                            with tab3_1:
+                                # Tabla pivot original (total de contratos)
+                                pivot_total = pd.crosstab(
+                                    df_top['comercial'],
+                                    df_top['metodo_entrada'],
+                                    margins=True,
+                                    margins_name='Total'
                                 )
 
-                            with col2:
-                                st.markdown("**Porcentaje por Comercial**")
-                                st.dataframe(
-                                    pivot_percent,
-                                    height=300,
-                                    width='stretch'
-                                )
+                                # Calcular porcentajes por fila
+                                pivot_percent = pivot_total.div(pivot_total.sum(axis=1), axis=0) * 100
+                                pivot_percent = pivot_percent.round(1)
 
-                            # Gráfico de calor
-                            st.markdown("**Mapa de Calor - Métodos por Comercial**")
-                            try:
-                                import plotly.express as px
+                                col1, col2 = st.columns(2)
 
-                                # Preparar datos para el heatmap
-                                heatmap_data = pivot_table.drop('Total', axis=0).drop('Total', axis=1)
+                                with col1:
+                                    st.markdown("**Cantidad de Contratos**")
+                                    st.dataframe(
+                                        pivot_total,
+                                        height=300,
+                                        width='stretch'
+                                    )
 
-                                fig = px.imshow(
-                                    heatmap_data,
-                                    text_auto=True,
-                                    aspect="auto",
-                                    title='Distribución de Métodos por Comercial'
-                                )
-                                fig.update_layout(height=400)
-                                st.plotly_chart(fig, config={'responsive': True})
-                            except:
-                                st.info("No se pudo generar el mapa de calor")
+                                with col2:
+                                    st.markdown("**Porcentaje por Comercial**")
+                                    st.dataframe(
+                                        pivot_percent,
+                                        height=300,
+                                        width='stretch'
+                                    )
+
+                                # Gráfico de calor para total
+                                st.markdown("**Mapa de Calor - Métodos por Comercial (Total)**")
+                                try:
+                                    import plotly.express as px
+
+                                    # Preparar datos para el heatmap
+                                    heatmap_data = pivot_total.drop('Total', axis=0).drop('Total', axis=1)
+
+                                    fig = px.imshow(
+                                        heatmap_data,
+                                        text_auto=True,
+                                        aspect="auto",
+                                        title='Distribución de Métodos por Comercial',
+                                        labels=dict(x="Método de Entrada", y="Comercial", color="Contratos")
+                                    )
+                                    fig.update_layout(height=400)
+                                    st.plotly_chart(fig, config={'responsive': True})
+                                except Exception as e:
+                                    st.info(f"No se pudo generar el mapa de calor: {e}")
+
+                            with tab3_2:
+                                if tiene_estado:
+                                    # Filtrar solo contratos finalizados
+                                    df_finalizados = df_top[df_top['es_finalizado'] == True]
+
+                                    if not df_finalizados.empty:
+                                        # Tabla pivot para finalizados
+                                        pivot_finalizados = pd.crosstab(
+                                            df_finalizados['comercial'],
+                                            df_finalizados['metodo_entrada'],
+                                            margins=True,
+                                            margins_name='Total'
+                                        )
+
+                                        # Calcular porcentajes por fila
+                                        pivot_finalizados_percent = pivot_finalizados.div(pivot_finalizados.sum(axis=1),
+                                                                                          axis=0) * 100
+                                        pivot_finalizados_percent = pivot_finalizados_percent.round(1)
+
+                                        col1, col2 = st.columns(2)
+
+                                        with col1:
+                                            st.markdown("**Contratos Finalizados**")
+                                            st.dataframe(
+                                                pivot_finalizados,
+                                                height=300,
+                                                width='stretch'
+                                            )
+
+                                        with col2:
+                                            st.markdown("**Porcentaje por Comercial (Finalizados)**")
+                                            st.dataframe(
+                                                pivot_finalizados_percent,
+                                                height=300,
+                                                width='stretch'
+                                            )
+
+                                        # Gráfico de calor para finalizados
+                                        st.markdown("**Mapa de Calor - Métodos por Comercial (Finalizados)**")
+                                        try:
+                                            import plotly.express as px
+
+                                            # Preparar datos para el heatmap
+                                            heatmap_finalizados = pivot_finalizados.drop('Total', axis=0).drop('Total',
+                                                                                                               axis=1)
+
+                                            fig = px.imshow(
+                                                heatmap_finalizados,
+                                                text_auto=True,
+                                                aspect="auto",
+                                                title='Distribución de Métodos por Comercial - Solo Finalizados',
+                                                labels=dict(x="Método de Entrada", y="Comercial",
+                                                            color="Contratos Finalizados"),
+                                                color_continuous_scale='Greens'
+                                            )
+                                            fig.update_layout(height=400)
+                                            st.plotly_chart(fig, config={'responsive': True})
+                                        except Exception as e:
+                                            st.info(f"No se pudo generar el mapa de calor: {e}")
+
+                                        # KPIs de finalización
+                                        st.markdown("**📊 KPIs de Finalización**")
+
+                                        col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+
+                                        with col_kpi1:
+                                            # Tasa de finalización general
+                                            tasa_finalizacion = (len(df_finalizados) / len(df_top)) * 100
+                                            st.metric("Tasa de Finalización General", f"{tasa_finalizacion:.1f}%")
+
+                                        with col_kpi2:
+                                            # Comercial con más finalizados
+                                            if not pivot_finalizados.empty:
+                                                comercial_max_finalizados = pivot_finalizados.drop('Total', axis=0)[
+                                                    'Total'].idxmax()
+                                                total_max = pivot_finalizados.loc[comercial_max_finalizados, 'Total']
+                                                st.metric("Comercial con más finalizados", comercial_max_finalizados,
+                                                          total_max)
+
+                                        with col_kpi3:
+                                            # Método con más finalizados
+                                            if not pivot_finalizados.empty:
+                                                metodo_max_finalizados = pivot_finalizados.drop('Total',
+                                                                                                axis=1).sum().idxmax()
+                                                total_metodo = pivot_finalizados.drop('Total', axis=1).sum().max()
+                                                st.metric("Método con más finalizados", metodo_max_finalizados,
+                                                          total_metodo)
+                                    else:
+                                        st.info("No hay contratos finalizados para los comerciales seleccionados")
+                                else:
+                                    st.info("⚠️ No hay datos de estado para filtrar contratos finalizados")
+
+                            with tab3_3:
+                                if tiene_estado:
+                                    # Análisis comparativo entre total y finalizados
+                                    st.markdown("**📈 Comparativa: Total vs Finalizados**")
+
+                                    # Crear DataFrame comparativo
+                                    comparativa_data = []
+
+                                    for comercial in df_top['comercial'].unique():
+                                        df_comercial = df_top[df_top['comercial'] == comercial]
+                                        total = len(df_comercial)
+                                        finalizados = len(df_comercial[df_comercial['es_finalizado'] == True])
+
+                                        for metodo in df_comercial['metodo_entrada'].unique():
+                                            df_metodo = df_comercial[df_comercial['metodo_entrada'] == metodo]
+                                            total_metodo = len(df_metodo)
+                                            finalizados_metodo = len(df_metodo[df_metodo['es_finalizado'] == True])
+
+                                            tasa_finalizacion = (
+                                                        finalizados_metodo / total_metodo * 100) if total_metodo > 0 else 0
+
+                                            comparativa_data.append({
+                                                'Comercial': comercial,
+                                                'Método': metodo,
+                                                'Total': total_metodo,
+                                                'Finalizados': finalizados_metodo,
+                                                'Tasa Finalización': tasa_finalizacion
+                                            })
+
+                                    df_comparativa = pd.DataFrame(comparativa_data)
+
+                                    # Filtrar métodos con al menos 5 contratos para mejor visualización
+                                    df_comparativa_filtered = df_comparativa[df_comparativa['Total'] >= 3]
+
+                                    if not df_comparativa_filtered.empty:
+                                        # Gráfico de dispersión
+                                        try:
+                                            import plotly.express as px
+
+                                            fig = px.scatter(
+                                                df_comparativa_filtered,
+                                                x='Total',
+                                                y='Tasa Finalización',
+                                                size='Finalizados',
+                                                color='Comercial',
+                                                hover_data=['Método', 'Total', 'Finalizados'],
+                                                title='Relación: Total Contratos vs Tasa de Finalización',
+                                                labels={'Total': 'Total de Contratos',
+                                                        'Tasa Finalización': 'Tasa de Finalización (%)'}
+                                            )
+                                            fig.update_layout(height=500)
+                                            st.plotly_chart(fig, config={'responsive': True})
+                                        except Exception as e:
+                                            st.info(f"No se pudo generar el gráfico: {e}")
+
+                                        # Tabla con métodos ordenados por tasa de finalización
+                                        st.markdown("**Top Métodos por Tasa de Finalización**")
+
+                                        # Agrupar por método
+                                        metodo_stats = df_comparativa.groupby('Método').agg({
+                                            'Total': 'sum',
+                                            'Finalizados': 'sum',
+                                            'Tasa Finalización': 'mean'
+                                        }).reset_index()
+
+                                        # Calcular tasa global por método
+                                        metodo_stats['Tasa Global'] = (
+                                                    metodo_stats['Finalizados'] / metodo_stats['Total'] * 100).round(1)
+                                        metodo_stats = metodo_stats[metodo_stats['Total'] >= 5].sort_values(
+                                            'Tasa Global', ascending=False)
+
+                                        st.dataframe(
+                                            metodo_stats,
+                                            column_config={
+                                                'Método': 'Método de Entrada',
+                                                'Total': st.column_config.NumberColumn('Total Contratos', format='%d'),
+                                                'Finalizados': st.column_config.NumberColumn('Contratos Finalizados',
+                                                                                             format='%d'),
+                                                'Tasa Global': st.column_config.NumberColumn('Tasa Finalización (%)',
+                                                                                             format='%.1f%%')
+                                            },
+                                            height=300
+                                        )
+
+                                        # Gráfico de barras para tasas por método
+                                        try:
+                                            fig2 = px.bar(
+                                                metodo_stats.head(10),
+                                                x='Método',
+                                                y='Tasa Global',
+                                                title='Top 10 Métodos por Tasa de Finalización',
+                                                color='Tasa Global',
+                                                text='Tasa Global',
+                                                color_continuous_scale='Viridis'
+                                            )
+                                            fig2.update_layout(height=400, xaxis_tickangle=45)
+                                            fig2.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+                                            st.plotly_chart(fig2, config={'responsive': True})
+                                        except Exception as e:
+                                            st.info(f"No se pudo generar el gráfico: {e}")
+                                    else:
+                                        st.info("No hay suficientes datos para el análisis comparativo")
+                                else:
+                                    st.info("⚠️ No hay datos de estado para análisis comparativo")
                         else:
                             st.info("No hay suficientes datos para el análisis por comercial")
                     else:
