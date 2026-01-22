@@ -7483,6 +7483,16 @@ def mostrar_kpis_seguimiento_contratos():
             """
 
             df_contratos = pd.read_sql(query, conn)
+            st.subheader("💰 Tabla de Tarifas")
+
+            # Verificar si la tabla tarifas existe
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tarifas'")
+            if cursor.fetchone():
+                # Cargar y mostrar la tabla tarifas
+                df_tarifas = pd.read_sql("SELECT * FROM tarifas", conn)
+                st.dataframe(df_tarifas, height=400)
+            else:
+                st.info("ℹ️ La tabla 'tarifas' no existe en la base de datos")
             conn.close()
 
             if df_contratos.empty:
@@ -7556,16 +7566,7 @@ def mostrar_kpis_seguimiento_contratos():
                 else:
                     st.metric("Billing", "N/A")
 
-            st.subheader("💰 Tabla de Tarifas")
 
-            # Verificar si la tabla tarifas existe
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tarifas'")
-            if cursor.fetchone():
-                # Cargar y mostrar la tabla tarifas
-                df_tarifas = pd.read_sql("SELECT * FROM tarifas", conn)
-                st.dataframe(df_tarifas, height=400)
-            else:
-                st.info("ℹ️ La tabla 'tarifas' no existe en la base de datos")
             # ============================
             # ANÁLISIS POR MÉTODO DE ENTRADA
             # ============================
