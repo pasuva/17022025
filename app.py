@@ -1,5 +1,5 @@
 import streamlit as st
-from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip, demo, perfil_tecnico, marketing
+from modules import login, admin, comercial_jefe, comercial_rafa, comercial_vip, demo, perfil_tecnico, marketing, rol_viabilidad
 from modules.formulario_cliente import formulario_cliente
 
 st.set_page_config(page_title="VERDE SUITE", page_icon="img/Adobe-Express-file.ico", layout="wide")
@@ -83,6 +83,8 @@ else:
         perfil_tecnico.tecnico_dashboard()
     elif rol == "marketing":
         marketing.marketing_dashboard()
+    elif rol == "viabilidad":
+        rol_viabilidad.viabilidad_dashboard()
     else:
         st.error("Rol no reconocido")
 

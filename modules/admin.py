@@ -24,6 +24,8 @@ from typing import Tuple, Dict, List
 from modules.reportes_pdf import preparar_datos_para_pdf, generar_pdf_reportlab
 from modules.cdr_kpis import mostrar_cdrs
 
+import psycopg2
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 cookie_name = "my_app"
@@ -6593,7 +6595,7 @@ def admin_dashboard():
         elif sub_seccion == "Agregar usuarios":
             st.info("ℹ️ Desde esta sección puedes agregar nuevos usuarios al sistema.")
             nombre = st.text_input("Nombre del Usuario")
-            rol = st.selectbox("Rol", ["admin", "comercial", "comercial_jefe", "comercial_rafa", "comercial_vip","demo", "marketing","tecnico"])
+            rol = st.selectbox("Rol", ["admin", "comercial", "comercial_jefe", "comercial_rafa", "comercial_vip","demo", "marketing","viabilidad"])
             email = st.text_input("Email del Usuario")
             password = st.text_input("Contraseña", type="password")
 
@@ -6619,9 +6621,9 @@ def admin_dashboard():
                 if usuario:
                     nuevo_nombre = st.text_input("Nuevo Nombre", value=usuario[0])
                     nuevo_rol = st.selectbox("Nuevo Rol",
-                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo", "marketing"],
+                                             ["admin", "comercial", "comercial_jefe", "comercial_rafa","comercial_vip","demo", "marketing","viabilidad"],
                                              index=["admin", "comercial", "comercial_jefe",
-                                                    "comercial_rafa","comercial_vip","demo", "marketing"].index(usuario[1]))
+                                                    "comercial_rafa","comercial_vip","demo", "marketing","viabilidad"].index(usuario[1]))
                     nuevo_email = st.text_input("Nuevo Email", value=usuario[2])
                     nueva_contraseña = st.text_input("Nueva Contraseña", type="password")
 
