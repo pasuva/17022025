@@ -8921,80 +8921,60 @@ def mostrar_kpis_seguimiento_contratos():
                 with tab_tipo5:
                     st.markdown("### 📋 Tabla Completa de Contratos por Tipo")
 
-                    # ============================
-                    # AGREGAR MÉTODO DE ENTRADA AL DATAFRAME
-                    # ============================
-
-                    # Intentar hacer merge con df_contratos para obtener metodo_entrada
-                    if not df_tipos_filtrado.empty and not df_contratos.empty:
-                        # Verificar columnas comunes para el merge
-                        columnas_comunes = ['num_contrato', 'cliente']
-                        columna_merge = None
-
-                        # Buscar columna común para hacer el merge
-                        for col in columnas_comunes:
-                            if col in df_tipos_filtrado.columns and col in df_contratos.columns:
-                                columna_merge = col
-                                break
-
-                        if columna_merge:
-                            # Realizar el merge para obtener metodo_entrada
-                            try:
-                                # Seleccionar solo las columnas necesarias de df_contratos
-                                columnas_merge = ['metodo_entrada', columna_merge]
-                                if 'estado' in df_contratos.columns:
-                                    columnas_merge.append('estado')
-                                if 'comercial' in df_contratos.columns:
-                                    columnas_merge.append('comercial')
-
-                                # Crear DataFrame reducido para el merge
-                                df_metodos = df_contratos[columnas_merge].copy()
-
-                                # Eliminar duplicados manteniendo el primero
-                                df_metodos = df_metodos.drop_duplicates(subset=[columna_merge], keep='first')
-
-                                # Realizar el merge
-                                df_tipos_filtrado = pd.merge(
-                                    df_tipos_filtrado,
-                                    df_metodos,
-                                    on=columna_merge,
-                                    how='left'
-                                )
-
-                                st.success(f"✅ Método de entrada añadido usando columna '{columna_merge}'")
-
-                            except Exception as e:
-                                st.warning(f"No se pudo añadir método de entrada: {e}")
-                        else:
-                            st.info("⚠️ No se encontró columna común para añadir método de entrada")
-                    else:
-                        st.info("ℹ️ No hay datos suficientes para añadir método de entrada")
-
                     # Botón de actualización
-                    col_actualizar, col_info = st.columns([1, 4])
-                    with col_actualizar:
-                        if st.button("🔄 Actualizar datos", key="btn_actualizar_tabla"):
-                            # Limpiar el caché de esta función específica
-                            if 'cargar_contratos_tipo' in st.session_state:
-                                del st.session_state.cargar_contratos_tipo
-
-                            # Forzar recarga de datos
-                            st.cache_data.clear()  # Opcional: limpiar todo el caché
-                            st.rerun()
-
-                    with col_info:
-                        st.info("⚠️ Nota: Los cambios en Google Sheets pueden tardar unos segundos en reflejarse.")
+                    if st.button("🔄 Actualizar datos", key="btn_actualizar_tabla"):
+                        if 'cargar_contratos_tipo' in st.session_state:
+                            del st.session_state.cargar_contratos_tipo
+                        st.cache_data.clear()
+                        st.rerun()
 
                     # Mostrar el DataFrame completo con opciones de filtro y paginación
                     st.info(
                         f"Mostrando {len(df_tipos_filtrado)} registros (filtrados). Valores excluidos: {valores_excluir}")
 
+                    # ============================
+                    # AÑADIR MÉTODO DE ENTRADA SIMPLEMENTE
+                    # ============================
+
+                    # Intentar añadir metodo_entrada si los datos están disponibles
+                    if 'df_contratos' in locals() and not df_contratos.empty:
+                        # Verificar si hay una columna común para vincular
+                        if 'num_contrato' in df_tipos_filtrado.columns and 'num_contrato' in df_contratos.columns:
+                            # Crear diccionario de num_contrato -> metodo_entrada
+                            metodo_dict = dict(zip(df_contratos['num_contrato'], df_contratos['metodo_entrada']))
+
+                            # Añadir columna metodo_entrada al DataFrame de tipos
+                            df_tipos_filtrado['metodo_entrada'] = df_tipos_filtrado['num_contrato'].map(metodo_dict)
+                            st.success("✅ Método de entrada añadido a la tabla")
+                        elif 'cliente' in df_tipos_filtrado.columns and 'cliente' in df_contratos.columns:
+                            # Usar cliente como alternativa
+                            # Tomar el primer metodo_entrada para cada cliente
+                            metodo_cliente_dict = df_contratos.groupby('cliente')['metodo_entrada'].first().to_dict()
+                            df_tipos_filtrado['metodo_entrada'] = df_tipos_filtrado['cliente'].map(metodo_cliente_dict)
+                            st.success("✅ Método de entrada añadido usando cliente")
+                        else:
+                            st.info("⚠️ No se pudo añadir método de entrada - No hay columna común")
+                    else:
+                        st.info("ℹ️ No se pudieron obtener datos de seguimiento_contratos")
+
                     # Opción para mostrar todas las columnas o seleccionar
                     columnas_disponibles = df_tipos_filtrado.columns.tolist()
+                    columnas_default = [
+                        'id_contrato', 'cliente', 'nombre_servicio', 'fecha_contrato_inicio',
+                        'nombre_completo', 'direccion'
+                    ]
+
+                    # Añadir metodo_entrada a las columnas por defecto si existe
+                    if 'metodo_entrada' in columnas_disponibles:
+                        columnas_default.append('metodo_entrada')
+
+                    # Filtrar solo columnas que existen
+                    columnas_default = [col for col in columnas_default if col in columnas_disponibles]
+
                     columnas_seleccionadas = st.multiselect(
                         "Selecciona las columnas a mostrar:",
                         options=columnas_disponibles,
-                        default=columnas_disponibles,
+                        default=columnas_default,
                         key="columnas_tabla_completa"
                     )
 
@@ -9005,34 +8985,6 @@ def mostrar_kpis_seguimiento_contratos():
                             height=600,
                             use_container_width=True
                         )
-
-                        # Mostrar estadísticas de la tabla
-                        col_stats1, col_stats2, col_stats3 = st.columns(3)
-                        with col_stats1:
-                            st.metric("Registros mostrados", len(df_tipos_filtrado))
-                        with col_stats2:
-                            st.metric("Columnas mostradas", len(columnas_seleccionadas))
-                        with col_stats3:
-                            if 'fecha_contrato_inicio' in columnas_seleccionadas:
-                                # Encontrar fechas extremas
-                                try:
-                                    df_temp = df_tipos_filtrado.copy()
-                                    if df_temp['fecha_contrato_inicio'].dtype == 'object':
-                                        df_temp['fecha_dt'] = pd.to_datetime(
-                                            df_temp['fecha_contrato_inicio'],
-                                            errors='coerce',
-                                            dayfirst=True
-                                        )
-                                    else:
-                                        df_temp['fecha_dt'] = df_temp['fecha_contrato_inicio']
-
-                                    fecha_min = df_temp['fecha_dt'].min()
-                                    fecha_max = df_temp['fecha_dt'].max()
-                                    if pd.notnull(fecha_min) and pd.notnull(fecha_max):
-                                        st.metric("Período cubierto",
-                                                  f"{fecha_min.strftime('%d/%m/%Y')} - {fecha_max.strftime('%d/%m/%Y')}")
-                                except:
-                                    pass
 
                         # Opción para descargar los datos
                         @st.cache_data
@@ -9048,20 +9000,13 @@ def mostrar_kpis_seguimiento_contratos():
                             mime="text/csv",
                         )
 
-                        # Búsqueda en la tabla
-                        st.markdown("#### 🔍 Búsqueda en la tabla")
-                        search_term = st.text_input("Buscar en toda la tabla:", key="search_tabla_completa")
-
-                        if search_term:
-                            # Filtrar por término de búsqueda
-                            mask = df_tipos_filtrado[columnas_seleccionadas].apply(
-                                lambda row: row.astype(str).str.contains(search_term, case=False, na=False).any(),
-                                axis=1
-                            )
-                            df_busqueda = df_tipos_filtrado[mask]
-
-                            st.metric("Resultados encontrados", len(df_busqueda))
-                            st.dataframe(df_busqueda[columnas_seleccionadas], height=400)
+                        # Mostrar estadísticas rápidas si metodo_entrada está presente
+                        if 'metodo_entrada' in columnas_seleccionadas and not df_tipos_filtrado[
+                            'metodo_entrada'].isna().all():
+                            st.markdown("#### 📊 Método de Entrada en esta tabla")
+                            metodo_counts = df_tipos_filtrado['metodo_entrada'].value_counts().head(5)
+                            st.dataframe(metodo_counts.reset_index().rename(
+                                columns={'index': 'Método', 'metodo_entrada': 'Cantidad'}))
                     else:
                         st.warning("Por favor, selecciona al menos una columna para mostrar.")
             else:
