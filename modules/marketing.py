@@ -7453,6 +7453,7 @@ def mostrar_kpis_seguimiento_contratos():
     """Muestra KPIs y análisis de la tabla seguimiento_contratos"""
     st.info("📊 **KPIs Seguimiento de Contratos** - Análisis de estado de contratos e instalaciones")
 
+
     with st.spinner("⏳ Cargando datos de seguimiento de contratos..."):
         try:
             # Cargar datos de seguimiento_contratos
@@ -7555,37 +7556,16 @@ def mostrar_kpis_seguimiento_contratos():
                 else:
                     st.metric("Billing", "N/A")
 
-                    # ============================
-                    # TABLA DE TARIFAS - VISUALIZACIÓN COMPLETA
-                    # ============================
-                    # Verificar si la tabla tarifas existe
-                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tarifas'")
-                    if cursor.fetchone():
-                        # Cargar todos los datos de la tabla tarifas
-                        try:
-                            df_tarifas = pd.read_sql("SELECT * FROM tarifas", conn)
+            st.subheader("💰 Tabla de Tarifas")
 
-                            if not df_tarifas.empty:
-                                st.info(f"📋 Mostrando {len(df_tarifas)} tarifas registradas")
-
-                                # Mostrar la tabla completa
-                                st.dataframe(
-                                    df_tarifas,
-                                    height=400,
-                                    use_container_width=True,
-                                    column_config={
-                                        col: st.column_config.Column(
-                                            width="medium",
-                                            help=f"Columna: {col}"
-                                        ) for col in df_tarifas.columns
-                                    }
-                                )
-
-                        except Exception as e:
-                            st.error(f"Error al cargar los datos de tarifas: {str(e)}")
-                    else:
-                        st.info("ℹ️ La tabla 'tarifas' no existe en la base de datos")
-
+            # Verificar si la tabla tarifas existe
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tarifas'")
+            if cursor.fetchone():
+                # Cargar y mostrar la tabla tarifas
+                df_tarifas = pd.read_sql("SELECT * FROM tarifas", conn)
+                st.dataframe(df_tarifas, height=400)
+            else:
+                st.info("ℹ️ La tabla 'tarifas' no existe en la base de datos")
             # ============================
             # ANÁLISIS POR MÉTODO DE ENTRADA
             # ============================
