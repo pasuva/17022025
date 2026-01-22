@@ -5581,9 +5581,12 @@ def admin_dashboard():
             if contratos_sin_id > 0:
                 st.warning(f"⚠️ {contratos_sin_id} contratos no tienen apartment_id válido")
 
-                df_sin_id = df_contratos[df_contratos['apartment_id_normalizado'].isna()][
-                    ['apartment_id', 'num_contrato', 'cliente', 'estado']
-                ].copy()
+                # Incluir las nuevas columnas en la visualización
+                columnas_mostrar = ['apartment_id', 'num_contrato', 'cliente', 'estado',
+                                    'TECNICO', 'COMERCIAL', 'DIVISOR', 'PUERTO']
+                columnas_disponibles = [col for col in columnas_mostrar if col in df_contratos.columns]
+
+                df_sin_id = df_contratos[df_contratos['apartment_id_normalizado'].isna()][columnas_disponibles].copy()
 
                 with st.expander("📋 Ver contratos sin apartment_id", expanded=True):
                     st.dataframe(df_sin_id, width='stretch', height=300)
@@ -5593,10 +5596,14 @@ def admin_dashboard():
                 st.toast(f"🚨 {num_ids_no_en_maestra} IDs únicos de contratos no están en la tabla maestra")
                 st.toast(f"🚨 Esto afecta a {contratos_con_id_no_en_maestra} contratos")
 
-                # Obtener los contratos afectados
+                # Incluir las nuevas columnas
+                columnas_mostrar = ['apartment_id', 'apartment_id_normalizado', 'num_contrato',
+                                    'cliente', 'estado', 'TECNICO', 'COMERCIAL', 'DIVISOR', 'PUERTO']
+                columnas_disponibles = [col for col in columnas_mostrar if col in df_contratos.columns]
+
                 df_no_en_maestra = df_contratos[
                     df_contratos['apartment_id_normalizado'].isin(ids_contratos_no_en_maestra)
-                ][['apartment_id', 'apartment_id_normalizado', 'num_contrato', 'cliente', 'estado']].copy()
+                ][columnas_disponibles].copy()
 
                 with st.expander("🔍 Ver contratos con ID pero no en maestra", expanded=True):
                     st.write(f"**IDs únicos no encontrados:** {len(ids_contratos_no_en_maestra)}")
@@ -5654,10 +5661,14 @@ def admin_dashboard():
                         if len(ids_duplicados_sorted) > 20:
                             st.write(f"... y {len(ids_duplicados_sorted) - 20} más")
 
+                        # Incluir las nuevas columnas
+                        columnas_mostrar = ['apartment_id', 'apartment_id_normalizado', 'num_contrato',
+                                            'cliente', 'estado', 'TECNICO', 'COMERCIAL', 'DIVISOR', 'PUERTO']
+                        columnas_disponibles = [col for col in columnas_mostrar if col in duplicados_con_id.columns]
+
                         # Mostrar tabla de duplicados
                         st.dataframe(
-                            duplicados_con_id[['apartment_id', 'apartment_id_normalizado', 'num_contrato', 'cliente',
-                                               'estado']].sort_values('apartment_id_normalizado'),
+                            duplicados_con_id[columnas_disponibles].sort_values('apartment_id_normalizado'),
                             width='stretch',
                             height=300
                         )
@@ -5717,7 +5728,12 @@ def admin_dashboard():
                 'cliente': ['cto_cliente'],
                 'estado': ['cto_estado'],
                 'serviciable': ['via_serviciable'],
-                'coste': ['via_coste']
+                'coste': ['via_coste'],
+                # NUEVAS COLUMNAS AÑADIDAS
+                'tecnico': ['cto_TECNICO'],
+                'comercial': ['cto_COMERCIAL'],
+                'divisor': ['cto_DIVISOR'],
+                'puerto': ['cto_PUERTO']
             }
 
             for col_final, fuentes in columnas_consolidar.items():
@@ -5748,12 +5764,21 @@ def admin_dashboard():
             if 'uis_fuente' in df_final.columns:
                 df_final['fuente'] = df_final.apply(determinar_fuente, axis=1)
 
-            # Seleccionar columnas para mostrar
+            # Seleccionar columnas para mostrar - Asegurar que las nuevas columnas estén incluidas
             columnas_base = ['apartment_id_normalizado', 'fuente']
-            columnas_extra = [col for col in df_final.columns if col not in columnas_base]
+            # Definir un orden preferido para las columnas
+            columnas_preferidas = [
+                'provincia', 'municipio', 'poblacion', 'id_ams', 'address_id',
+                'olt', 'cto', 'latitud', 'longitud', 'solicitante',
+                'num_contrato', 'cliente', 'estado', 'tecnico', 'comercial',
+                'divisor', 'puerto', 'serviciable', 'coste'
+            ]
 
-            # Ordenar columnas
-            df_final = df_final[columnas_base + sorted(columnas_extra)]
+            # Ordenar columnas: primero las base, luego las preferidas, luego el resto
+            columnas_extra = [col for col in columnas_preferidas if col in df_final.columns]
+            columnas_resto = [col for col in df_final.columns if col not in columnas_base + columnas_preferidas]
+
+            df_final = df_final[columnas_base + columnas_extra + sorted(columnas_resto)]
 
             # Almacenar en session state
             st.session_state["df"] = df_final
@@ -5769,8 +5794,12 @@ def admin_dashboard():
                 flex=1
             )
 
-            # Ocultar columnas internas
-            columnas_ocultar = ['uis_fuente', 'via_fuente', 'tirc_fuente', 'cto_fuente']
+            # Ocultar columnas internas - Actualizado para incluir las nuevas
+            columnas_ocultar = [
+                'uis_fuente', 'via_fuente', 'tirc_fuente', 'cto_fuente',
+                'cto_TECNICO', 'cto_COMERCIAL', 'cto_DIVISOR', 'cto_PUERTO'
+            ]
+
             for col in columnas_ocultar:
                 if col in df_final.columns:
                     gb.configure_column(col, hide=True)
