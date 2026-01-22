@@ -740,13 +740,60 @@ def mostrar_metricas_ofertas(df):
         st.metric("No Serviciables", no_serviciables)
 
 
-def mostrar_tabla_viabilidades(df_viabilidades, comercial_usuario):
-    """Muestra tabla de viabilidades optimizada"""
+def mostrar_tabla_viabilidades(df_viabilidades, comercial_usuario, db_connection):
+    """Muestra tabla de viabilidades optimizada, filtrando por usuarios con rol 'viabilidad'"""
+
+    # Obtener usuarios con rol "viabilidad"
+    try:
+        cursor = db_connection.cursor()
+        cursor.execute("SELECT username FROM usuarios WHERE role = 'viabilidad'")
+        usuarios_viabilidad = [row[0] for row in cursor.fetchall()]
+    except Exception as e:
+        st.error(f"❌ Error al obtener usuarios con rol viabilidad: {e}")
+        usuarios_viabilidad = []
+
+    # Filtrar viabilidades solo para usuarios con rol "viabilidad"
+    if usuarios_viabilidad:
+        # Verificar si la columna 'usuario_creacion' existe, si no, usar otra columna apropiada
+        columnas_disponibles = df_viabilidades.columns.tolist()
+        columna_usuario = None
+
+        # Posibles nombres de columna donde podría estar el usuario creador
+        posibles_columnas = ['usuario_creacion', 'creado_por', 'usuario', 'username', 'comercial']
+
+        for col in posibles_columnas:
+            if col in columnas_disponibles:
+                columna_usuario = col
+                break
+
+        if columna_usuario:
+            # Filtrar solo viabilidades creadas por usuarios con rol "viabilidad"
+            df_filtrado = df_viabilidades[df_viabilidades[columna_usuario].isin(usuarios_viabilidad)]
+
+            if df_filtrado.empty:
+                st.info(
+                    f"ℹ️ No hay viabilidades creadas por usuarios con rol 'viabilidad' para el comercial '{comercial_usuario}'")
+                return
+
+            # Reemplazar df_viabilidades con el filtrado
+            df_viabilidades = df_filtrado
+        else:
+            st.warning("⚠️ No se encontró columna de usuario creador en las viabilidades")
+            # Si no encontramos la columna, mostramos todas (o puedes decidir no mostrar nada)
+
     if df_viabilidades.empty:
         st.warning(f"⚠️ No hay viabilidades para el comercial '{comercial_usuario}'")
         return
 
-    st.subheader("📋 Tabla de Viabilidades")
+    st.subheader("📋 Tabla de Viabilidades (solo creadas por usuarios con rol 'viabilidad')")
+
+    # Mostrar contador de viabilidades filtradas
+    st.caption(f"Mostrando {len(df_viabilidades)} viabilidades creadas por usuarios con rol 'viabilidad'")
+
+    # Mostrar usuarios con rol viabilidad para referencia (opcional)
+    with st.expander("👥 Usuarios con rol 'viabilidad'", expanded=False):
+        st.write(", ".join(usuarios_viabilidad) if usuarios_viabilidad else "No hay usuarios con este rol")
+
     st.dataframe(df_viabilidades, width='stretch')
 
     # Procesar viabilidades pendientes
@@ -792,6 +839,9 @@ def mostrar_formulario_viabilidad(viabilidad, comercial_usuario):
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"**📌 Justificación:**  \n{viabilidad.get('justificacion', '—')}")
+            # Mostrar usuario creador si está disponible
+            if 'usuario_creacion' in viabilidad:
+                st.markdown(f"**👤 Creada por:**  \n{viabilidad.get('usuario_creacion', '—')}")
         with col2:
             st.markdown(f"**📊 Resultado:**  \n{viabilidad.get('resultado', '—')}")
 
