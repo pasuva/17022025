@@ -9240,6 +9240,49 @@ def mostrar_kpis_seguimiento_contratos():
             st.subheader("Datos totales")
 
             # ============================================
+            # FUNCIÓN PARA OBTENER PROVINCIA
+            # ============================================
+            def obtener_provincia(cliente, lat, lon):
+                """
+                Determina la provincia basándose en:
+                1. Nombre del cliente (NETCAN, ASTURPHONE, AIR ASTURIAS)
+                2. Coordenadas geográficas (si están disponibles)
+                3. Valor por defecto si no se puede determinar
+                """
+                if pd.isna(cliente):
+                    cliente_str = ''
+                else:
+                    cliente_str = str(cliente).upper()
+
+                # Reglas basadas en el nombre del cliente (prioridad alta)
+                if 'NETCAN' in cliente_str:
+                    return 'CANTABRIA'
+                if 'ASTURPHONE' in cliente_str or 'AIR ASTURIAS' in cliente_str:
+                    return 'ASTURIAS'
+
+                # Reglas basadas en coordenadas (si están disponibles)
+                if pd.notna(lat) and pd.notna(lon):
+                    try:
+                        lat_f = float(lat)
+                        lon_f = float(lon)
+
+                        # Bounding box aproximado para CANTABRIA
+                        if 42.5 <= lat_f <= 43.5 and -4.8 <= lon_f <= -3.2:
+                            return 'CANTABRIA'
+
+                        # Bounding box aproximado para ASTURIAS
+                        if 42.5 <= lat_f <= 43.8 and -7.2 <= lon_f <= -4.5:
+                            return 'ASTURIAS'
+
+                        # Si cae fuera de las regiones conocidas pero tiene coordenadas
+                        return 'OTRA PROVINCIA'
+                    except:
+                        return 'SIN DATOS'
+
+                # Si no hay coordenadas ni nombre específico
+                return 'SIN DATOS'
+
+            # ============================================
             # AÑADIR TIPOS DE CONTRATO - POR ID DE CONTRATO
             # ============================================
             try:
@@ -9371,7 +9414,6 @@ def mostrar_kpis_seguimiento_contratos():
                                     condicion_otros_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
 
                                 # PASADA FINAL DE SEGURIDAD: asegurar que no quede ningún contrato finalizado sin servicio
-                                # Esto maneja casos donde el estado es "finalizado" pero no fue capturado antes
                                 mask_finalizado = df_expandido['estado_normalizado'].str.contains('finalizado',
                                                                                                   na=False)
                                 mask_sin_servicio = df_expandido['servicio_contratado'].isna()
@@ -9389,6 +9431,67 @@ def mostrar_kpis_seguimiento_contratos():
                                 df_expandido.loc[df_expandido[
                                     'servicio_contratado'].isna(), 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                                 df_expandido = df_expandido.drop('tiene_coincidencia', axis=1)
+
+                            # ============================================
+                            # AÑADIR COLUMNA DE PROVINCIA
+                            # ============================================
+                            # Buscar columnas de coordenadas
+                            col_coordenadas = next((col for col in df_expandido.columns if 'coordenadas' in col), None)
+
+                            # Inicializar columnas de latitud y longitud
+                            df_expandido['latitud'] = None
+                            df_expandido['longitud'] = None
+
+                            if col_coordenadas:
+                                # Procesar coordenadas en formato "lat, lon"
+                                try:
+                                    coords_split = df_expandido[col_coordenadas].astype(str).str.split(',', expand=True)
+                                    if coords_split.shape[1] >= 2:
+                                        # Convertir a numérico, reemplazando comas por puntos si es necesario
+                                        df_expandido['latitud'] = pd.to_numeric(
+                                            coords_split[0].str.strip().str.replace(',', '.'), errors='coerce'
+                                        )
+                                        df_expandido['longitud'] = pd.to_numeric(
+                                            coords_split[1].str.strip().str.replace(',', '.'), errors='coerce'
+                                        )
+                                except:
+                                    pass
+
+                            # Buscar columnas de latitud y longitud por separado (por si ya existen)
+                            col_lat = next(
+                                (col for col in df_expandido.columns if col in ['lat', 'latitud', 'latitude']), None)
+                            col_lon = next(
+                                (col for col in df_expandido.columns if col in ['lng', 'longitud', 'longitude']), None)
+
+                            if col_lat and col_lon:
+                                # Usar las columnas existentes si hay mejores datos
+                                try:
+                                    df_expandido['latitud'] = pd.to_numeric(
+                                        df_expandido[col_lat].astype(str).str.replace(',', '.'), errors='coerce'
+                                    ).combine_first(df_expandido['latitud'])
+
+                                    df_expandido['longitud'] = pd.to_numeric(
+                                        df_expandido[col_lon].astype(str).str.replace(',', '.'), errors='coerce'
+                                    ).combine_first(df_expandido['longitud'])
+                                except:
+                                    pass
+
+                            # Aplicar la función para obtener la provincia
+                            if col_cliente:
+                                df_expandido['provincia'] = df_expandido.apply(
+                                    lambda row: obtener_provincia(
+                                        row[col_cliente],
+                                        row['latitud'],
+                                        row['longitud']
+                                    ),
+                                    axis=1
+                                )
+                            else:
+                                df_expandido['provincia'] = 'SIN DATOS'
+
+                            # Eliminar columnas temporales de latitud y longitud (si no existían antes)
+                            if 'latitud' not in df_contratos_mod.columns:
+                                df_expandido = df_expandido.drop(columns=['latitud', 'longitud'])
 
                             # Contar servicios por contrato
                             conteo_servicios = df_tipos_mod.groupby('id_contrato_num').size().reset_index(
@@ -9451,9 +9554,11 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                 if 'num_servicios' not in df_a_mostrar.columns:
                     df_a_mostrar['num_servicios'] = 0
+                if 'provincia' not in df_a_mostrar.columns:
+                    df_a_mostrar['provincia'] = 'SIN DATOS'
 
             # ============================================
-            # FILTROS
+            # FILTROS (AHORA CON PROVINCIA)
             # ============================================
             col1, col2, col3, col4 = st.columns(4)
 
@@ -9479,16 +9584,23 @@ def mostrar_kpis_seguimiento_contratos():
                     metodo_filtro = 'Todos'
 
             with col4:
+                if 'provincia' in df_a_mostrar.columns and df_a_mostrar['provincia'].notna().any():
+                    provincias = ['Todas'] + sorted(df_a_mostrar['provincia'].dropna().unique().tolist())
+                    provincia_filtro = st.selectbox("Filtrar por provincia:", provincias)
+                else:
+                    provincia_filtro = 'Todas'
+
+            # Nueva fila para más filtros
+            col5, col6 = st.columns(2)
+
+            with col5:
                 if 'num_servicios' in df_a_mostrar.columns and df_a_mostrar['num_servicios'].notna().any():
                     opciones_num = ['Todos', '1 servicio', '2+ servicios', '3+ servicios']
                     num_servicios_filtro = st.selectbox("Filtrar por cantidad de servicios:", opciones_num)
                 else:
                     num_servicios_filtro = 'Todos'
 
-            # Nueva fila para filtro por tipo de servicio
-            col5, col6 = st.columns(2)
-
-            with col5:
+            with col6:
                 if 'servicio_contratado' in df_a_mostrar.columns and df_a_mostrar['servicio_contratado'].notna().any():
                     # Ordenar los servicios de forma más lógica
                     servicios_unicos = df_a_mostrar['servicio_contratado'].dropna().unique().tolist()
@@ -9509,11 +9621,8 @@ def mostrar_kpis_seguimiento_contratos():
                 else:
                     servicio_filtro = 'Todos'
 
-            with col6:
-                st.write("")
-
             # ============================================
-            # SELECCIÓN DE COLUMNAS
+            # SELECCIÓN DE COLUMNAS (ACTUALIZADA CON PROVINCIA)
             # ============================================
             columnas_disponibles = df_a_mostrar.columns.tolist()
 
@@ -9528,6 +9637,8 @@ def mostrar_kpis_seguimiento_contratos():
                 columnas_default.append('servicio_contratado')
             if 'num_servicios' in columnas_disponibles:
                 columnas_default.append('num_servicios')
+            if 'provincia' in columnas_disponibles:
+                columnas_default.append('provincia')
 
             # Filtrar solo columnas que existen
             columnas_default = [col for col in columnas_default if col in columnas_disponibles]
@@ -9539,7 +9650,7 @@ def mostrar_kpis_seguimiento_contratos():
             )
 
             # ============================================
-            # APLICAR FILTROS
+            # APLICAR FILTROS (INCLUYENDO PROVINCIA)
             # ============================================
             df_filtrado = df_a_mostrar.copy()
 
@@ -9551,6 +9662,9 @@ def mostrar_kpis_seguimiento_contratos():
 
             if metodo_filtro != 'Todos' and 'metodo_entrada' in df_filtrado.columns:
                 df_filtrado = df_filtrado[df_filtrado['metodo_entrada'] == metodo_filtro]
+
+            if provincia_filtro != 'Todas' and 'provincia' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['provincia'] == provincia_filtro]
 
             # Aplicar filtro por número de servicios
             if num_servicios_filtro != 'Todos' and 'num_servicios' in df_filtrado.columns:
@@ -9572,7 +9686,7 @@ def mostrar_kpis_seguimiento_contratos():
 
             # Mostrar KPIs de servicios
             if 'num_servicios' in df_filtrado.columns and df_filtrado['num_servicios'].notna().any():
-                col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+                col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
 
                 with col_kpi1:
                     total_registros = len(df_filtrado)
@@ -9590,6 +9704,11 @@ def mostrar_kpis_seguimiento_contratos():
                         'servicio_contratado'].notna().any():
                         tipos_servicios = df_filtrado['servicio_contratado'].nunique()
                         st.metric("🎯 Tipos de servicio", tipos_servicios)
+
+                with col_kpi4:
+                    if 'provincia' in df_filtrado.columns and df_filtrado['provincia'].notna().any():
+                        provincias_unicas = df_filtrado['provincia'].nunique()
+                        st.metric("📍 Provincias", provincias_unicas)
 
             # Mostrar tabla
             if columnas_seleccionadas:
