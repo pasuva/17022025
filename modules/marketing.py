@@ -9276,8 +9276,8 @@ def mostrar_kpis_seguimiento_contratos():
                             col_cliente_tipos = col
                             break
 
-                    st.write(f"📌 Columna cliente en contratos: {col_cliente_contratos}")
-                    st.write(f"📌 Columna cliente en tipos: {col_cliente_tipos}")
+                    #st.write(f"📌 Columna cliente en contratos: {col_cliente_contratos}")
+                    #st.write(f"📌 Columna cliente en tipos: {col_cliente_tipos}")
 
                     if col_cliente_contratos and col_cliente_tipos:
                         # Normalizar los nombres de clientes (quitar espacios extra, normalizar tildes)
@@ -9310,7 +9310,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 col_servicio = col
                                 break
 
-                        st.write(f"📌 Columna servicio en tipos: {col_servicio}")
+                        #st.write(f"📌 Columna servicio en tipos: {col_servicio}")
 
                         if col_servicio:
                             # Agrupar servicios por cliente
