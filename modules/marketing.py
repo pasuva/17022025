@@ -9239,8 +9239,61 @@ def mostrar_kpis_seguimiento_contratos():
 
             st.subheader("Datos totales")
 
-            # Filtros
-            col1, col2, col3 = st.columns(3)
+            # ============================================
+            # AÑADIR TIPOS DE CONTRATO DESDE LA SEGUNDA TABLA
+            # ============================================
+            if 'df_tipos_filtrado' in locals() and not df_tipos_filtrado.empty:
+                try:
+                    # Normalizar nombres de columnas (si es necesario)
+                    if 'NOMBRE' in df_tipos_filtrado.columns:
+                        df_tipos_filtrado = df_tipos_filtrado.rename(columns={'NOMBRE': 'nombre_servicio'})
+
+                    # Asegurar que la columna CLIENTE existe en df_contratos
+                    if 'CLIENTE' not in df_contratos.columns and 'cliente' in df_contratos.columns:
+                        df_contratos['CLIENTE'] = df_contratos['cliente']
+
+                    # Crear una agrupación por cliente
+                    # Opción 1: Lista de todos los servicios por cliente
+                    servicios_por_cliente = df_tipos_filtrado.groupby('CLIENTE').agg({
+                        'nombre_servicio': lambda x: ', '.join(sorted(set(x.dropna()))),
+                        'FECHA CONTRATO INICIO': 'min'
+                    }).reset_index()
+
+                    servicios_por_cliente.columns = ['CLIENTE', 'servicios_contratados', 'primera_fecha_servicio']
+
+                    # Opción 2: Contar cuántos servicios tiene cada cliente
+                    conteo_servicios = df_tipos_filtrado.groupby('CLIENTE')['nombre_servicio'].nunique().reset_index()
+                    conteo_servicios.columns = ['CLIENTE', 'num_servicios']
+
+                    # Unir con df_contratos usando CLIENTE como clave
+                    df_contratos = df_contratos.merge(
+                        servicios_por_cliente,
+                        on='CLIENTE',
+                        how='left'
+                    )
+
+                    df_contratos = df_contratos.merge(
+                        conteo_servicios,
+                        on='CLIENTE',
+                        how='left'
+                    )
+
+                    st.success(
+                        f"✅ Tipos de contrato añadidos para {df_contratos['servicios_contratados'].notna().sum()} clientes")
+
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudieron añadir tipos de contrato: {e}")
+                    # Crear columnas vacías para mantener la estructura
+                    df_contratos['servicios_contratados'] = None
+                    df_contratos['num_servicios'] = None
+            else:
+                st.info("ℹ️ No se encontraron datos de tipos de contrato")
+                df_contratos['servicios_contratados'] = None
+                df_contratos['num_servicios'] = None
+            # ============================================
+
+            # Filtros (aumentados a 4 columnas)
+            col1, col2, col3, col4 = st.columns(4)
 
             with col1:
                 if 'estado' in df_contratos.columns:
@@ -9263,13 +9316,53 @@ def mostrar_kpis_seguimiento_contratos():
                 else:
                     metodo_filtro = 'Todos'
 
-            # Selección de columnas (separada)
+            with col4:
+                # Filtro por número de servicios (nuevo)
+                if 'num_servicios' in df_contratos.columns and df_contratos['num_servicios'].notna().any():
+                    opciones_num = ['Todos', '1 servicio', '2+ servicios', '3+ servicios']
+                    num_servicios_filtro = st.selectbox("Filtrar por cantidad de servicios:", opciones_num)
+                else:
+                    num_servicios_filtro = 'Todos'
+
+            # Nueva fila para filtro por tipo de servicio
+            col5, col6 = st.columns(2)
+
+            with col5:
+                # Filtro por tipo de servicio (nuevo)
+                if 'servicios_contratados' in df_contratos.columns and df_contratos[
+                    'servicios_contratados'].notna().any():
+                    # Extraer todos los servicios únicos
+                    todos_servicios = set()
+                    for servicios in df_contratos['servicios_contratados'].dropna():
+                        if isinstance(servicios, str):
+                            for servicio in servicios.split(', '):
+                                todos_servicios.add(servicio.strip())
+
+                    servicios_lista = ['Todos'] + sorted(list(todos_servicios))
+                    servicio_filtro = st.selectbox("Filtrar por tipo de servicio:", servicios_lista)
+                else:
+                    servicio_filtro = 'Todos'
+
+            with col6:
+                # Espacio para estadísticas o filtro adicional (puedes dejar vacío o añadir algo)
+                st.write("")  # Espacio en blanco para alineación
+
+            # Selección de columnas (actualizada con tipos de contrato)
             columnas_disponibles = df_contratos.columns.tolist()
+
+            # Columnas por defecto incluyendo las nuevas
             columnas_default = [
                 'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato',
                 'comercial', 'fecha_instalacion', 'comentarios',
                 'SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada'
             ]
+
+            # Añadir las nuevas columnas si existen
+            nuevas_columnas = ['servicios_contratados', 'num_servicios']
+            for col in nuevas_columnas:
+                if col in columnas_disponibles and col not in columnas_default:
+                    columnas_default.append(col)
+
             # Filtrar solo columnas que existen
             columnas_default = [col for col in columnas_default if col in columnas_disponibles]
 
@@ -9291,14 +9384,71 @@ def mostrar_kpis_seguimiento_contratos():
             if metodo_filtro != 'Todos' and 'metodo_entrada' in df_filtrado.columns:
                 df_filtrado = df_filtrado[df_filtrado['metodo_entrada'] == metodo_filtro]
 
+            # Aplicar filtro por tipo de servicio
+            if servicio_filtro != 'Todos' and 'servicios_contratados' in df_filtrado.columns:
+                df_filtrado = df_filtrado[
+                    df_filtrado['servicios_contratados'].notna() &
+                    df_filtrado['servicios_contratados'].str.contains(servicio_filtro, na=False)
+                    ]
+
+            # Aplicar filtro por número de servicios
+            if num_servicios_filtro != 'Todos' and 'num_servicios' in df_filtrado.columns:
+                if num_servicios_filtro == '1 servicio':
+                    df_filtrado = df_filtrado[df_filtrado['num_servicios'] == 1]
+                elif num_servicios_filtro == '2+ servicios':
+                    df_filtrado = df_filtrado[df_filtrado['num_servicios'] >= 2]
+                elif num_servicios_filtro == '3+ servicios':
+                    df_filtrado = df_filtrado[df_filtrado['num_servicios'] >= 3]
+
+            # Mostrar estadísticas
             st.info(f"Mostrando {len(df_filtrado)} de {len(df_contratos)} contratos")
+
+            # Mostrar KPIs de servicios (opcional)
+            if 'num_servicios' in df_filtrado.columns and df_filtrado['num_servicios'].notna().any():
+                col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+
+                with col_kpi1:
+                    clientes_con_servicios = df_filtrado['num_servicios'].notna().sum()
+                    st.metric("📋 Clientes con servicios", clientes_con_servicios)
+
+                with col_kpi2:
+                    if clientes_con_servicios > 0:
+                        servicios_promedio = df_filtrado['num_servicios'].mean()
+                        st.metric("📊 Servicios promedio", f"{servicios_promedio:.1f}")
+                    else:
+                        st.metric("📊 Servicios promedio", "0.0")
+
+                with col_kpi3:
+                    if 'servicios_contratados' in df_filtrado.columns and df_filtrado[
+                        'servicios_contratados'].notna().any():
+                        # Contar servicios más comunes
+                        todos_servicios = []
+                        for servicios in df_filtrado['servicios_contratados'].dropna():
+                            if isinstance(servicios, str):
+                                todos_servicios.extend([s.strip() for s in servicios.split(', ')])
+
+                        if todos_servicios:
+                            from collections import Counter
+                            servicio_comun = Counter(todos_servicios).most_common(1)[0][0]
+                            st.metric("🏆 Servicio más común", servicio_comun)
 
             # Mostrar tabla
             if columnas_seleccionadas:
                 st.dataframe(
                     df_filtrado[columnas_seleccionadas],
                     height=400,
-                    width='stretch'
+                    width='stretch',
+                    column_config={
+                        'servicios_contratados': st.column_config.TextColumn(
+                            "Servicios contratados",
+                            width="medium",
+                            help="Lista de servicios contratados por el cliente"
+                        ),
+                        'num_servicios': st.column_config.NumberColumn(
+                            "Nº Servicios",
+                            help="Número de servicios contratados"
+                        )
+                    } if 'servicios_contratados' in columnas_seleccionadas or 'num_servicios' in columnas_seleccionadas else None
                 )
             else:
                 st.dataframe(df_filtrado, height=400, width='stretch')
