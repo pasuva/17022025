@@ -262,14 +262,43 @@ def cargar_contratos_google():
         client = gspread.authorize(creds)
 
         # --- Abrir la hoja de Google Sheets ---
-        sheet = client.open("SEGUIMIENTO CLIENTES/CONTRATOS VERDE").worksheet("LISTADO DE ESTADO DE CONTRATOS")
-        data = sheet.get_all_records()
+        spreadsheet = client.open("SEGUIMIENTO CLIENTES/CONTRATOS VERDE")
+        sheet = spreadsheet.worksheet("LISTADO DE ESTADO DE CONTRATOS")
 
-        if not data:
-            print("⚠️ Hoja cargada pero sin registros. Revisa si la primera fila tiene encabezados correctos.")
+        # DIAGNÓSTICO: Ver estructura real de la hoja
+        print(f"🔍 Hoja cargada. Título: {sheet.title}")
+        print(f"🔍 Filas totales: {sheet.row_count}, Columnas: {sheet.col_count}")
+
+        # OPCIÓN 1: Usar get_all_values() para ver TODO
+        all_values = sheet.get_all_values()
+        print(f"🔍 Valores obtenidos: {len(all_values)} filas")
+
+        if len(all_values) <= 1:  # Solo encabezados o vacía
+            st.error(f"⚠️ La hoja tiene {len(all_values)} filas. ¿Está vacía o mal formateada?")
+
+            # Mostrar lo que hay (para diagnóstico)
+            if all_values:
+                st.write("Encabezados encontrados:", all_values[0])
             return pd.DataFrame()
 
-        df = pd.DataFrame(data)
+        # Crear DataFrame manualmente
+        # Primera fila = encabezados
+        headers = [str(h).strip() for h in all_values[0]]
+
+        # Filas siguientes = datos
+        data_rows = all_values[1:] if len(all_values) > 1 else []
+
+        print(f"✅ {len(headers)} encabezados: {headers}")
+        print(f"✅ {len(data_rows)} filas de datos")
+
+        # Mostrar algunas filas para diagnóstico
+        if data_rows:
+            print("📋 Primera fila de datos:", data_rows[0])
+            print("📋 Segunda fila de datos:", data_rows[1] if len(data_rows) > 1 else "No hay")
+
+        df = pd.DataFrame(data_rows, columns=headers)
+
+        print(f"✅ DataFrame creado: {len(df)} filas x {len(df.columns)} columnas")
 
         # --- Mapeo de columnas ---
         # ACTUALIZADO: Incluir las nuevas columnas
