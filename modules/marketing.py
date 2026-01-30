@@ -9267,20 +9267,56 @@ def mostrar_kpis_seguimiento_contratos():
                         col_servicio = next((col for col in df_tipos_mod.columns if 'nombre' in col), None)
 
                         if col_servicio:
-                            # Normalizar nombres de clientes para la unión
+                            # MEJORADA: Función de normalización más robusta
                             def normalizar_nombre(nombre):
                                 if pd.isna(nombre):
                                     return nombre
                                 nombre_str = str(nombre).strip().lower()
-                                reemplazos = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n'}
+
+                                # Reemplazar tildes y caracteres especiales
+                                reemplazos = {
+                                    'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+                                    'ü': 'u', 'ñ': 'n', 'à': 'a', 'è': 'e', 'ì': 'i',
+                                    'ò': 'o', 'ù': 'u'
+                                }
                                 for orig, rep in reemplazos.items():
                                     nombre_str = nombre_str.replace(orig, rep)
+
+                                # Normalizar espacios alrededor de comas y puntos
+                                import re
+                                # Quitar espacios múltiples
+                                nombre_str = re.sub(r'\s+', ' ', nombre_str)
+                                # Normalizar espacios después de comas: quitar espacio o añadirlo si falta
+                                nombre_str = re.sub(r',\s*', ',',
+                                                    nombre_str)  # Primero quitamos todos los espacios después de comas
+                                nombre_str = re.sub(r',', ', ',
+                                                    nombre_str)  # Luego ponemos un espacio después de cada coma
+                                # Normalizar espacios alrededor de puntos en abreviaturas
+                                nombre_str = re.sub(r'\s*\.\s*', '.', nombre_str)
+                                # Quitar espacios al final por si acaso
+                                nombre_str = nombre_str.strip()
+
+                                # CASOS ESPECÍFICOS PARA NOMBRES COMUNES QUE NO COINCIDEN
+                                # Reemplazar variantes conocidas
+                                if "altamira facility services" in nombre_str:
+                                    nombre_str = "altamira facility services, s.l"
+                                # Puedes añadir más casos específicos aquí si los identificas
+
                                 return nombre_str
 
                             df_contratos_mod['cliente_normalizado'] = df_contratos_mod[col_cliente_contratos].apply(
                                 normalizar_nombre)
                             df_tipos_mod['cliente_normalizado'] = df_tipos_mod[col_cliente_tipos].apply(
                                 normalizar_nombre)
+
+                            # Mostrar algunos clientes que no coinciden para debug
+                            clientes_contratos = set(df_contratos_mod['cliente_normalizado'].dropna().unique())
+                            clientes_tipos = set(df_tipos_mod['cliente_normalizado'].dropna().unique())
+                            clientes_no_encontrados = clientes_contratos - clientes_tipos
+
+                            if len(clientes_no_encontrados) > 0:
+                                # Mostrar los primeros 5 clientes que no se encuentran
+                                clientes_ejemplo = list(clientes_no_encontrados)[:5]
 
                             # Hacer un merge LEFT para mantener todos los contratos, incluso los que no tienen servicios
                             df_expandido = df_contratos_mod.merge(
@@ -9304,23 +9340,29 @@ def mostrar_kpis_seguimiento_contratos():
                                 df_expandido['estado_normalizado'] = df_expandido['estado'].astype(
                                     str).str.lower().str.strip()
 
-                                # Para contratos con estado "finalizado" pero sin servicio especificado
-                                condicion_finalizado_sin_servicio = (
-                                        df_expandido['servicio_contratado'].isna() &
+                                # Identificar qué clientes SÍ tienen servicios en df_tipos_mod
+                                clientes_con_servicios = set(df_tipos_mod['cliente_normalizado'].unique())
+
+                                # Marcar los contratos que no encontraron coincidencia
+                                condicion_no_coincidencia = df_expandido['servicio_contratado'].isna()
+
+                                # Para contratos con estado "finalizado" pero sin coincidencia
+                                condicion_finalizado_sin_coincidencia = (
+                                        condicion_no_coincidencia &
                                         df_expandido['estado_normalizado'].str.contains('finalizado', na=False)
                                 )
 
-                                # Para contratos con estado "pendiente" o similar pero sin servicio especificado
-                                condicion_pendiente_sin_servicio = (
-                                        df_expandido['servicio_contratado'].isna() &
+                                # Para contratos con estado "pendiente" o similar pero sin coincidencia
+                                condicion_pendiente_sin_coincidencia = (
+                                        condicion_no_coincidencia &
                                         ~df_expandido['estado_normalizado'].str.contains('finalizado', na=False)
                                 )
 
                                 # Aplicar las correcciones
                                 df_expandido.loc[
-                                    condicion_finalizado_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
+                                    condicion_finalizado_sin_coincidencia, 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                                 df_expandido.loc[
-                                    condicion_pendiente_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
+                                    condicion_pendiente_sin_coincidencia, 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
 
                                 # Eliminar columna temporal de estado normalizado
                                 df_expandido = df_expandido.drop('estado_normalizado', axis=1)
@@ -9346,16 +9388,13 @@ def mostrar_kpis_seguimiento_contratos():
                             df_contratos_expandido = df_expandido
 
                         else:
-                            st.warning("No se encontró columna de servicio")
                             df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                             df_contratos['num_servicios'] = 0
                     else:
-                        st.warning("No se pudo encontrar columna de cliente")
                         df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                         df_contratos['num_servicios'] = 0
 
             except Exception as e:
-                st.error(f"Error al procesar tipos de contrato: {e}")
                 df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                 df_contratos['num_servicios'] = 0
 
@@ -9543,7 +9582,7 @@ def mostrar_kpis_seguimiento_contratos():
                 st.dataframe(df_filtrado, height=400, width='stretch')
 
             # ============================================
-            # BOTONES DE EXPORTACIÓN (OFREZCO AMBAS OPCIONES)
+            # BOTONES DE EXPORTACIÓN
             # ============================================
             col1, col2 = st.columns(2)
 
