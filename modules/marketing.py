@@ -9240,7 +9240,7 @@ def mostrar_kpis_seguimiento_contratos():
             st.subheader("Datos totales")
 
             # ============================================
-            # AÑADIR TIPOS DE CONTRATO - VERSIÓN MEJORADA
+            # AÑADIR TIPOS DE CONTRATO - POR ID DE CONTRATO
             # ============================================
             try:
                 if 'df_tipos_filtrado' in locals() and not df_tipos_filtrado.empty:
@@ -9258,131 +9258,133 @@ def mostrar_kpis_seguimiento_contratos():
                     df_contratos_mod.columns = [col.strip().lower() for col in df_contratos_mod.columns]
                     df_tipos_mod.columns = [col.strip().lower() for col in df_tipos_mod.columns]
 
-                    # Buscar columna de cliente
-                    col_cliente_contratos = next((col for col in df_contratos_mod.columns if 'cliente' in col), None)
-                    col_cliente_tipos = next((col for col in df_tipos_mod.columns if 'cliente' in col), None)
+                    # ============================================
+                    # EXTRAER ID DE CONTRATO DE AMBAS TABLAS
+                    # ============================================
 
-                    if col_cliente_contratos and col_cliente_tipos:
+                    # En df_contratos_mod: extraer número después del "_" de 'num_contrato'
+                    if 'num_contrato' in df_contratos_mod.columns:
+                        # Extraer la parte numérica después del "_"
+                        df_contratos_mod['id_contrato_num'] = df_contratos_mod['num_contrato'].astype(str).str.extract(
+                            r'_(\d+)$')
+                        # Convertir a numérico
+                        df_contratos_mod['id_contrato_num'] = pd.to_numeric(df_contratos_mod['id_contrato_num'],
+                                                                            errors='coerce')
+
+                    # En df_tipos_mod: usar la columna 'id contratos' (o similar)
+                    col_id_tipos = None
+                    posibles_nombres_id = ['id contratos', 'id_contratos', 'idcontratos', 'contrato_id', 'id']
+
+                    for col in df_tipos_mod.columns:
+                        if any(nombre in col for nombre in posibles_nombres_id):
+                            col_id_tipos = col
+                            break
+
+                    if 'id_contrato_num' in df_contratos_mod.columns and col_id_tipos:
+                        # Convertir la columna de ID en df_tipos_mod a numérico
+                        df_tipos_mod['id_contrato_num'] = pd.to_numeric(df_tipos_mod[col_id_tipos], errors='coerce')
+
                         # Buscar columna de servicio
                         col_servicio = next((col for col in df_tipos_mod.columns if 'nombre' in col), None)
 
                         if col_servicio:
-                            # MEJORADA: Función de normalización más robusta
-                            def normalizar_nombre(nombre):
-                                if pd.isna(nombre):
-                                    return nombre
-                                nombre_str = str(nombre).strip().lower()
-
-                                # Reemplazar tildes y caracteres especiales
-                                reemplazos = {
-                                    'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
-                                    'ü': 'u', 'ñ': 'n', 'à': 'a', 'è': 'e', 'ì': 'i',
-                                    'ò': 'o', 'ù': 'u'
-                                }
-                                for orig, rep in reemplazos.items():
-                                    nombre_str = nombre_str.replace(orig, rep)
-
-                                # Normalizar espacios alrededor de comas y puntos
-                                import re
-                                # Quitar espacios múltiples
-                                nombre_str = re.sub(r'\s+', ' ', nombre_str)
-                                # Normalizar espacios después de comas: quitar espacio o añadirlo si falta
-                                nombre_str = re.sub(r',\s*', ',',
-                                                    nombre_str)  # Primero quitamos todos los espacios después de comas
-                                nombre_str = re.sub(r',', ', ',
-                                                    nombre_str)  # Luego ponemos un espacio después de cada coma
-                                # Normalizar espacios alrededor de puntos en abreviaturas
-                                nombre_str = re.sub(r'\s*\.\s*', '.', nombre_str)
-                                # Quitar espacios al final por si acaso
-                                nombre_str = nombre_str.strip()
-
-                                # CASOS ESPECÍFICOS PARA NOMBRES COMUNES QUE NO COINCIDEN
-                                # Reemplazar variantes conocidas
-                                if "altamira facility services" in nombre_str:
-                                    nombre_str = "altamira facility services, s.l"
-                                # Puedes añadir más casos específicos aquí si los identificas
-
-                                return nombre_str
-
-                            df_contratos_mod['cliente_normalizado'] = df_contratos_mod[col_cliente_contratos].apply(
-                                normalizar_nombre)
-                            df_tipos_mod['cliente_normalizado'] = df_tipos_mod[col_cliente_tipos].apply(
-                                normalizar_nombre)
-
-                            # Mostrar algunos clientes que no coinciden para debug
-                            clientes_contratos = set(df_contratos_mod['cliente_normalizado'].dropna().unique())
-                            clientes_tipos = set(df_tipos_mod['cliente_normalizado'].dropna().unique())
-                            clientes_no_encontrados = clientes_contratos - clientes_tipos
-
-                            if len(clientes_no_encontrados) > 0:
-                                # Mostrar los primeros 5 clientes que no se encuentran
-                                clientes_ejemplo = list(clientes_no_encontrados)[:5]
-
-                            # Hacer un merge LEFT para mantener todos los contratos, incluso los que no tienen servicios
+                            # Hacer un merge LEFT por ID de contrato
                             df_expandido = df_contratos_mod.merge(
-                                df_tipos_mod[['cliente_normalizado', col_servicio]],
-                                on='cliente_normalizado',
+                                df_tipos_mod[['id_contrato_num', col_servicio]],
+                                on='id_contrato_num',
                                 how='left'
                             )
 
                             # Renombrar columna de servicio
                             df_expandido.rename(columns={col_servicio: 'servicio_contratado'}, inplace=True)
 
-                            # Eliminar columna temporal
-                            df_expandido = df_expandido.drop('cliente_normalizado', axis=1)
+                            # ============================================
+                            # ASIGNACIÓN ESPECIAL PARA AIR ASTURIAS NETCAN ASTURPHONE
+                            # ============================================
+                            # Buscar columna de cliente para identificar AIR ASTURIAS
+                            col_cliente = next((col for col in df_expandido.columns if 'cliente' in col), None)
+
+                            if col_cliente:
+                                # Normalizar nombres de clientes para búsqueda
+                                def normalizar_nombre(nombre):
+                                    if pd.isna(nombre):
+                                        return nombre
+                                    nombre_str = str(nombre).strip().lower()
+                                    reemplazos = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n'}
+                                    for orig, rep in reemplazos.items():
+                                        nombre_str = nombre_str.replace(orig, rep)
+                                    return nombre_str
+
+                                df_expandido['cliente_normalizado'] = df_expandido[col_cliente].apply(normalizar_nombre)
+
+                                # Caso específico para AIR ASTURIAS NETCAN ASTURPHONE
+                                nombres_air_asturias = [
+                                    'air asturias netcan asturphone',
+                                    'air asturias netcan',
+                                    'air asturias',
+                                    'netcan asturphone'
+                                ]
+
+                                for nombre_buscar in nombres_air_asturias:
+                                    mask_air_asturias = df_expandido['cliente_normalizado'].str.contains(nombre_buscar,
+                                                                                                         na=False)
+                                    if mask_air_asturias.any():
+                                        df_expandido.loc[mask_air_asturias, 'servicio_contratado'] = 'ALQUILER DE UUII'
+
+                                # Eliminar columna temporal
+                                df_expandido = df_expandido.drop('cliente_normalizado', axis=1)
 
                             # ============================================
                             # ARREGLAR CONTRATOS SIN SERVICIO ESPECIFICADO
                             # ============================================
-                            # Normalizar columna de estado para comparación
                             if 'estado' in df_expandido.columns:
-                                # Crear columna temporal de estado normalizado
                                 df_expandido['estado_normalizado'] = df_expandido['estado'].astype(
                                     str).str.lower().str.strip()
 
-                                # Identificar qué clientes SÍ tienen servicios en df_tipos_mod
-                                clientes_con_servicios = set(df_tipos_mod['cliente_normalizado'].unique())
+                                # Identificar contratos sin servicio
+                                condicion_sin_servicio = df_expandido['servicio_contratado'].isna()
 
-                                # Marcar los contratos que no encontraron coincidencia
-                                condicion_no_coincidencia = df_expandido['servicio_contratado'].isna()
-
-                                # Para contratos con estado "finalizado" pero sin coincidencia
-                                condicion_finalizado_sin_coincidencia = (
-                                        condicion_no_coincidencia &
+                                # Para contratos con estado "finalizado" pero sin servicio
+                                condicion_finalizado_sin_servicio = (
+                                        condicion_sin_servicio &
                                         df_expandido['estado_normalizado'].str.contains('finalizado', na=False)
                                 )
 
-                                # Para contratos con estado "pendiente" o similar pero sin coincidencia
-                                condicion_pendiente_sin_coincidencia = (
-                                        condicion_no_coincidencia &
+                                # Para contratos con otros estados sin servicio
+                                condicion_otros_sin_servicio = (
+                                        condicion_sin_servicio &
                                         ~df_expandido['estado_normalizado'].str.contains('finalizado', na=False)
                                 )
 
                                 # Aplicar las correcciones
                                 df_expandido.loc[
-                                    condicion_finalizado_sin_coincidencia, 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
+                                    condicion_finalizado_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                                 df_expandido.loc[
-                                    condicion_pendiente_sin_coincidencia, 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
+                                    condicion_otros_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
 
-                                # Eliminar columna temporal de estado normalizado
+                                # Eliminar columna temporal de estado
                                 df_expandido = df_expandido.drop('estado_normalizado', axis=1)
                             else:
-                                # Si no hay columna estado, marcamos todos los vacíos como "SERVICIO NO ESPECIFICADO"
+                                # Si no hay columna estado, marcamos todos los vacíos
                                 df_expandido.loc[df_expandido[
                                     'servicio_contratado'].isna(), 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
 
-                            # Contar servicios por cliente para mantener la columna num_servicios
-                            conteo_servicios = df_tipos_mod.groupby('cliente_normalizado').size().reset_index(
+                            # Contar servicios por contrato
+                            conteo_servicios = df_tipos_mod.groupby('id_contrato_num').size().reset_index(
                                 name='num_servicios')
-                            conteo_servicios.columns = ['cliente_normalizado', 'num_servicios']
 
                             # Unir el conteo
-                            df_contratos_mod = df_contratos_mod.merge(
+                            df_expandido = df_expandido.merge(
                                 conteo_servicios,
-                                on='cliente_normalizado',
+                                on='id_contrato_num',
                                 how='left'
                             )
-                            df_contratos_mod = df_contratos_mod.drop('cliente_normalizado', axis=1)
+
+                            # Rellenar NaN en num_servicios con 0
+                            df_expandido['num_servicios'] = df_expandido['num_servicios'].fillna(0).astype(int)
+
+                            # Eliminar columna temporal de ID
+                            df_expandido = df_expandido.drop('id_contrato_num', axis=1)
 
                             # Para cálculos, usar el dataframe expandido
                             df_contratos_expandido = df_expandido
@@ -9470,9 +9472,9 @@ def mostrar_kpis_seguimiento_contratos():
                     # Ordenar los servicios de forma más lógica
                     servicios_unicos = df_a_mostrar['servicio_contratado'].dropna().unique().tolist()
 
-                    # Poner primero "SERVICIO NO ESPECIFICADO" y "SERVICIO NO FINALIZADO" si existen
+                    # Poner primero los servicios especiales
                     servicios_ordenados = []
-                    for servicio in ['SERVICIO NO ESPECIFICADO', 'SERVICIO NO FINALIZADO']:
+                    for servicio in ['ALQUILER DE UUII', 'SERVICIO NO ESPECIFICADO', 'SERVICIO NO FINALIZADO']:
                         if servicio in servicios_unicos:
                             servicios_ordenados.append(servicio)
                             servicios_unicos.remove(servicio)
@@ -9558,18 +9560,15 @@ def mostrar_kpis_seguimiento_contratos():
                 with col_kpi2:
                     if 'servicio_contratado' in df_filtrado.columns and df_filtrado[
                         'servicio_contratado'].notna().any():
-                        # Contar servicios no especificados/no finalizados
-                        no_especificados = df_filtrado[
-                            df_filtrado['servicio_contratado'].str.contains('NO ESPECIFICADO|NO FINALIZADO',
-                                                                            na=False)].shape[0]
-                        especificados = total_registros - no_especificados
-                        st.metric("✅ Servicios especificados", especificados)
+                        # Contar ALQUILER DE UUII específicamente
+                        alquiler_uuii = df_filtrado[df_filtrado['servicio_contratado'] == 'ALQUILER DE UUII'].shape[0]
+                        st.metric("🏢 ALQUILER DE UUII", alquiler_uuii)
 
                 with col_kpi3:
                     if 'servicio_contratado' in df_filtrado.columns and df_filtrado[
                         'servicio_contratado'].notna().any():
                         tipos_servicios = df_filtrado['servicio_contratado'].nunique()
-                        st.metric("🎯 Tipos de servicio diferentes", tipos_servicios)
+                        st.metric("🎯 Tipos de servicio", tipos_servicios)
 
             # Mostrar tabla
             if columnas_seleccionadas:
