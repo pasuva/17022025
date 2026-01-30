@@ -9240,173 +9240,124 @@ def mostrar_kpis_seguimiento_contratos():
             st.subheader("Datos totales")
 
             # ============================================
-            # AÑADIR TIPOS DE CONTRATO - VERSIÓN MEJORADA
+            # AÑADIR TIPOS DE CONTRATO - VERSIÓN EXPANDIDA (UNA FILA POR SERVICIO)
             # ============================================
             try:
-                # Verificar si tenemos los datos necesarios
                 if 'df_tipos_filtrado' in locals() and not df_tipos_filtrado.empty:
-                    st.success("✅ Datos de tipos de contrato encontrados")
-
-                    # Hacer una copia para no modificar el original
+                    # Hacer copias de los dataframes
                     df_contratos_mod = df_contratos.copy()
                     df_tipos_mod = df_tipos_filtrado.copy()
 
-                    # Normalizar nombres de columnas (pasar todo a minúsculas y sin espacios)
+                    # Normalizar nombres de columnas
                     df_contratos_mod.columns = [col.strip().lower() for col in df_contratos_mod.columns]
                     df_tipos_mod.columns = [col.strip().lower() for col in df_tipos_mod.columns]
 
-                    # Mostrar columnas normalizadas para debug
-                    #st.write("🔍 **Columnas en df_contratos (normalizadas):**", list(df_contratos_mod.columns))
-                    #st.write("🔍 **Columnas en df_tipos (normalizadas):**", list(df_tipos_mod.columns))
-
-                    # Buscar la columna de cliente en cada dataframe
-                    col_cliente_contratos = None
-                    col_cliente_tipos = None
-
-                    # Posibles nombres para la columna de cliente
-                    posibles_nombres_cliente = ['cliente', 'clientes', 'nombre cliente', 'nombrecliente']
-
-                    for col in df_contratos_mod.columns:
-                        if any(nombre in col for nombre in posibles_nombres_cliente):
-                            col_cliente_contratos = col
-                            break
-
-                    for col in df_tipos_mod.columns:
-                        if any(nombre in col for nombre in posibles_nombres_cliente):
-                            col_cliente_tipos = col
-                            break
-
-                    #st.write(f"📌 Columna cliente en contratos: {col_cliente_contratos}")
-                    #st.write(f"📌 Columna cliente en tipos: {col_cliente_tipos}")
+                    # Buscar columna de cliente
+                    col_cliente_contratos = next((col for col in df_contratos_mod.columns if 'cliente' in col), None)
+                    col_cliente_tipos = next((col for col in df_tipos_mod.columns if 'cliente' in col), None)
 
                     if col_cliente_contratos and col_cliente_tipos:
-                        # Normalizar los nombres de clientes (quitar espacios extra, normalizar tildes)
-                        def normalizar_nombre(nombre):
-                            if pd.isna(nombre):
-                                return nombre
-                            nombre_str = str(nombre).strip()
-                            # Convertir a minúsculas y reemplazar caracteres problemáticos
-                            nombre_str = nombre_str.lower()
-                            # Reemplazar tildes y caracteres especiales
-                            reemplazos = {
-                                'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
-                                'ü': 'u', 'ñ': 'n', 'à': 'a', 'è': 'e', 'ì': 'i',
-                                'ò': 'o', 'ù': 'u'
-                            }
-                            for original, reemplazo in reemplazos.items():
-                                nombre_str = nombre_str.replace(original, reemplazo)
-                            return nombre_str
-
-                        df_contratos_mod['cliente_normalizado'] = df_contratos_mod[col_cliente_contratos].apply(
-                            normalizar_nombre)
-                        df_tipos_mod['cliente_normalizado'] = df_tipos_mod[col_cliente_tipos].apply(normalizar_nombre)
-
-                        # Buscar la columna de nombre del servicio en df_tipos
-                        col_servicio = None
-                        posibles_nombres_servicio = ['nombre', 'servicio', 'nombre_servicio', 'tiposervicio', 'tipo']
-
-                        for col in df_tipos_mod.columns:
-                            if any(nombre in col for nombre in posibles_nombres_servicio):
-                                col_servicio = col
-                                break
-
-                        #st.write(f"📌 Columna servicio en tipos: {col_servicio}")
+                        # Buscar columna de servicio
+                        col_servicio = next((col for col in df_tipos_mod.columns if 'nombre' in col), None)
 
                         if col_servicio:
-                            # Agrupar servicios por cliente
-                            servicios_por_cliente = df_tipos_mod.groupby('cliente_normalizado').agg({
-                                col_servicio: lambda x: ', '.join(sorted(set(str(item) for item in x.dropna())))
-                            }).reset_index()
+                            # Normalizar nombres de clientes para la unión
+                            def normalizar_nombre(nombre):
+                                if pd.isna(nombre):
+                                    return nombre
+                                nombre_str = str(nombre).strip().lower()
+                                reemplazos = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n'}
+                                for orig, rep in reemplazos.items():
+                                    nombre_str = nombre_str.replace(orig, rep)
+                                return nombre_str
 
-                            servicios_por_cliente.columns = ['cliente_normalizado', 'servicios_contratados']
+                            df_contratos_mod['cliente_normalizado'] = df_contratos_mod[col_cliente_contratos].apply(
+                                normalizar_nombre)
+                            df_tipos_mod['cliente_normalizado'] = df_tipos_mod[col_cliente_tipos].apply(
+                                normalizar_nombre)
 
-                            # Contar servicios por cliente
-                            conteo_servicios = df_tipos_mod.groupby('cliente_normalizado')[
-                                col_servicio].nunique().reset_index()
-                            conteo_servicios.columns = ['cliente_normalizado', 'num_servicios']
-
-                            # Unir con df_contratos usando el cliente normalizado
-                            df_contratos_mod = df_contratos_mod.merge(
-                                servicios_por_cliente,
+                            # Hacer un merge LEFT para mantener todos los contratos, incluso los que no tienen servicios
+                            df_expandido = df_contratos_mod.merge(
+                                df_tipos_mod[['cliente_normalizado', col_servicio]],
                                 on='cliente_normalizado',
                                 how='left'
                             )
 
+                            # Renombrar columna de servicio
+                            df_expandido.rename(columns={col_servicio: 'servicio_contratado'}, inplace=True)
+
+                            # Eliminar columna temporal
+                            df_expandido = df_expandido.drop('cliente_normalizado', axis=1)
+
+                            # Contar servicios por cliente para mantener la columna num_servicios
+                            conteo_servicios = df_tipos_mod.groupby('cliente_normalizado').size().reset_index(
+                                name='num_servicios')
+                            conteo_servicios.columns = ['cliente_normalizado', 'num_servicios']
+
+                            # Unir el conteo
                             df_contratos_mod = df_contratos_mod.merge(
                                 conteo_servicios,
                                 on='cliente_normalizado',
                                 how='left'
                             )
-
-                            # Eliminar la columna de normalización
                             df_contratos_mod = df_contratos_mod.drop('cliente_normalizado', axis=1)
 
-                            # Reemplazar el dataframe original
-                            df_contratos = df_contratos_mod
+                            # Para cálculos, usar el dataframe expandido
+                            df_contratos_expandido = df_expandido
 
-                            # Mostrar algunos ejemplos de unión
-                            #st.write("📊 **Ejemplos de unión exitosa:**")
-                            #clientes_con_servicios = df_contratos['servicios_contratados'].notna().sum()
-                            #if clientes_con_servicios > 0:
-                            #    ejemplos = df_contratos[df_contratos['servicios_contratados'].notna()].head(3)
-                            #    for _, row in ejemplos.iterrows():
-                            #        cliente_nombre = row[
-                            #            col_cliente_contratos] if col_cliente_contratos in row else "N/A"
-                            #        st.write(f"- {cliente_nombre}: {row.get('servicios_contratados', 'N/A')}")
-
-                            #st.success(f"✅ Se añadieron servicios para {clientes_con_servicios} clientes")
+                            st.success(f"✅ Se expandieron los servicios: {len(df_contratos_expandido)} filas")
                         else:
-                            st.warning("⚠️ No se encontró columna de servicio en df_tipos_filtrado")
-                            df_contratos['servicios_contratados'] = None
+                            st.warning("No se encontró columna de servicio")
+                            df_contratos['servicio_contratado'] = None
                             df_contratos['num_servicios'] = None
                     else:
-                        st.warning("⚠️ No se pudo encontrar columna de cliente en uno o ambos dataframes")
-                        st.write("Busca manualmente en el archivo cuál es el nombre exacto de la columna de cliente")
-                        df_contratos['servicios_contratados'] = None
+                        st.warning("No se pudo encontrar columna de cliente")
+                        df_contratos['servicio_contratado'] = None
                         df_contratos['num_servicios'] = None
-                else:
-                    st.info("ℹ️ No hay datos de tipos de contrato disponibles")
-                    df_contratos['servicios_contratados'] = None
-                    df_contratos['num_servicios'] = None
 
             except Exception as e:
-                st.error(f"❌ Error al procesar tipos de contrato: {str(e)}")
-                import traceback
-                st.write("Detalles del error:", traceback.format_exc())
-                df_contratos['servicios_contratados'] = None
+                st.error(f"Error al procesar tipos de contrato: {e}")
+                df_contratos['servicio_contratado'] = None
                 df_contratos['num_servicios'] = None
 
             # ============================================
-            # CONTINUAR CON EL RESTO DEL CÓDIGO
+            # USAR EL DATAFRAME EXPANDIDO SI EXISTE, SINO EL ORIGINAL
             # ============================================
+            if 'df_contratos_expandido' in locals():
+                df_a_mostrar = df_contratos_expandido.copy()
+                df_original_para_descarga = df_contratos.copy()  # Guardar original para descarga
+            else:
+                df_a_mostrar = df_contratos.copy()
+                df_original_para_descarga = df_contratos.copy()
 
-            # Filtros (aumentados a 4 columnas)
+            # ============================================
+            # FILTROS
+            # ============================================
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                if 'estado' in df_contratos.columns:
-                    estados = ['Todos'] + sorted(df_contratos['estado'].dropna().unique().tolist())
+                if 'estado' in df_a_mostrar.columns:
+                    estados = ['Todos'] + sorted(df_a_mostrar['estado'].dropna().unique().tolist())
                     estado_filtro = st.selectbox("Filtrar por estado:", estados)
                 else:
                     estado_filtro = 'Todos'
 
             with col2:
-                if 'comercial' in df_contratos.columns:
-                    comerciales = ['Todos'] + sorted(df_contratos['comercial'].dropna().unique().tolist())
+                if 'comercial' in df_a_mostrar.columns:
+                    comerciales = ['Todos'] + sorted(df_a_mostrar['comercial'].dropna().unique().tolist())
                     comercial_filtro = st.selectbox("Filtrar por comercial:", comerciales)
                 else:
                     comercial_filtro = 'Todos'
 
             with col3:
-                if 'metodo_entrada' in df_contratos.columns:
-                    metodos = ['Todos'] + sorted(df_contratos['metodo_entrada'].dropna().unique().tolist())
+                if 'metodo_entrada' in df_a_mostrar.columns:
+                    metodos = ['Todos'] + sorted(df_a_mostrar['metodo_entrada'].dropna().unique().tolist())
                     metodo_filtro = st.selectbox("Filtrar por método:", metodos)
                 else:
                     metodo_filtro = 'Todos'
 
             with col4:
-                # Filtro por número de servicios
-                if 'num_servicios' in df_contratos.columns and df_contratos['num_servicios'].notna().any():
+                if 'num_servicios' in df_a_mostrar.columns and df_a_mostrar['num_servicios'].notna().any():
                     opciones_num = ['Todos', '1 servicio', '2+ servicios', '3+ servicios']
                     num_servicios_filtro = st.selectbox("Filtrar por cantidad de servicios:", opciones_num)
                 else:
@@ -9416,32 +9367,19 @@ def mostrar_kpis_seguimiento_contratos():
             col5, col6 = st.columns(2)
 
             with col5:
-                # Filtro por tipo de servicio
-                if 'servicios_contratados' in df_contratos.columns and df_contratos[
-                    'servicios_contratados'].notna().any():
-                    # Extraer todos los servicios únicos
-                    todos_servicios = set()
-                    for servicios in df_contratos['servicios_contratados'].dropna():
-                        if isinstance(servicios, str):
-                            for servicio in servicios.split(', '):
-                                todos_servicios.add(servicio.strip())
-
-                    if todos_servicios:
-                        servicios_lista = ['Todos'] + sorted(list(todos_servicios))
-                        servicio_filtro = st.selectbox("Filtrar por tipo de servicio:", servicios_lista)
-                    else:
-                        servicio_filtro = 'Todos'
+                if 'servicio_contratado' in df_a_mostrar.columns and df_a_mostrar['servicio_contratado'].notna().any():
+                    servicios_lista = ['Todos'] + sorted(df_a_mostrar['servicio_contratado'].dropna().unique().tolist())
+                    servicio_filtro = st.selectbox("Filtrar por tipo de servicio:", servicios_lista)
                 else:
                     servicio_filtro = 'Todos'
 
             with col6:
-                # Espacio para estadísticas o filtro adicional
                 st.write("")
 
-            # Selección de columnas (actualizada con tipos de contrato)
-            columnas_disponibles = df_contratos.columns.tolist()
-
-            #st.write("📋 **Columnas disponibles después de la unión:**", columnas_disponibles)
+            # ============================================
+            # SELECCIÓN DE COLUMNAS
+            # ============================================
+            columnas_disponibles = df_a_mostrar.columns.tolist()
 
             columnas_default = [
                 'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato',
@@ -9449,9 +9387,9 @@ def mostrar_kpis_seguimiento_contratos():
                 'SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada'
             ]
 
-            # Añadir las nuevas columnas si existen
-            if 'servicios_contratados' in columnas_disponibles:
-                columnas_default.append('servicios_contratados')
+            # Añadir nuevas columnas si existen
+            if 'servicio_contratado' in columnas_disponibles:
+                columnas_default.append('servicio_contratado')
             if 'num_servicios' in columnas_disponibles:
                 columnas_default.append('num_servicios')
 
@@ -9464,8 +9402,10 @@ def mostrar_kpis_seguimiento_contratos():
                 default=columnas_default
             )
 
-            # Aplicar filtros
-            df_filtrado = df_contratos.copy()
+            # ============================================
+            # APLICAR FILTROS
+            # ============================================
+            df_filtrado = df_a_mostrar.copy()
 
             if estado_filtro != 'Todos' and 'estado' in df_filtrado.columns:
                 df_filtrado = df_filtrado[df_filtrado['estado'] == estado_filtro]
@@ -9486,42 +9426,27 @@ def mostrar_kpis_seguimiento_contratos():
                     df_filtrado = df_filtrado[df_filtrado['num_servicios'] >= 3]
 
             # Aplicar filtro por tipo de servicio
-            if servicio_filtro != 'Todos' and 'servicios_contratados' in df_filtrado.columns:
-                df_filtrado = df_filtrado[
-                    df_filtrado['servicios_contratados'].notna() &
-                    df_filtrado['servicios_contratados'].str.contains(servicio_filtro, na=False)
-                    ]
+            if servicio_filtro != 'Todos' and 'servicio_contratado' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['servicio_contratado'] == servicio_filtro]
 
-            # Mostrar estadísticas
-            st.info(f"Mostrando {len(df_filtrado)} de {len(df_contratos)} contratos")
+            # ============================================
+            # MOSTRAR RESULTADOS
+            # ============================================
+            st.info(f"Mostrando {len(df_filtrado)} de {len(df_a_mostrar)} registros")
 
             # Mostrar KPIs de servicios
             if 'num_servicios' in df_filtrado.columns and df_filtrado['num_servicios'].notna().any():
-                col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+                col_kpi1, col_kpi2 = st.columns(2)
 
                 with col_kpi1:
                     clientes_con_servicios = df_filtrado['num_servicios'].notna().sum()
-                    st.metric("📋 Clientes con servicios", clientes_con_servicios)
+                    st.metric("📋 Registros con servicios", clientes_con_servicios)
 
                 with col_kpi2:
-                    if clientes_con_servicios > 0:
-                        servicios_promedio = df_filtrado['num_servicios'].mean()
-                        st.metric("📊 Servicios promedio", f"{servicios_promedio:.1f}")
-                    else:
-                        st.metric("📊 Servicios promedio", "0.0")
-
-                with col_kpi3:
-                    if 'servicios_contratados' in df_filtrado.columns and df_filtrado[
-                        'servicios_contratados'].notna().any():
-                        todos_servicios = []
-                        for servicios in df_filtrado['servicios_contratados'].dropna():
-                            if isinstance(servicios, str):
-                                todos_servicios.extend([s.strip() for s in servicios.split(', ')])
-
-                        if todos_servicios:
-                            from collections import Counter
-                            servicio_comun = Counter(todos_servicios).most_common(1)[0][0]
-                            st.metric("🏆 Servicio más común", servicio_comun)
+                    if 'servicio_contratado' in df_filtrado.columns and df_filtrado[
+                        'servicio_contratado'].notna().any():
+                        tipos_servicios = df_filtrado['servicio_contratado'].nunique()
+                        st.metric("🎯 Tipos de servicio diferentes", tipos_servicios)
 
             # Mostrar tabla
             if columnas_seleccionadas:
@@ -9533,34 +9458,38 @@ def mostrar_kpis_seguimiento_contratos():
             else:
                 st.dataframe(df_filtrado, height=400, width='stretch')
 
-            # Botones de exportación
+            # ============================================
+            # BOTONES DE EXPORTACIÓN (OFREZCO AMBAS OPCIONES)
+            # ============================================
             col1, col2 = st.columns(2)
 
             with col1:
+                # Descargar datos expandidos (una fila por servicio)
                 import io
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df_contratos.to_excel(writer, index=False, sheet_name='Contratos')
-                output.seek(0)
+                output_expandido = io.BytesIO()
+                with pd.ExcelWriter(output_expandido, engine='xlsxwriter') as writer:
+                    df_filtrado.to_excel(writer, index=False, sheet_name='Contratos_Expandidos')
+                output_expandido.seek(0)
 
                 st.download_button(
-                    label="📥 Descargar Todos los Contratos (Excel)",
-                    data=output,
-                    file_name="seguimiento_contratos_completo.xlsx",
+                    label="📥 Descargar Datos Expandidos (Excel)",
+                    data=output_expandido,
+                    file_name="seguimiento_contratos_expandido.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     width='stretch'
                 )
 
             with col2:
-                output_filtrado = io.BytesIO()
-                with pd.ExcelWriter(output_filtrado, engine='xlsxwriter') as writer:
-                    df_filtrado.to_excel(writer, index=False, sheet_name='Contratos_Filtrados')
-                output_filtrado.seek(0)
+                # Descargar datos originales (agrupados por cliente)
+                output_original = io.BytesIO()
+                with pd.ExcelWriter(output_original, engine='xlsxwriter') as writer:
+                    df_original_para_descarga.to_excel(writer, index=False, sheet_name='Contratos_Original')
+                output_original.seek(0)
 
                 st.download_button(
-                    label="📊 Descargar Datos Filtrados (Excel)",
-                    data=output_filtrado,
-                    file_name="seguimiento_contratos_filtrado.xlsx",
+                    label="📊 Descargar Datos Originales (Excel)",
+                    data=output_original,
+                    file_name="seguimiento_contratos_original.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     width='stretch'
                 )
