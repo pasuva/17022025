@@ -9299,6 +9299,14 @@ def mostrar_kpis_seguimiento_contratos():
                             df_expandido.rename(columns={col_servicio: 'servicio_contratado'}, inplace=True)
 
                             # ============================================
+                            # DETECTAR CONTRATOS SIN COINCIDENCIA
+                            # ============================================
+                            # Identificar qué contratos no encontraron coincidencia
+                            contratos_con_coincidencia = df_tipos_mod['id_contrato_num'].dropna().unique()
+                            df_expandido['tiene_coincidencia'] = df_expandido['id_contrato_num'].isin(
+                                contratos_con_coincidencia)
+
+                            # ============================================
                             # ASIGNACIÓN ESPECIAL PARA AIR ASTURIAS NETCAN ASTURPHONE
                             # ============================================
                             # Buscar columna de cliente para identificar AIR ASTURIAS
@@ -9341,7 +9349,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 df_expandido['estado_normalizado'] = df_expandido['estado'].astype(
                                     str).str.lower().str.strip()
 
-                                # Identificar contratos sin servicio
+                                # Identificar contratos sin servicio (NaN)
                                 condicion_sin_servicio = df_expandido['servicio_contratado'].isna()
 
                                 # Para contratos con estado "finalizado" pero sin servicio
@@ -9362,12 +9370,25 @@ def mostrar_kpis_seguimiento_contratos():
                                 df_expandido.loc[
                                     condicion_otros_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
 
-                                # Eliminar columna temporal de estado
-                                df_expandido = df_expandido.drop('estado_normalizado', axis=1)
+                                # PASADA FINAL DE SEGURIDAD: asegurar que no quede ningún contrato finalizado sin servicio
+                                # Esto maneja casos donde el estado es "finalizado" pero no fue capturado antes
+                                mask_finalizado = df_expandido['estado_normalizado'].str.contains('finalizado',
+                                                                                                  na=False)
+                                mask_sin_servicio = df_expandido['servicio_contratado'].isna()
+                                df_expandido.loc[
+                                    mask_finalizado & mask_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
+
+                                # Para cualquier otro sin servicio (no finalizado)
+                                df_expandido.loc[df_expandido[
+                                    'servicio_contratado'].isna(), 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
+
+                                # Eliminar columnas temporales
+                                df_expandido = df_expandido.drop(['estado_normalizado', 'tiene_coincidencia'], axis=1)
                             else:
                                 # Si no hay columna estado, marcamos todos los vacíos
                                 df_expandido.loc[df_expandido[
                                     'servicio_contratado'].isna(), 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
+                                df_expandido = df_expandido.drop('tiene_coincidencia', axis=1)
 
                             # Contar servicios por contrato
                             conteo_servicios = df_tipos_mod.groupby('id_contrato_num').size().reset_index(
@@ -9380,7 +9401,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 how='left'
                             )
 
-                            # Rellenar NaN en num_servicios con 0
+                            # Rellenar NaN en num_servicios con 0 (para contratos sin coincidencia)
                             df_expandido['num_servicios'] = df_expandido['num_servicios'].fillna(0).astype(int)
 
                             # Eliminar columna temporal de ID
