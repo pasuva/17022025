@@ -9256,8 +9256,8 @@ def mostrar_kpis_seguimiento_contratos():
                     df_tipos_mod.columns = [col.strip().lower() for col in df_tipos_mod.columns]
 
                     # Mostrar columnas normalizadas para debug
-                    st.write("🔍 **Columnas en df_contratos (normalizadas):**", list(df_contratos_mod.columns))
-                    st.write("🔍 **Columnas en df_tipos (normalizadas):**", list(df_tipos_mod.columns))
+                    #st.write("🔍 **Columnas en df_contratos (normalizadas):**", list(df_contratos_mod.columns))
+                    #st.write("🔍 **Columnas en df_tipos (normalizadas):**", list(df_tipos_mod.columns))
 
                     # Buscar la columna de cliente en cada dataframe
                     col_cliente_contratos = None
@@ -9345,16 +9345,16 @@ def mostrar_kpis_seguimiento_contratos():
                             df_contratos = df_contratos_mod
 
                             # Mostrar algunos ejemplos de unión
-                            st.write("📊 **Ejemplos de unión exitosa:**")
-                            clientes_con_servicios = df_contratos['servicios_contratados'].notna().sum()
-                            if clientes_con_servicios > 0:
-                                ejemplos = df_contratos[df_contratos['servicios_contratados'].notna()].head(3)
-                                for _, row in ejemplos.iterrows():
-                                    cliente_nombre = row[
-                                        col_cliente_contratos] if col_cliente_contratos in row else "N/A"
-                                    st.write(f"- {cliente_nombre}: {row.get('servicios_contratados', 'N/A')}")
+                            #st.write("📊 **Ejemplos de unión exitosa:**")
+                            #clientes_con_servicios = df_contratos['servicios_contratados'].notna().sum()
+                            #if clientes_con_servicios > 0:
+                            #    ejemplos = df_contratos[df_contratos['servicios_contratados'].notna()].head(3)
+                            #    for _, row in ejemplos.iterrows():
+                            #        cliente_nombre = row[
+                            #            col_cliente_contratos] if col_cliente_contratos in row else "N/A"
+                            #        st.write(f"- {cliente_nombre}: {row.get('servicios_contratados', 'N/A')}")
 
-                            st.success(f"✅ Se añadieron servicios para {clientes_con_servicios} clientes")
+                            #st.success(f"✅ Se añadieron servicios para {clientes_con_servicios} clientes")
                         else:
                             st.warning("⚠️ No se encontró columna de servicio en df_tipos_filtrado")
                             df_contratos['servicios_contratados'] = None
@@ -9441,7 +9441,7 @@ def mostrar_kpis_seguimiento_contratos():
             # Selección de columnas (actualizada con tipos de contrato)
             columnas_disponibles = df_contratos.columns.tolist()
 
-            st.write("📋 **Columnas disponibles después de la unión:**", columnas_disponibles)
+            #st.write("📋 **Columnas disponibles después de la unión:**", columnas_disponibles)
 
             columnas_default = [
                 'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato',
