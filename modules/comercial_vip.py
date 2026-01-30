@@ -1048,7 +1048,7 @@ def comercial_dashboard_vip():
                                     conn.close()
 
                                     #base_url="http://localhost:8501"
-
+                                    #base_url=https://verde-suite.verdesuite.sytes.net
                                     base_url = "https://one7022025.onrender.com"
                                     link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
                                     st.success("✅ Precontrato guardado correctamente.")
@@ -1161,6 +1161,7 @@ def comercial_dashboard_vip():
                                     conn.commit()
                                     conn.close()
                                     base_url = "https://one7022025.onrender.com"
+                                    #base_url=https://verde-suite.verdesuite.sytes.net
                                     #base_url = "http://localhost:8501"
                                     link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
                                     st.success(mensaje)
@@ -1661,6 +1662,7 @@ def formulario_precontrato_section(apartment_id=None):
                         conn.close()
 
                         base_url = "https://one7022025.onrender.com"
+                        #base_url=https://verde-suite.verdesuite.sytes.net
                         #base_url = "http://localhost:8501"
                         link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
 
@@ -2661,6 +2663,7 @@ def mostrar_formulario(click_data):
                         conn.close()
 
                         base_url = "https://one7022025.onrender.com"  # puerto de Streamlit
+                        #base_url=https://verde-suite.verdesuite.sytes.net
                         #base_url = "http://localhost:8501"
                         link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
 

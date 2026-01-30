@@ -6871,7 +6871,7 @@ def admin_dashboard():
                                 "lat": "latitud",
                                 "lng": "longitud",
                                 "tipo_olt_rental": "tipo_olt_rental",
-                                "certificable": "CERTIFICABLE",
+                                #"certificable": "CERTIFICABLE",
                                 "comercial": "comercial",
                                 "zona": "zona",
                                 "fecha": "fecha",
@@ -6944,7 +6944,7 @@ def admin_dashboard():
                             data_filtrada.rename(columns={
                                 'lat': 'latitud',
                                 'lng': 'longitud',
-                                'certificable': 'CERTIFICABLE'
+                                #'certificable': 'CERTIFICABLE'
                             }, inplace=True)
 
                             # Asegurar que tenemos todas las columnas finales
@@ -6952,14 +6952,14 @@ def admin_dashboard():
                                 "id_ams", "apartment_id", "address_id", "provincia", "municipio", "poblacion",
                                 "vial", "numero", "parcela_catastral", "letra", "cp", "site_operational_state",
                                 "apartment_operational_state", "cto_id", "olt", "cto", "latitud", "longitud",
-                                "tipo_olt_rental", "CERTIFICABLE", "comercial", "zona", "fecha",
+                                "tipo_olt_rental", "comercial", "zona", "fecha",
                                 "serviciable", "motivo", "contrato_uis"
                             ]
 
                             # Añadir columnas faltantes con valores por defecto
                             for col in columnas_finales:
                                 if col not in data_filtrada.columns:
-                                    if col in ['CERTIFICABLE', 'serviciable']:
+                                    if col in ['serviciable']:
                                         data_filtrada[col] = None
                                     elif col == 'fecha':
                                         data_filtrada[col] = pd.Timestamp.now().strftime("%Y-%m-%d")
@@ -7005,9 +7005,9 @@ def admin_dashboard():
                                 INSERT INTO datos_uis (
                                     id_ams, apartment_id, address_id, provincia, municipio, poblacion, vial, numero,
                                     parcela_catastral, letra, cp, site_operational_state, apartment_operational_state,
-                                    cto_id, olt, cto, latitud, longitud, tipo_olt_rental, CERTIFICABLE, comercial,
+                                    cto_id, olt, cto, latitud, longitud, tipo_olt_rental, comercial,
                                     zona, fecha, serviciable, motivo, contrato_uis
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """
 
                             progress_bar = st.progress(0)
