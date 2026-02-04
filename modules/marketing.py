@@ -9283,42 +9283,61 @@ def mostrar_kpis_seguimiento_contratos():
                 return 'SIN DATOS'
 
             # ============================================
-            # FUNCIÓN PARA CORREGIR FORMATO DE FECHA
+            # FUNCIÓN PARA CORREGIR FORMATO DE FECHA (CORREGIDA)
             # ============================================
             def corregir_fecha_instalacion(fecha_str):
                 """
                 Convierte fechas en formato año-dia-mes a año-mes-dia
                 Ejemplo: 2023-15-01 → 2023-01-15
                 """
-                if pd.isna(fecha_str):
+                if pd.isna(fecha_str) or fecha_str == 'NaT' or fecha_str == 'nan':
                     return fecha_str
 
                 fecha_str = str(fecha_str).strip()
 
-                # Intentar detectar formato año-dia-mes (YYYY-DD-MM)
+                # Si ya es datetime, convertir a string
+                if isinstance(fecha_str, pd.Timestamp):
+                    fecha_str = fecha_str.strftime('%Y-%m-%d')
+
+                # Intentar múltiples formatos
                 try:
-                    # Si tiene formato con guiones
+                    # Formato YYYY-DD-MM (con guiones)
                     if '-' in fecha_str:
                         parts = fecha_str.split('-')
                         if len(parts) == 3:
                             year, day, month = parts
-                            # Verificar si el segundo elemento parece un día (01-31)
-                            if day.isdigit() and 1 <= int(day) <= 31:
-                                # Verificar si el tercer elemento parece un mes (01-12)
-                                if month.isdigit() and 1 <= int(month) <= 12:
-                                    # Reconstruir en formato año-mes-dia
-                                    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                            # Verificar si el segundo elemento es un día (01-31) y el tercero es mes (01-12)
+                            if day.isdigit() and month.isdigit():
+                                day_int = int(day)
+                                month_int = int(month)
+                                if 1 <= day_int <= 31 and 1 <= month_int <= 12:
+                                    # Si el día es > 12 y mes <= 12, probablemente está invertido
+                                    if day_int > 12 and month_int <= 12:
+                                        # Reconstruir en formato año-mes-dia
+                                        return f"{year}-{str(month_int).zfill(2)}-{str(day_int).zfill(2)}"
 
-                    # También verificar formato con barras
+                    # Formato YYYY/DD/MM (con barras)
                     elif '/' in fecha_str:
                         parts = fecha_str.split('/')
                         if len(parts) == 3:
                             year, day, month = parts
-                            if day.isdigit() and 1 <= int(day) <= 31:
-                                if month.isdigit() and 1 <= int(month) <= 12:
-                                    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                            if day.isdigit() and month.isdigit():
+                                day_int = int(day)
+                                month_int = int(month)
+                                if 1 <= day_int <= 31 and 1 <= month_int <= 12:
+                                    if day_int > 12 and month_int <= 12:
+                                        return f"{year}-{str(month_int).zfill(2)}-{str(day_int).zfill(2)}"
 
-                except Exception:
+                except Exception as e:
+                    print(f"Error corrigiendo fecha {fecha_str}: {e}")
+
+                # Si no se pudo convertir, intentar parsear directamente
+                try:
+                    # Intentar parsear como fecha con pandas
+                    fecha_dt = pd.to_datetime(fecha_str, errors='coerce')
+                    if pd.notna(fecha_dt):
+                        return fecha_dt.strftime('%Y-%m-%d')
+                except:
                     pass
 
                 # Si no se pudo convertir, devolver original
@@ -9333,8 +9352,8 @@ def mostrar_kpis_seguimiento_contratos():
                     df_contratos_mod = df_contratos.copy()
                     df_tipos_mod = df_tipos_filtrado.copy()
 
-                    # Eliminar columnas que no necesitamos
-                    columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario']
+                    # Eliminar columnas que no necesitamos (AÑADIDAS: fecha_estado, comentarios)
+                    columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios']
                     for col in columnas_a_eliminar:
                         if col in df_contratos_mod.columns:
                             df_contratos_mod = df_contratos_mod.drop(columns=[col])
@@ -9388,12 +9407,11 @@ def mostrar_kpis_seguimiento_contratos():
                             # ============================================
                             # Identificar qué contratos no encontraron coincidencia
                             contratos_con_coincidencia = df_tipos_mod['id_contrato_num'].dropna().unique()
-                            df_expandido['coincidencia_encontrada'] = df_expandido['id_contrato_num'].isin(
-                                contratos_con_coincidencia)
 
                             # Crear columna especial para marcar sin coincidencia
-                            df_expandido['estado_coincidencia'] = df_expandido['coincidencia_encontrada'].apply(
-                                lambda x: 'CON COINCIDENCIA' if x else 'SIN COINCIDENCIA'
+                            df_expandido['estado_coincidencia'] = df_expandido['id_contrato_num'].apply(
+                                lambda x: 'CON COINCIDENCIA' if pd.notna(
+                                    x) and x in contratos_con_coincidencia else 'SIN COINCIDENCIA'
                             )
 
                             # ============================================
@@ -9443,7 +9461,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 condicion_sin_servicio = df_expandido['servicio_contratado'].isna()
 
                                 # Para contratos SIN coincidencia y sin servicio
-                                condicion_sin_coincidencia = ~df_expandido['coincidencia_encontrada']
+                                condicion_sin_coincidencia = df_expandido['estado_coincidencia'] == 'SIN COINCIDENCIA'
 
                                 # Asignar servicios especiales para contratos sin coincidencia
                                 df_expandido.loc[
@@ -9451,7 +9469,7 @@ def mostrar_kpis_seguimiento_contratos():
 
                                 # Para contratos con coincidencia pero sin servicio
                                 condicion_con_coincidencia_sin_servicio = (
-                                        df_expandido['coincidencia_encontrada'] &
+                                        (df_expandido['estado_coincidencia'] == 'CON COINCIDENCIA') &
                                         condicion_sin_servicio
                                 )
 
@@ -9488,7 +9506,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 df_expandido = df_expandido.drop(['estado_normalizado'], axis=1)
                             else:
                                 # Si no hay columna estado, marcamos según coincidencia
-                                mask_sin_coincidencia = ~df_expandido['coincidencia_encontrada']
+                                mask_sin_coincidencia = df_expandido['estado_coincidencia'] == 'SIN COINCIDENCIA'
                                 mask_sin_servicio = df_expandido['servicio_contratado'].isna()
 
                                 df_expandido.loc[
@@ -9579,18 +9597,16 @@ def mostrar_kpis_seguimiento_contratos():
                         else:
                             df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                             df_contratos['num_servicios'] = 0
-                            df_contratos['coincidencia_encontrada'] = False
                             df_contratos['estado_coincidencia'] = 'SIN COINCIDENCIA'
                     else:
                         df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                         df_contratos['num_servicios'] = 0
-                        df_contratos['coincidencia_encontrada'] = False
                         df_contratos['estado_coincidencia'] = 'SIN COINCIDENCIA'
 
             except Exception as e:
+                st.error(f"Error al procesar tipos de contrato: {e}")
                 df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                 df_contratos['num_servicios'] = 0
-                df_contratos['coincidencia_encontrada'] = False
                 df_contratos['estado_coincidencia'] = 'SIN COINCIDENCIA'
 
             # ============================================
@@ -9602,7 +9618,7 @@ def mostrar_kpis_seguimiento_contratos():
                 df_original_para_descarga = df_contratos.copy()
 
                 # Eliminar columnas no deseadas del original también
-                columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario']
+                columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios']
                 for col in columnas_a_eliminar:
                     if col in df_original_para_descarga.columns:
                         df_original_para_descarga = df_original_para_descarga.drop(columns=[col])
@@ -9611,7 +9627,7 @@ def mostrar_kpis_seguimiento_contratos():
                 df_original_para_descarga = df_contratos.copy()
 
                 # Eliminar columnas no deseadas
-                columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario']
+                columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios']
                 for col in columnas_a_eliminar:
                     if col in df_a_mostrar.columns:
                         df_a_mostrar = df_a_mostrar.drop(columns=[col])
@@ -9625,36 +9641,56 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar['num_servicios'] = 0
                 if 'provincia' not in df_a_mostrar.columns:
                     df_a_mostrar['provincia'] = 'SIN DATOS'
-                if 'coincidencia_encontrada' not in df_a_mostrar.columns:
-                    df_a_mostrar['coincidencia_encontrada'] = False
                 if 'estado_coincidencia' not in df_a_mostrar.columns:
                     df_a_mostrar['estado_coincidencia'] = 'SIN COINCIDENCIA'
 
             # ============================================
-            # CORREGIR FORMATO DE FECHA_INSTALACION
+            # CORREGIR FORMATO DE FECHA_INSTALACION (MEJORADO)
             # ============================================
             if 'fecha_instalacion' in df_a_mostrar.columns:
+                # Guardar valores originales para comparación
+                fechas_originales = df_a_mostrar['fecha_instalacion'].copy()
+
                 # Aplicar corrección
                 df_a_mostrar['fecha_instalacion_corregida'] = df_a_mostrar['fecha_instalacion'].apply(
                     corregir_fecha_instalacion)
 
-                # Convertir a datetime
+                # Verificar si hubo cambios
+                cambios = (fechas_originales.astype(str) != df_a_mostrar['fecha_instalacion_corregida'].astype(
+                    str)).sum()
+
+                if cambios > 0:
+                    st.success(f"✅ Se corrigieron {cambios} fechas de instalación (año-dia-mes → año-mes-dia)")
+
+                # Intentar convertir a datetime
                 try:
-                    df_a_mostrar['fecha_instalacion_corregida'] = pd.to_datetime(
+                    df_a_mostrar['fecha_instalacion_datetime'] = pd.to_datetime(
                         df_a_mostrar['fecha_instalacion_corregida'],
-                        errors='coerce'
+                        errors='coerce',
+                        dayfirst=False
                     )
 
-                    # Reemplazar la columna original con la corregida
+                    # Mostrar algunas fechas corregidas como ejemplo
+                    if cambios > 0:
+                        ejemplos = df_a_mostrar[['fecha_instalacion', 'fecha_instalacion_datetime']].dropna().head(3)
+                        for idx, row in ejemplos.iterrows():
+                            if pd.notna(row['fecha_instalacion']) and pd.notna(row['fecha_instalacion_datetime']):
+                                st.write(
+                                    f"Ejemplo: {row['fecha_instalacion']} → {row['fecha_instalacion_datetime'].strftime('%Y-%m-%d')}")
+
+                    # Reemplazar la columna original
+                    df_a_mostrar['fecha_instalacion'] = df_a_mostrar['fecha_instalacion_datetime']
+                    df_a_mostrar = df_a_mostrar.drop(['fecha_instalacion_corregida', 'fecha_instalacion_datetime'],
+                                                     axis=1)
+
+                except Exception as e:
+                    st.warning(f"⚠️ Error al convertir fechas: {e}")
+                    # Al menos mantener las correcciones en formato string
                     df_a_mostrar['fecha_instalacion'] = df_a_mostrar['fecha_instalacion_corregida']
                     df_a_mostrar = df_a_mostrar.drop('fecha_instalacion_corregida', axis=1)
 
-                    st.success("✅ Formato de fecha corregido: año-dia-mes → año-mes-dia")
-                except Exception as e:
-                    st.warning(f"⚠️ No se pudo corregir el formato de fecha: {e}")
-
             # ============================================
-            # FILTROS (AHORA CON PROVINCIA Y COINCIDENCIA)
+            # FILTROS (ACTUALIZADOS)
             # ============================================
             col1, col2, col3, col4 = st.columns(4)
 
@@ -9719,11 +9755,9 @@ def mostrar_kpis_seguimiento_contratos():
                     servicio_filtro = 'Todos'
 
             with col7:
-                if 'coincidencia_encontrada' in df_a_mostrar.columns:
-                    coincidencia_filtro = st.selectbox(
-                        "Filtrar por coincidencia:",
-                        ['Todos', 'Con coincidencia', 'Sin coincidencia']
-                    )
+                if 'estado_coincidencia' in df_a_mostrar.columns:
+                    opciones_coincidencia = ['Todos', 'CON COINCIDENCIA', 'SIN COINCIDENCIA']
+                    coincidencia_filtro = st.selectbox("Filtrar por coincidencia:", opciones_coincidencia)
                 else:
                     coincidencia_filtro = 'Todos'
 
@@ -9745,8 +9779,6 @@ def mostrar_kpis_seguimiento_contratos():
                 columnas_default.append('num_servicios')
             if 'provincia' in columnas_disponibles:
                 columnas_default.append('provincia')
-            if 'coincidencia_encontrada' in columnas_disponibles:
-                columnas_default.append('coincidencia_encontrada')
             if 'estado_coincidencia' in columnas_disponibles:
                 columnas_default.append('estado_coincidencia')
 
@@ -9790,11 +9822,8 @@ def mostrar_kpis_seguimiento_contratos():
                 df_filtrado = df_filtrado[df_filtrado['servicio_contratado'] == servicio_filtro]
 
             # Aplicar filtro por coincidencia
-            if coincidencia_filtro != 'Todos' and 'coincidencia_encontrada' in df_filtrado.columns:
-                if coincidencia_filtro == 'Con coincidencia':
-                    df_filtrado = df_filtrado[df_filtrado['coincidencia_encontrada'] == True]
-                elif coincidencia_filtro == 'Sin coincidencia':
-                    df_filtrado = df_filtrado[df_filtrado['coincidencia_encontrada'] == False]
+            if coincidencia_filtro != 'Todos' and 'estado_coincidencia' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['estado_coincidencia'] == coincidencia_filtro]
 
             # ============================================
             # MOSTRAR RESULTADOS
@@ -9810,8 +9839,9 @@ def mostrar_kpis_seguimiento_contratos():
                     st.metric("📋 Total registros", total_registros)
 
                 with col_kpi2:
-                    if 'coincidencia_encontrada' in df_filtrado.columns:
-                        sin_coincidencia = df_filtrado[~df_filtrado['coincidencia_encontrada']].shape[0]
+                    if 'estado_coincidencia' in df_filtrado.columns:
+                        sin_coincidencia = df_filtrado[df_filtrado['estado_coincidencia'] == 'SIN COINCIDENCIA'].shape[
+                            0]
                         st.metric("⚠️ Sin coincidencia", sin_coincidencia, delta_color="off")
 
                 with col_kpi3:
