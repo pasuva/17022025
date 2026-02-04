@@ -9283,6 +9283,48 @@ def mostrar_kpis_seguimiento_contratos():
                 return 'SIN DATOS'
 
             # ============================================
+            # FUNCIÓN PARA CORREGIR FORMATO DE FECHA
+            # ============================================
+            def corregir_fecha_instalacion(fecha_str):
+                """
+                Convierte fechas en formato año-dia-mes a año-mes-dia
+                Ejemplo: 2023-15-01 → 2023-01-15
+                """
+                if pd.isna(fecha_str):
+                    return fecha_str
+
+                fecha_str = str(fecha_str).strip()
+
+                # Intentar detectar formato año-dia-mes (YYYY-DD-MM)
+                try:
+                    # Si tiene formato con guiones
+                    if '-' in fecha_str:
+                        parts = fecha_str.split('-')
+                        if len(parts) == 3:
+                            year, day, month = parts
+                            # Verificar si el segundo elemento parece un día (01-31)
+                            if day.isdigit() and 1 <= int(day) <= 31:
+                                # Verificar si el tercer elemento parece un mes (01-12)
+                                if month.isdigit() and 1 <= int(month) <= 12:
+                                    # Reconstruir en formato año-mes-dia
+                                    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+                    # También verificar formato con barras
+                    elif '/' in fecha_str:
+                        parts = fecha_str.split('/')
+                        if len(parts) == 3:
+                            year, day, month = parts
+                            if day.isdigit() and 1 <= int(day) <= 31:
+                                if month.isdigit() and 1 <= int(month) <= 12:
+                                    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+                except Exception:
+                    pass
+
+                # Si no se pudo convertir, devolver original
+                return fecha_str
+
+            # ============================================
             # AÑADIR TIPOS DE CONTRATO - POR ID DE CONTRATO
             # ============================================
             try:
@@ -9342,12 +9384,17 @@ def mostrar_kpis_seguimiento_contratos():
                             df_expandido.rename(columns={col_servicio: 'servicio_contratado'}, inplace=True)
 
                             # ============================================
-                            # DETECTAR CONTRATOS SIN COINCIDENCIA
+                            # DETECTAR Y MARCAR CONTRATOS SIN COINCIDENCIA
                             # ============================================
                             # Identificar qué contratos no encontraron coincidencia
                             contratos_con_coincidencia = df_tipos_mod['id_contrato_num'].dropna().unique()
-                            df_expandido['tiene_coincidencia'] = df_expandido['id_contrato_num'].isin(
+                            df_expandido['coincidencia_encontrada'] = df_expandido['id_contrato_num'].isin(
                                 contratos_con_coincidencia)
+
+                            # Crear columna especial para marcar sin coincidencia
+                            df_expandido['estado_coincidencia'] = df_expandido['coincidencia_encontrada'].apply(
+                                lambda x: 'CON COINCIDENCIA' if x else 'SIN COINCIDENCIA'
+                            )
 
                             # ============================================
                             # ASIGNACIÓN ESPECIAL PARA AIR ASTURIAS NETCAN ASTURPHONE
@@ -9395,15 +9442,28 @@ def mostrar_kpis_seguimiento_contratos():
                                 # Identificar contratos sin servicio (NaN)
                                 condicion_sin_servicio = df_expandido['servicio_contratado'].isna()
 
+                                # Para contratos SIN coincidencia y sin servicio
+                                condicion_sin_coincidencia = ~df_expandido['coincidencia_encontrada']
+
+                                # Asignar servicios especiales para contratos sin coincidencia
+                                df_expandido.loc[
+                                    condicion_sin_coincidencia & condicion_sin_servicio, 'servicio_contratado'] = 'SIN DATOS EN TABLA TIPOS'
+
+                                # Para contratos con coincidencia pero sin servicio
+                                condicion_con_coincidencia_sin_servicio = (
+                                        df_expandido['coincidencia_encontrada'] &
+                                        condicion_sin_servicio
+                                )
+
                                 # Para contratos con estado "finalizado" pero sin servicio
                                 condicion_finalizado_sin_servicio = (
-                                        condicion_sin_servicio &
+                                        condicion_con_coincidencia_sin_servicio &
                                         df_expandido['estado_normalizado'].str.contains('finalizado', na=False)
                                 )
 
                                 # Para contratos con otros estados sin servicio
                                 condicion_otros_sin_servicio = (
-                                        condicion_sin_servicio &
+                                        condicion_con_coincidencia_sin_servicio &
                                         ~df_expandido['estado_normalizado'].str.contains('finalizado', na=False)
                                 )
 
@@ -9413,7 +9473,7 @@ def mostrar_kpis_seguimiento_contratos():
                                 df_expandido.loc[
                                     condicion_otros_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
 
-                                # PASADA FINAL DE SEGURIDAD: asegurar que no quede ningún contrato finalizado sin servicio
+                                # PASADA FINAL DE SEGURIDAD
                                 mask_finalizado = df_expandido['estado_normalizado'].str.contains('finalizado',
                                                                                                   na=False)
                                 mask_sin_servicio = df_expandido['servicio_contratado'].isna()
@@ -9424,13 +9484,16 @@ def mostrar_kpis_seguimiento_contratos():
                                 df_expandido.loc[df_expandido[
                                     'servicio_contratado'].isna(), 'servicio_contratado'] = 'SERVICIO NO FINALIZADO'
 
-                                # Eliminar columnas temporales
-                                df_expandido = df_expandido.drop(['estado_normalizado', 'tiene_coincidencia'], axis=1)
+                                # Eliminar columna temporal de estado normalizado
+                                df_expandido = df_expandido.drop(['estado_normalizado'], axis=1)
                             else:
-                                # Si no hay columna estado, marcamos todos los vacíos
-                                df_expandido.loc[df_expandido[
-                                    'servicio_contratado'].isna(), 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
-                                df_expandido = df_expandido.drop('tiene_coincidencia', axis=1)
+                                # Si no hay columna estado, marcamos según coincidencia
+                                mask_sin_coincidencia = ~df_expandido['coincidencia_encontrada']
+                                mask_sin_servicio = df_expandido['servicio_contratado'].isna()
+
+                                df_expandido.loc[
+                                    mask_sin_coincidencia & mask_sin_servicio, 'servicio_contratado'] = 'SIN DATOS EN TABLA TIPOS'
+                                df_expandido.loc[mask_sin_servicio, 'servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
 
                             # ============================================
                             # AÑADIR COLUMNA DE PROVINCIA
@@ -9516,13 +9579,19 @@ def mostrar_kpis_seguimiento_contratos():
                         else:
                             df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                             df_contratos['num_servicios'] = 0
+                            df_contratos['coincidencia_encontrada'] = False
+                            df_contratos['estado_coincidencia'] = 'SIN COINCIDENCIA'
                     else:
                         df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                         df_contratos['num_servicios'] = 0
+                        df_contratos['coincidencia_encontrada'] = False
+                        df_contratos['estado_coincidencia'] = 'SIN COINCIDENCIA'
 
             except Exception as e:
                 df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
                 df_contratos['num_servicios'] = 0
+                df_contratos['coincidencia_encontrada'] = False
+                df_contratos['estado_coincidencia'] = 'SIN COINCIDENCIA'
 
             # ============================================
             # USAR EL DATAFRAME EXPANDIDO SI EXISTE, SINO EL ORIGINAL
@@ -9556,9 +9625,36 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar['num_servicios'] = 0
                 if 'provincia' not in df_a_mostrar.columns:
                     df_a_mostrar['provincia'] = 'SIN DATOS'
+                if 'coincidencia_encontrada' not in df_a_mostrar.columns:
+                    df_a_mostrar['coincidencia_encontrada'] = False
+                if 'estado_coincidencia' not in df_a_mostrar.columns:
+                    df_a_mostrar['estado_coincidencia'] = 'SIN COINCIDENCIA'
 
             # ============================================
-            # FILTROS (AHORA CON PROVINCIA)
+            # CORREGIR FORMATO DE FECHA_INSTALACION
+            # ============================================
+            if 'fecha_instalacion' in df_a_mostrar.columns:
+                # Aplicar corrección
+                df_a_mostrar['fecha_instalacion_corregida'] = df_a_mostrar['fecha_instalacion'].apply(
+                    corregir_fecha_instalacion)
+
+                # Convertir a datetime
+                try:
+                    df_a_mostrar['fecha_instalacion_corregida'] = pd.to_datetime(
+                        df_a_mostrar['fecha_instalacion_corregida'],
+                        errors='coerce'
+                    )
+
+                    # Reemplazar la columna original con la corregida
+                    df_a_mostrar['fecha_instalacion'] = df_a_mostrar['fecha_instalacion_corregida']
+                    df_a_mostrar = df_a_mostrar.drop('fecha_instalacion_corregida', axis=1)
+
+                    st.success("✅ Formato de fecha corregido: año-dia-mes → año-mes-dia")
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudo corregir el formato de fecha: {e}")
+
+            # ============================================
+            # FILTROS (AHORA CON PROVINCIA Y COINCIDENCIA)
             # ============================================
             col1, col2, col3, col4 = st.columns(4)
 
@@ -9591,7 +9687,7 @@ def mostrar_kpis_seguimiento_contratos():
                     provincia_filtro = 'Todas'
 
             # Nueva fila para más filtros
-            col5, col6 = st.columns(2)
+            col5, col6, col7 = st.columns(3)
 
             with col5:
                 if 'num_servicios' in df_a_mostrar.columns and df_a_mostrar['num_servicios'].notna().any():
@@ -9607,7 +9703,8 @@ def mostrar_kpis_seguimiento_contratos():
 
                     # Poner primero los servicios especiales
                     servicios_ordenados = []
-                    for servicio in ['ALQUILER DE UUII', 'SERVICIO NO ESPECIFICADO', 'SERVICIO NO FINALIZADO']:
+                    for servicio in ['SIN DATOS EN TABLA TIPOS', 'ALQUILER DE UUII', 'SERVICIO NO ESPECIFICADO',
+                                     'SERVICIO NO FINALIZADO']:
                         if servicio in servicios_unicos:
                             servicios_ordenados.append(servicio)
                             servicios_unicos.remove(servicio)
@@ -9621,8 +9718,17 @@ def mostrar_kpis_seguimiento_contratos():
                 else:
                     servicio_filtro = 'Todos'
 
+            with col7:
+                if 'coincidencia_encontrada' in df_a_mostrar.columns:
+                    coincidencia_filtro = st.selectbox(
+                        "Filtrar por coincidencia:",
+                        ['Todos', 'Con coincidencia', 'Sin coincidencia']
+                    )
+                else:
+                    coincidencia_filtro = 'Todos'
+
             # ============================================
-            # SELECCIÓN DE COLUMNAS (ACTUALIZADA CON PROVINCIA)
+            # SELECCIÓN DE COLUMNAS (ACTUALIZADA)
             # ============================================
             columnas_disponibles = df_a_mostrar.columns.tolist()
 
@@ -9639,6 +9745,10 @@ def mostrar_kpis_seguimiento_contratos():
                 columnas_default.append('num_servicios')
             if 'provincia' in columnas_disponibles:
                 columnas_default.append('provincia')
+            if 'coincidencia_encontrada' in columnas_disponibles:
+                columnas_default.append('coincidencia_encontrada')
+            if 'estado_coincidencia' in columnas_disponibles:
+                columnas_default.append('estado_coincidencia')
 
             # Filtrar solo columnas que existen
             columnas_default = [col for col in columnas_default if col in columnas_disponibles]
@@ -9650,7 +9760,7 @@ def mostrar_kpis_seguimiento_contratos():
             )
 
             # ============================================
-            # APLICAR FILTROS (INCLUYENDO PROVINCIA)
+            # APLICAR FILTROS
             # ============================================
             df_filtrado = df_a_mostrar.copy()
 
@@ -9679,6 +9789,13 @@ def mostrar_kpis_seguimiento_contratos():
             if servicio_filtro != 'Todos' and 'servicio_contratado' in df_filtrado.columns:
                 df_filtrado = df_filtrado[df_filtrado['servicio_contratado'] == servicio_filtro]
 
+            # Aplicar filtro por coincidencia
+            if coincidencia_filtro != 'Todos' and 'coincidencia_encontrada' in df_filtrado.columns:
+                if coincidencia_filtro == 'Con coincidencia':
+                    df_filtrado = df_filtrado[df_filtrado['coincidencia_encontrada'] == True]
+                elif coincidencia_filtro == 'Sin coincidencia':
+                    df_filtrado = df_filtrado[df_filtrado['coincidencia_encontrada'] == False]
+
             # ============================================
             # MOSTRAR RESULTADOS
             # ============================================
@@ -9686,26 +9803,30 @@ def mostrar_kpis_seguimiento_contratos():
 
             # Mostrar KPIs de servicios
             if 'num_servicios' in df_filtrado.columns and df_filtrado['num_servicios'].notna().any():
-                col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+                col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5 = st.columns(5)
 
                 with col_kpi1:
                     total_registros = len(df_filtrado)
                     st.metric("📋 Total registros", total_registros)
 
                 with col_kpi2:
+                    if 'coincidencia_encontrada' in df_filtrado.columns:
+                        sin_coincidencia = df_filtrado[~df_filtrado['coincidencia_encontrada']].shape[0]
+                        st.metric("⚠️ Sin coincidencia", sin_coincidencia, delta_color="off")
+
+                with col_kpi3:
                     if 'servicio_contratado' in df_filtrado.columns and df_filtrado[
                         'servicio_contratado'].notna().any():
-                        # Contar ALQUILER DE UUII específicamente
                         alquiler_uuii = df_filtrado[df_filtrado['servicio_contratado'] == 'ALQUILER DE UUII'].shape[0]
                         st.metric("🏢 ALQUILER DE UUII", alquiler_uuii)
 
-                with col_kpi3:
+                with col_kpi4:
                     if 'servicio_contratado' in df_filtrado.columns and df_filtrado[
                         'servicio_contratado'].notna().any():
                         tipos_servicios = df_filtrado['servicio_contratado'].nunique()
                         st.metric("🎯 Tipos de servicio", tipos_servicios)
 
-                with col_kpi4:
+                with col_kpi5:
                     if 'provincia' in df_filtrado.columns and df_filtrado['provincia'].notna().any():
                         provincias_unicas = df_filtrado['provincia'].nunique()
                         st.metric("📍 Provincias", provincias_unicas)
