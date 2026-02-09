@@ -9240,6 +9240,36 @@ def mostrar_kpis_seguimiento_contratos():
             st.subheader("Datos totales")
 
             # ============================================
+            # OBTENER PUNTOS DE LA BASE DE DATOS
+            # ============================================
+            try:
+                # Conectar a la base de datos y obtener los puntos de las tarifas
+                conn = sqlitecloud.connect(
+                    "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+                cursor = conn.cursor()
+                cursor.execute("SELECT tarifas, puntos_mes FROM puntos_tarifas")
+                puntos_tarifas = cursor.fetchall()
+                conn.close()
+
+                # Crear diccionario para búsqueda rápida
+                dict_puntos = {}
+                for tarifa, puntos in puntos_tarifas:
+                    dict_puntos[str(tarifa).strip()] = float(puntos)
+
+                # Función para obtener puntos de una tarifa
+                def obtener_puntos(tarifa):
+                    if pd.isna(tarifa):
+                        return 0.0
+                    return dict_puntos.get(str(tarifa).strip(), 0.0)
+
+            except Exception as e:
+                st.warning(f"⚠️ Error al conectar con la base de datos de puntos: {e}")
+
+                # Función de respaldo si hay error
+                def obtener_puntos(tarifa):
+                    return 0.0
+
+            # ============================================
             # FUNCIÓN PARA OBTENER PROVINCIA
             # ============================================
             def obtener_provincia(cliente, lat, lon):
@@ -9659,6 +9689,22 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar['estado_coincidencia'] = 'SIN COINCIDENCIA'
 
             # ============================================
+            # AÑADIR COLUMNA DE PUNTUACIÓN BASADA EN LA TARIFA
+            # ============================================
+            if 'servicio_contratado' in df_a_mostrar.columns:
+                # Aplicar la función obtener_puntos a cada fila
+                df_a_mostrar['puntuacion'] = df_a_mostrar['servicio_contratado'].apply(obtener_puntos)
+
+                # También para el dataframe de descarga
+                if 'df_original_para_descarga' in locals() and 'servicio_contratado' in df_original_para_descarga.columns:
+                    df_original_para_descarga['puntuacion'] = df_original_para_descarga['servicio_contratado'].apply(
+                        obtener_puntos)
+            else:
+                df_a_mostrar['puntuacion'] = 0.0
+                if 'df_original_para_descarga' in locals():
+                    df_original_para_descarga['puntuacion'] = 0.0
+
+            # ============================================
             # CORREGIR FORMATO DE FECHA_INSTALACION (MEJORADA)
             # ============================================
             if 'fecha_instalacion' in df_a_mostrar.columns:
@@ -9741,7 +9787,7 @@ def mostrar_kpis_seguimiento_contratos():
                     provincia_filtro = 'Todas'
 
             # Nueva fila para más filtros
-            col5, col6, col7 = st.columns(3)
+            col5, col6, col7, col8 = st.columns(4)
 
             with col5:
                 if 'num_servicios' in df_a_mostrar.columns and df_a_mostrar['num_servicios'].notna().any():
@@ -9779,8 +9825,20 @@ def mostrar_kpis_seguimiento_contratos():
                 else:
                     coincidencia_filtro = 'Todos'
 
+            with col8:
+                if 'puntuacion' in df_a_mostrar.columns and df_a_mostrar['puntuacion'].notna().any():
+                    # Crear rangos de puntuación para filtrar
+                    puntuacion_max = df_a_mostrar['puntuacion'].max()
+                    puntuacion_min = df_a_mostrar['puntuacion'].min()
+
+                    # Crear opciones para filtrar por puntuación
+                    opciones_puntuacion = ['Todas', '0 puntos', '0.1-0.5 puntos', '0.6-1.0 puntos', '1.1+ puntos']
+                    puntuacion_filtro = st.selectbox("Filtrar por puntuación:", opciones_puntuacion)
+                else:
+                    puntuacion_filtro = 'Todas'
+
             # ============================================
-            # SELECCIÓN DE COLUMNAS (ACTUALIZADA)
+            # SELECCIÓN DE COLUMNAS (ACTUALIZADA CON PUNTUACIÓN)
             # ============================================
             columnas_disponibles = df_a_mostrar.columns.tolist()
 
@@ -9799,6 +9857,8 @@ def mostrar_kpis_seguimiento_contratos():
                 columnas_default.append('provincia')
             if 'estado_coincidencia' in columnas_disponibles:
                 columnas_default.append('estado_coincidencia')
+            if 'puntuacion' in columnas_disponibles:
+                columnas_default.append('puntuacion')
 
             # Filtrar solo columnas que existen
             columnas_default = [col for col in columnas_default if col in columnas_disponibles]
@@ -9843,14 +9903,25 @@ def mostrar_kpis_seguimiento_contratos():
             if coincidencia_filtro != 'Todos' and 'estado_coincidencia' in df_filtrado.columns:
                 df_filtrado = df_filtrado[df_filtrado['estado_coincidencia'] == coincidencia_filtro]
 
+            # Aplicar filtro por puntuación
+            if puntuacion_filtro != 'Todas' and 'puntuacion' in df_filtrado.columns:
+                if puntuacion_filtro == '0 puntos':
+                    df_filtrado = df_filtrado[df_filtrado['puntuacion'] == 0]
+                elif puntuacion_filtro == '0.1-0.5 puntos':
+                    df_filtrado = df_filtrado[(df_filtrado['puntuacion'] > 0) & (df_filtrado['puntuacion'] <= 0.5)]
+                elif puntuacion_filtro == '0.6-1.0 puntos':
+                    df_filtrado = df_filtrado[(df_filtrado['puntuacion'] > 0.5) & (df_filtrado['puntuacion'] <= 1.0)]
+                elif puntuacion_filtro == '1.1+ puntos':
+                    df_filtrado = df_filtrado[df_filtrado['puntuacion'] > 1.0]
+
             # ============================================
             # MOSTRAR RESULTADOS
             # ============================================
             st.info(f"Mostrando {len(df_filtrado)} de {len(df_a_mostrar)} registros")
 
-            # Mostrar KPIs de servicios
+            # Mostrar KPIs de servicios (incluyendo puntuación)
             if 'num_servicios' in df_filtrado.columns and df_filtrado['num_servicios'].notna().any():
-                col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5 = st.columns(5)
+                col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5, col_kpi6 = st.columns(6)
 
                 with col_kpi1:
                     total_registros = len(df_filtrado)
@@ -9879,6 +9950,11 @@ def mostrar_kpis_seguimiento_contratos():
                         provincias_unicas = df_filtrado['provincia'].nunique()
                         st.metric("📍 Provincias", provincias_unicas)
 
+                with col_kpi6:
+                    if 'puntuacion' in df_filtrado.columns and df_filtrado['puntuacion'].notna().any():
+                        puntuacion_total = df_filtrado['puntuacion'].sum()
+                        st.metric("⭐ Puntuación total", f"{puntuacion_total:.2f}")
+
             # Mostrar tabla
             if columnas_seleccionadas:
                 st.dataframe(
@@ -9896,7 +9972,6 @@ def mostrar_kpis_seguimiento_contratos():
 
             with col1:
                 # Descargar datos expandidos (una fila por servicio)
-                import io
                 output_expandido = io.BytesIO()
                 with pd.ExcelWriter(output_expandido, engine='xlsxwriter') as writer:
                     df_filtrado.to_excel(writer, index=False, sheet_name='Contratos_Expandidos')
