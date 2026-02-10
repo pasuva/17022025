@@ -7478,7 +7478,7 @@ def mostrar_kpis_seguimiento_contratos():
                 fecha_inicio_contrato, fecha_ingreso, comercial,
                 fecha_instalacion, apartment_id, fecha_estado,
                 fecha_fin_contrato, comentarios, divisor, puerto,
-                SAT, Tipo_cliente, tecnico, metodo_entrada, billing
+                SAT, Tipo_cliente, tecnico, metodo_entrada, billing, permanencia
             FROM seguimiento_contratos
             """
 
