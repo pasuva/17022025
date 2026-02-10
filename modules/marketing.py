@@ -9388,7 +9388,7 @@ def mostrar_kpis_seguimiento_contratos():
                 return fecha_str
 
             # ============================================
-            # AÑADIR TIPOS DE CONTRATO - POR ID DE CONTRATO (ACTUALIZADO CON IMPORTE A REMESA)
+            # AÑADIR TIPOS DE CONTRATO - POR ID DE CONTRATO (ACTUALIZADO CON IMPORTE A REMESA Y PERMANENCIA)
             # ============================================
             try:
                 if 'df_tipos_filtrado' in locals() and not df_tipos_filtrado.empty:
@@ -9396,10 +9396,10 @@ def mostrar_kpis_seguimiento_contratos():
                     df_contratos_mod = df_contratos.copy()
                     df_tipos_mod = df_tipos_filtrado.copy()
 
-                    # Eliminar columnas que no necesitamos
+                    # Eliminar columnas que no necesitamos (pero MANTENEMOS 'permanencia' si existe)
                     columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios']
                     for col in columnas_a_eliminar:
-                        if col in df_contratos_mod.columns:
+                        if col in df_contratos_mod.columns and col != 'permanencia':
                             df_contratos_mod = df_contratos_mod.drop(columns=[col])
 
                     # Normalizar nombres de columnas
@@ -9468,6 +9468,41 @@ def mostrar_kpis_seguimiento_contratos():
 
                             if col_importe_remesa:
                                 df_expandido.rename(columns={col_importe_remesa: 'importe_remesa'}, inplace=True)
+
+                            # ============================================
+                            # FORMATO CORRECTO DEL IMPORTE A REMESA CON 2 DECIMALES Y COMAS
+                            # ============================================
+                            if 'importe_remesa' in df_expandido.columns:
+                                # Primero, asegurarnos de que es string y limpiar
+                                df_expandido['importe_remesa'] = df_expandido['importe_remesa'].astype(str)
+
+                                # Eliminar espacios en blanco
+                                df_expandido['importe_remesa'] = df_expandido['importe_remesa'].str.strip()
+
+                                # Reemplazar comas por puntos para conversión a float
+                                df_expandido['importe_remesa_temp'] = df_expandido['importe_remesa'].str.replace(',',
+                                                                                                                 '.')
+
+                                # Convertir a numérico
+                                df_expandido['importe_remesa_temp'] = pd.to_numeric(df_expandido['importe_remesa_temp'],
+                                                                                    errors='coerce')
+
+                                # Formatear con 2 decimales y comas como separador decimal
+                                def formatear_importe(valor):
+                                    if pd.isna(valor):
+                                        return ''
+                                    # Formatear con 2 decimales
+                                    valor_formateado = f"{valor:,.2f}"
+                                    # Reemplazar comas de miles por puntos y puntos decimales por comas
+                                    valor_formateado = valor_formateado.replace(',', 'X').replace('.', ',').replace('X',
+                                                                                                                    '.')
+                                    return valor_formateado
+
+                                df_expandido['importe_remesa'] = df_expandido['importe_remesa_temp'].apply(
+                                    formatear_importe)
+
+                                # Eliminar columna temporal
+                                df_expandido = df_expandido.drop(columns=['importe_remesa_temp'])
 
                             # ============================================
                             # DETECTAR Y MARCAR CONTRATOS SIN COINCIDENCIA
@@ -9686,21 +9721,21 @@ def mostrar_kpis_seguimiento_contratos():
                 # También preparar el original para descarga
                 df_original_para_descarga = df_contratos.copy()
 
-                # Eliminar columnas no deseadas del original también
+                # Eliminar columnas no deseadas del original también (pero MANTENEMOS 'permanencia')
                 columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios']
                 for col in columnas_a_eliminar:
-                    if col in df_original_para_descarga.columns:
+                    if col in df_original_para_descarga.columns and col != 'permanencia':
                         df_original_para_descarga = df_original_para_descarga.drop(columns=[col])
             else:
                 df_a_mostrar = df_contratos.copy()
                 df_original_para_descarga = df_contratos.copy()
 
-                # Eliminar columnas no deseadas
+                # Eliminar columnas no deseadas (pero MANTENEMOS 'permanencia')
                 columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios']
                 for col in columnas_a_eliminar:
-                    if col in df_a_mostrar.columns:
+                    if col in df_a_mostrar.columns and col != 'permanencia':
                         df_a_mostrar = df_a_mostrar.drop(columns=[col])
-                    if col in df_original_para_descarga.columns:
+                    if col in df_original_para_descarga.columns and col != 'permanencia':
                         df_original_para_descarga = df_original_para_descarga.drop(columns=[col])
 
                 # Asegurar que las nuevas columnas existen
@@ -9714,6 +9749,9 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar['estado_coincidencia'] = 'SIN COINCIDENCIA'
                 if 'importe_remesa' not in df_a_mostrar.columns:
                     df_a_mostrar['importe_remesa'] = None
+                # La columna 'permanencia' ya debería estar en df_contratos, pero por si acaso:
+                if 'permanencia' not in df_a_mostrar.columns:
+                    df_a_mostrar['permanencia'] = None
 
             # ============================================
             # AÑADIR COLUMNA DE PUNTUACIÓN BASADA EN LA TARIFA
@@ -9861,7 +9899,7 @@ def mostrar_kpis_seguimiento_contratos():
                     importe_filtro = 'Todos'
 
             # ============================================
-            # SELECCIÓN DE COLUMNAS (ACTUALIZADA - SIN PUNTUACIÓN VISIBLE)
+            # SELECCIÓN DE COLUMNAS (ACTUALIZADA - SIN PUNTUACIÓN VISIBLE, CON PERMANENCIA)
             # ============================================
             columnas_disponibles = df_a_mostrar.columns.tolist()
 
@@ -9870,7 +9908,7 @@ def mostrar_kpis_seguimiento_contratos():
 
             columnas_default = [
                 'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato',
-                'comercial', 'fecha_instalacion',
+                'comercial', 'fecha_instalacion', 'permanencia',
                 'SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada'
             ]
 
@@ -9933,16 +9971,18 @@ def mostrar_kpis_seguimiento_contratos():
             # Aplicar filtro por importe a remesa
             if importe_filtro != 'Todos' and 'importe_remesa' in df_filtrado.columns:
                 if importe_filtro == 'Sin importe':
-                    df_filtrado = df_filtrado[df_filtrado['importe_remesa'].isna()]
+                    df_filtrado = df_filtrado[
+                        df_filtrado['importe_remesa'].isna() | (df_filtrado['importe_remesa'] == '')]
                 elif importe_filtro == 'Con importe':
-                    df_filtrado = df_filtrado[df_filtrado['importe_remesa'].notna()]
+                    df_filtrado = df_filtrado[
+                        df_filtrado['importe_remesa'].notna() & (df_filtrado['importe_remesa'] != '')]
 
             # ============================================
             # MOSTRAR RESULTADOS
             # ============================================
             st.info(f"Mostrando {len(df_filtrado)} de {len(df_a_mostrar)} registros")
 
-            # Mostrar KPIs de servicios (incluyendo importe a remesa)
+            # Mostrar KPIs de servicios (incluyendo importe a remesa y permanencia)
             if 'num_servicios' in df_filtrado.columns and df_filtrado['num_servicios'].notna().any():
                 col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5, col_kpi6 = st.columns(6)
 
@@ -9963,15 +10003,18 @@ def mostrar_kpis_seguimiento_contratos():
                         st.metric("🏢 ALQUILER DE UUII", alquiler_uuii)
 
                 with col_kpi4:
-                    if 'importe_remesa' in df_filtrado.columns and df_filtrado['importe_remesa'].notna().any():
-                        con_importe = df_filtrado['importe_remesa'].notna().sum()
+                    if 'importe_remesa' in df_filtrado.columns:
+                        con_importe = df_filtrado[
+                            df_filtrado['importe_remesa'].notna() & (df_filtrado['importe_remesa'] != '')].shape[0]
                         st.metric("💰 Con importe", con_importe)
 
                 with col_kpi5:
-                    if 'servicio_contratado' in df_filtrado.columns and df_filtrado[
-                        'servicio_contratado'].notna().any():
-                        tipos_servicios = df_filtrado['servicio_contratado'].nunique()
-                        st.metric("🎯 Tipos de servicio", tipos_servicios)
+                    if 'permanencia' in df_filtrado.columns and df_filtrado['permanencia'].notna().any():
+                        # Contar permanencias distintas de cero o vacías
+                        con_permanencia = df_filtrado[
+                            df_filtrado['permanencia'].notna() & (df_filtrado['permanencia'] != '') & (
+                                        df_filtrado['permanencia'] != 0)].shape[0]
+                        st.metric("⏳ Con permanencia", con_permanencia)
 
                 with col_kpi6:
                     if 'provincia' in df_filtrado.columns and df_filtrado['provincia'].notna().any():
