@@ -9400,13 +9400,13 @@ def mostrar_kpis_seguimiento_contratos():
                     columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios',
                                            'fecha_ingreso']
                     for col in columnas_a_eliminar:
-                        if col in df_contratos_mod.columns and col != 'PERMANENCIA':
+                        if col in df_contratos_mod.columns and col != 'permanencia':
                             df_contratos_mod = df_contratos_mod.drop(columns=[col])
 
                     # Normalizar nombres de columnas - PERO MANTENER 'PERMANENCIA' EN MAYÚSCULAS
                     def normalizar_nombre_columna(col):
-                        if str(col).strip().upper() == 'PERMANENCIA':
-                            return 'PERMANENCIA'
+                        if str(col).strip().upper() == 'permanencia':
+                            return 'permanencia'
                         return col.strip().lower()
 
                     df_contratos_mod.columns = [normalizar_nombre_columna(col) for col in df_contratos_mod.columns]
@@ -9735,12 +9735,12 @@ def mostrar_kpis_seguimiento_contratos():
                 columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios',
                                        'fecha_ingreso']
                 for col in columnas_a_eliminar:
-                    if col in df_original_para_descarga.columns and col != 'PERMANENCIA':
+                    if col in df_original_para_descarga.columns and col != 'permanencia':
                         df_original_para_descarga = df_original_para_descarga.drop(columns=[col])
 
                 # Asegurar que 'PERMANENCIA' esté en df_a_mostrar (en mayúsculas)
-                if 'PERMANENCIA' not in df_a_mostrar.columns and 'PERMANENCIA' in df_contratos.columns:
-                    df_a_mostrar['PERMANENCIA'] = df_contratos['PERMANENCIA']
+                if 'permanencia' not in df_a_mostrar.columns and 'permanencia' in df_contratos.columns:
+                    df_a_mostrar['permanencia'] = df_contratos['permanencia']
             else:
                 df_a_mostrar = df_contratos.copy()
                 df_original_para_descarga = df_contratos.copy()
@@ -9749,9 +9749,9 @@ def mostrar_kpis_seguimiento_contratos():
                 columnas_a_eliminar = ['mes_inicio', 'semana_inicio', 'comentario', 'fecha_estado', 'comentarios',
                                        'fecha_ingreso']
                 for col in columnas_a_eliminar:
-                    if col in df_a_mostrar.columns and col != 'PERMANENCIA':
+                    if col in df_a_mostrar.columns and col != 'permanencia':
                         df_a_mostrar = df_a_mostrar.drop(columns=[col])
-                    if col in df_original_para_descarga.columns and col != 'PERMANENCIA':
+                    if col in df_original_para_descarga.columns and col != 'permanencia':
                         df_original_para_descarga = df_original_para_descarga.drop(columns=[col])
 
                 # Asegurar que las nuevas columnas existen
@@ -9766,8 +9766,8 @@ def mostrar_kpis_seguimiento_contratos():
                 if 'importe_remesa' not in df_a_mostrar.columns:
                     df_a_mostrar['importe_remesa'] = None
                 # Asegurar que 'PERMANENCIA' exista (en mayúsculas)
-                if 'PERMANENCIA' not in df_a_mostrar.columns:
-                    df_a_mostrar['PERMANENCIA'] = None
+                if 'permanencia' not in df_a_mostrar.columns:
+                    df_a_mostrar['permanencia'] = None
 
             # ============================================
             # CORREGIR FORMATO DE FECHA_INSTALACION (MEJORADA)
@@ -9917,7 +9917,7 @@ def mostrar_kpis_seguimiento_contratos():
             # Columnas por defecto con 'PERMANENCIA' en mayúsculas
             columnas_default = [
                 'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato',
-                'comercial', 'fecha_instalacion', 'PERMANENCIA',  # ¡EN MAYÚSCULAS!
+                'comercial', 'fecha_instalacion', 'permanencia',  # ¡EN MAYÚSCULAS!
                 'SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada'
             ]
 
@@ -9937,8 +9937,8 @@ def mostrar_kpis_seguimiento_contratos():
             columnas_default = [col for col in columnas_default if col in columnas_disponibles]
 
             # Si 'PERMANENCIA' no está en el DataFrame pero debería estar, añadirlo
-            if 'PERMANENCIA' not in columnas_default and 'PERMANENCIA' in columnas_disponibles:
-                columnas_default.append('PERMANENCIA')
+            if 'permanencia' not in columnas_default and 'permanencia' in columnas_disponibles:
+                columnas_default.append('permanencia')
 
             columnas_seleccionadas = st.multiselect(
                 "Columnas a mostrar:",
@@ -10021,11 +10021,11 @@ def mostrar_kpis_seguimiento_contratos():
                         st.metric("💰 Con importe", con_importe)
 
                 with col_kpi5:
-                    if 'PERMANENCIA' in df_filtrado.columns and df_filtrado['PERMANENCIA'].notna().any():
+                    if 'permanencia' in df_filtrado.columns and df_filtrado['permanencia'].notna().any():
                         # Contar permanencias distintas de cero o vacías
                         con_permanencia = df_filtrado[
-                            df_filtrado['PERMANENCIA'].notna() & (df_filtrado['PERMANENCIA'] != '') & (
-                                    df_filtrado['PERMANENCIA'] != 0)].shape[0]
+                            df_filtrado['permanencia'].notna() & (df_filtrado['permanencia'] != '') & (
+                                    df_filtrado['permanencia'] != 0)].shape[0]
                         st.metric("⏳ Con permanencia", con_permanencia)
 
                 with col_kpi6:
