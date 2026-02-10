@@ -6181,33 +6181,53 @@ def admin_dashboard():
 
                             cur = conn.cursor()
 
+                            # divisor
                             cur.execute("""
+                                   UPDATE datos_uis
+                                   SET divisor = (
+                                       SELECT sc.divisor
+                                       FROM seguimiento_contratos sc
+                                       WHERE sc.apartment_id = datos_uis.apartment_id
+                                       AND sc.divisor IS NOT NULL
+                                       LIMIT 1
+                                   )
+                                   WHERE apartment_id IN (
+                                       SELECT apartment_id FROM seguimiento_contratos
+                                       WHERE divisor IS NOT NULL
+                                   )
+                               """)
 
-                                UPDATE datos_uis
+                            # puerto
+                            cur.execute("""
+                                   UPDATE datos_uis
+                                   SET puerto = (
+                                       SELECT sc.puerto
+                                       FROM seguimiento_contratos sc
+                                       WHERE sc.apartment_id = datos_uis.apartment_id
+                                       AND sc.puerto IS NOT NULL
+                                       LIMIT 1
+                                   )
+                                   WHERE apartment_id IN (
+                                       SELECT apartment_id FROM seguimiento_contratos
+                                       WHERE puerto IS NOT NULL
+                                   )
+                               """)
 
-                                SET permanencia = (
-
-                                    SELECT sc.permanencia
-
-                                    FROM seguimiento_contratos sc
-
-                                    WHERE sc.apartment_id = datos_uis.apartment_id
-
-                                    AND sc.permanencia IS NOT NULL
-
-                                    LIMIT 1
-
-                                )
-
-                                WHERE apartment_id IN (
-
-                                    SELECT apartment_id FROM seguimiento_contratos
-
-                                    WHERE permanencia IS NOT NULL
-
-                                )
-
-                            """)
+                            # fecha fin
+                            cur.execute("""
+                                   UPDATE datos_uis
+                                   SET fecha_fin_contrato = (
+                                       SELECT sc.fecha_fin_contrato
+                                       FROM seguimiento_contratos sc
+                                       WHERE sc.apartment_id = datos_uis.apartment_id
+                                       AND sc.fecha_fin_contrato IS NOT NULL
+                                       LIMIT 1
+                                   )
+                                   WHERE apartment_id IN (
+                                       SELECT apartment_id FROM seguimiento_contratos
+                                       WHERE fecha_fin_contrato IS NOT NULL
+                                   )
+                               """)
 
                             conn.commit()
 
