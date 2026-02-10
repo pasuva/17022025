@@ -9388,7 +9388,7 @@ def mostrar_kpis_seguimiento_contratos():
                 return fecha_str
 
             # ============================================
-            # AÑADIR TIPOS DE CONTRATO - POR ID DE CONTRATO
+            # AÑADIR TIPOS DE CONTRATO - POR ID DE CONTRATO (ACTUALIZADO CON IMPORTE A REMESA)
             # ============================================
             try:
                 if 'df_tipos_filtrado' in locals() and not df_tipos_filtrado.empty:
@@ -9435,16 +9435,39 @@ def mostrar_kpis_seguimiento_contratos():
                         # Buscar columna de servicio
                         col_servicio = next((col for col in df_tipos_mod.columns if 'nombre' in col), None)
 
+                        # Buscar columna de IMPORTE A REMESA (nueva)
+                        col_importe_remesa = None
+                        posibles_nombres_importe = ['importe a remesar', 'IMPORTE A REMESAR', 'importe remesa', 'remesa', 'importe']
+
+                        for col in df_tipos_mod.columns:
+                            col_lower = str(col).lower()
+                            if any(nombre in col_lower for nombre in posibles_nombres_importe):
+                                col_importe_remesa = col
+                                break
+
+                        # Preparar las columnas a incluir en el merge
+                        columnas_para_merge = ['id_contrato_num']
+
                         if col_servicio:
+                            columnas_para_merge.append(col_servicio)
+
+                        if col_importe_remesa:
+                            columnas_para_merge.append(col_importe_remesa)
+
+                        if len(columnas_para_merge) > 1:  # Si hay al menos una columna además del ID
                             # Hacer un merge LEFT por ID de contrato
                             df_expandido = df_contratos_mod.merge(
-                                df_tipos_mod[['id_contrato_num', col_servicio]],
+                                df_tipos_mod[columnas_para_merge],
                                 on='id_contrato_num',
                                 how='left'
                             )
 
-                            # Renombrar columna de servicio
-                            df_expandido.rename(columns={col_servicio: 'servicio_contratado'}, inplace=True)
+                            # Renombrar columnas
+                            if col_servicio:
+                                df_expandido.rename(columns={col_servicio: 'servicio_contratado'}, inplace=True)
+
+                            if col_importe_remesa:
+                                df_expandido.rename(columns={col_importe_remesa: 'importe_remesa'}, inplace=True)
 
                             # ============================================
                             # DETECTAR Y MARCAR CONTRATOS SIN COINCIDENCIA
@@ -9640,6 +9663,8 @@ def mostrar_kpis_seguimiento_contratos():
 
                         else:
                             df_contratos['servicio_contratado'] = 'SERVICIO NO ESPECIFICADO'
+                            if col_importe_remesa:
+                                df_contratos['importe_remesa'] = None
                             df_contratos['num_servicios'] = 0
                             df_contratos['estado_coincidencia'] = 'SIN COINCIDENCIA'
                     else:
@@ -9687,6 +9712,8 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar['provincia'] = 'SIN DATOS'
                 if 'estado_coincidencia' not in df_a_mostrar.columns:
                     df_a_mostrar['estado_coincidencia'] = 'SIN COINCIDENCIA'
+                if 'importe_remesa' not in df_a_mostrar.columns:
+                    df_a_mostrar['importe_remesa'] = None
 
             # ============================================
             # AÑADIR COLUMNA DE PUNTUACIÓN BASADA EN LA TARIFA
@@ -9754,7 +9781,7 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar = df_a_mostrar.drop('fecha_instalacion_corregida', axis=1)
 
             # ============================================
-            # FILTROS (ACTUALIZADOS)
+            # FILTROS (ACTUALIZADOS - SIN FECHA INGRESO)
             # ============================================
             col1, col2, col3, col4 = st.columns(4)
 
@@ -9826,21 +9853,20 @@ def mostrar_kpis_seguimiento_contratos():
                     coincidencia_filtro = 'Todos'
 
             with col8:
-                if 'puntuacion' in df_a_mostrar.columns and df_a_mostrar['puntuacion'].notna().any():
-                    # Crear rangos de puntuación para filtrar
-                    puntuacion_max = df_a_mostrar['puntuacion'].max()
-                    puntuacion_min = df_a_mostrar['puntuacion'].min()
-
-                    # Crear opciones para filtrar por puntuación
-                    opciones_puntuacion = ['Todas', '0 puntos', '0.1-0.5 puntos', '0.6-1.0 puntos', '1.1+ puntos']
-                    puntuacion_filtro = st.selectbox("Filtrar por puntuación:", opciones_puntuacion)
+                if 'importe_remesa' in df_a_mostrar.columns and df_a_mostrar['importe_remesa'].notna().any():
+                    # Crear opciones para filtrar por importe a remesa
+                    opciones_importe = ['Todos', 'Sin importe', 'Con importe']
+                    importe_filtro = st.selectbox("Filtrar por importe:", opciones_importe)
                 else:
-                    puntuacion_filtro = 'Todas'
+                    importe_filtro = 'Todos'
 
             # ============================================
-            # SELECCIÓN DE COLUMNAS (ACTUALIZADA CON PUNTUACIÓN)
+            # SELECCIÓN DE COLUMNAS (ACTUALIZADA - SIN PUNTUACIÓN VISIBLE)
             # ============================================
             columnas_disponibles = df_a_mostrar.columns.tolist()
+
+            # Eliminar 'fecha_ingreso' si existe en las columnas disponibles
+            columnas_disponibles = [col for col in columnas_disponibles if 'fecha_ingreso' not in col.lower()]
 
             columnas_default = [
                 'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato',
@@ -9848,7 +9874,7 @@ def mostrar_kpis_seguimiento_contratos():
                 'SAT', 'Tipo_cliente', 'tecnico', 'metodo_entrada'
             ]
 
-            # Añadir nuevas columnas si existen
+            # Añadir nuevas columnas si existen (EXCLUYENDO puntuacion de las columnas por defecto)
             if 'servicio_contratado' in columnas_disponibles:
                 columnas_default.append('servicio_contratado')
             if 'num_servicios' in columnas_disponibles:
@@ -9857,8 +9883,9 @@ def mostrar_kpis_seguimiento_contratos():
                 columnas_default.append('provincia')
             if 'estado_coincidencia' in columnas_disponibles:
                 columnas_default.append('estado_coincidencia')
-            if 'puntuacion' in columnas_disponibles:
-                columnas_default.append('puntuacion')
+            if 'importe_remesa' in columnas_disponibles:
+                columnas_default.append('importe_remesa')
+            # NOTA: 'puntuacion' NO se añade a las columnas por defecto, pero estará disponible para seleccionar
 
             # Filtrar solo columnas que existen
             columnas_default = [col for col in columnas_default if col in columnas_disponibles]
@@ -9903,23 +9930,19 @@ def mostrar_kpis_seguimiento_contratos():
             if coincidencia_filtro != 'Todos' and 'estado_coincidencia' in df_filtrado.columns:
                 df_filtrado = df_filtrado[df_filtrado['estado_coincidencia'] == coincidencia_filtro]
 
-            # Aplicar filtro por puntuación
-            if puntuacion_filtro != 'Todas' and 'puntuacion' in df_filtrado.columns:
-                if puntuacion_filtro == '0 puntos':
-                    df_filtrado = df_filtrado[df_filtrado['puntuacion'] == 0]
-                elif puntuacion_filtro == '0.1-0.5 puntos':
-                    df_filtrado = df_filtrado[(df_filtrado['puntuacion'] > 0) & (df_filtrado['puntuacion'] <= 0.5)]
-                elif puntuacion_filtro == '0.6-1.0 puntos':
-                    df_filtrado = df_filtrado[(df_filtrado['puntuacion'] > 0.5) & (df_filtrado['puntuacion'] <= 1.0)]
-                elif puntuacion_filtro == '1.1+ puntos':
-                    df_filtrado = df_filtrado[df_filtrado['puntuacion'] > 1.0]
+            # Aplicar filtro por importe a remesa
+            if importe_filtro != 'Todos' and 'importe_remesa' in df_filtrado.columns:
+                if importe_filtro == 'Sin importe':
+                    df_filtrado = df_filtrado[df_filtrado['importe_remesa'].isna()]
+                elif importe_filtro == 'Con importe':
+                    df_filtrado = df_filtrado[df_filtrado['importe_remesa'].notna()]
 
             # ============================================
             # MOSTRAR RESULTADOS
             # ============================================
             st.info(f"Mostrando {len(df_filtrado)} de {len(df_a_mostrar)} registros")
 
-            # Mostrar KPIs de servicios (incluyendo puntuación)
+            # Mostrar KPIs de servicios (incluyendo importe a remesa)
             if 'num_servicios' in df_filtrado.columns and df_filtrado['num_servicios'].notna().any():
                 col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5, col_kpi6 = st.columns(6)
 
@@ -9940,20 +9963,20 @@ def mostrar_kpis_seguimiento_contratos():
                         st.metric("🏢 ALQUILER DE UUII", alquiler_uuii)
 
                 with col_kpi4:
+                    if 'importe_remesa' in df_filtrado.columns and df_filtrado['importe_remesa'].notna().any():
+                        con_importe = df_filtrado['importe_remesa'].notna().sum()
+                        st.metric("💰 Con importe", con_importe)
+
+                with col_kpi5:
                     if 'servicio_contratado' in df_filtrado.columns and df_filtrado[
                         'servicio_contratado'].notna().any():
                         tipos_servicios = df_filtrado['servicio_contratado'].nunique()
                         st.metric("🎯 Tipos de servicio", tipos_servicios)
 
-                with col_kpi5:
+                with col_kpi6:
                     if 'provincia' in df_filtrado.columns and df_filtrado['provincia'].notna().any():
                         provincias_unicas = df_filtrado['provincia'].nunique()
                         st.metric("📍 Provincias", provincias_unicas)
-
-                with col_kpi6:
-                    if 'puntuacion' in df_filtrado.columns and df_filtrado['puntuacion'].notna().any():
-                        puntuacion_total = df_filtrado['puntuacion'].sum()
-                        st.metric("⭐ Puntuación total", f"{puntuacion_total:.2f}")
 
             # Mostrar tabla
             if columnas_seleccionadas:
@@ -9966,7 +9989,7 @@ def mostrar_kpis_seguimiento_contratos():
                 st.dataframe(df_filtrado, height=400, width='stretch')
 
             # ============================================
-            # BOTONES DE EXPORTACIÓN
+            # BOTONES DE EXPORTACIÓN (SIN PUNTUACIÓN EN LOS NOMBRES)
             # ============================================
             col1, col2 = st.columns(2)
 
