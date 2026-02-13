@@ -6334,7 +6334,8 @@ def admin_dashboard():
                                                     """, (token, expiracion, precontrato[0]))
                                         conn.commit()
                                         conn.close()
-                                        base_url = "https://one7022025.onrender.com"
+                                        #base_url = "https://one7022025.onrender.com"
+                                        base_url = "https://verde-suite.verdesuite.sytes.net/"
                                         link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
                                         st.toast("✅ Nuevo enlace generado correctamente.")
                                         st.code(link_cliente, language="text")

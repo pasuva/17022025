@@ -1049,7 +1049,8 @@ def comercial_dashboard_vip():
 
                                     #base_url="http://localhost:8501"
                                     #base_url=https://verde-suite.verdesuite.sytes.net
-                                    base_url = "https://one7022025.onrender.com"
+                                    #base_url = "https://one7022025.onrender.com"
+                                    base_url = "https://verde-suite.verdesuite.sytes.net/"
                                     link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
                                     st.success("✅ Precontrato guardado correctamente.")
                                     st.markdown(f"📎 **Enlace para el cliente (válido 24 h):**")
@@ -1160,7 +1161,8 @@ def comercial_dashboard_vip():
 
                                     conn.commit()
                                     conn.close()
-                                    base_url = "https://one7022025.onrender.com"
+                                    #base_url = "https://one7022025.onrender.com"
+                                    base_url="https://verde-suite.verdesuite.sytes.net/"
                                     #base_url=https://verde-suite.verdesuite.sytes.net
                                     #base_url = "http://localhost:8501"
                                     link_cliente = f"{base_url}?precontrato_id={precontrato[0]}&token={urllib.parse.quote(token)}"
@@ -1661,7 +1663,8 @@ def formulario_precontrato_section(apartment_id=None):
                         conn.commit()
                         conn.close()
 
-                        base_url = "https://one7022025.onrender.com"
+                        #base_url = "https://one7022025.onrender.com"
+                        base_url = "https://verde-suite.verdesuite.sytes.net/"
                         #base_url=https://verde-suite.verdesuite.sytes.net
                         #base_url = "http://localhost:8501"
                         link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
@@ -2662,7 +2665,8 @@ def mostrar_formulario(click_data):
                         conn.commit()
                         conn.close()
 
-                        base_url = "https://one7022025.onrender.com"  # puerto de Streamlit
+                        #base_url = "https://one7022025.onrender.com"  # puerto de Streamlit
+                        base_url = "https://verde-suite.verdesuite.sytes.net/"
                         #base_url=https://verde-suite.verdesuite.sytes.net
                         #base_url = "http://localhost:8501"
                         link_cliente = f"{base_url}?precontrato_id={precontrato_pk}&token={urllib.parse.quote(token)}"
