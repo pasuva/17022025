@@ -325,6 +325,7 @@ def cargar_contratos_google():
             'METODO DE ENTRADA': 'metodo_entrada',  # Otra variación
             'BILLING': 'billing',
             'BILL': 'billing',  # Posible variación corta
+            'PERMANENCIA': 'permanencia'
         }
 
         # Primero, normalizar nombres de columnas del DataFrame (quitar espacios extra, convertir a mayúsculas)
@@ -5898,293 +5899,138 @@ def admin_dashboard():
 
 
         elif sub_seccion == "Seguimiento de Contratos":
-
             st.info("ℹ️ Aquí puedes cargar contratos, mapear columnas, guardar en BD y sincronizar con datos UIS.")
-
             if st.button("🔄 Actualizar contratos"):
-
                 with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
-
                     try:
-
-                        # =====================================================
-
-                        # 1. Cargar datos
-
-                        # =====================================================
-
                         df = cargar_contratos_google()
-
                         df.columns = df.columns.map(lambda x: str(x).strip().lower() if x is not None else "")
-
                         conn = obtener_conexion()
-
                         cur = conn.cursor()
-
                         cur.execute("DELETE FROM seguimiento_contratos")
-
                         conn.commit()
 
                         total = len(df)
-
                         progress = st.progress(0)
 
-                        # =====================================================
-
-                        # INSERT SQL (AHORA CON PERMANENCIA)
-
-                        # =====================================================
-
                         insert_sql = '''INSERT INTO seguimiento_contratos (
-
                             num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
-
                             comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios,
-
                             SAT, Tipo_cliente, tecnico, metodo_entrada, billing, permanencia
-
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
-                        # =====================================================
-
-                        # Contadores
-
-                        # =====================================================
 
                         inserted_divisor = 0
-
                         inserted_puerto = 0
-
                         inserted_fecha_fin = 0
-
                         inserted_sat = 0
-
                         inserted_tipo_cliente = 0
-
                         inserted_tecnico = 0
-
                         inserted_metodo_entrada = 0
-
                         inserted_billing = 0
-
                         inserted_permanencia = 0
 
-                        # =====================================================
-
-                        # Loop inserción
-
-                        # =====================================================
-
                         for i, row in df.iterrows():
-
                             ap_id = row.get('apartment_id')
-
                             try:
-
                                 padded_id = 'P' + str(int(ap_id)).zfill(10)
-
                             except:
-
                                 padded_id = None
-
                             fecha_instalacion = row.get('fecha_instalacion')
-
                             fecha_fin_contrato = row.get('fecha_fin_contrato')
-
                             divisor = row.get('divisor')
-
                             puerto = row.get('puerto')
-
                             sat = row.get('sat')
-
                             tipo_cliente = row.get('tipo_cliente')
-
                             tecnico = row.get('tecnico')
-
                             metodo_entrada = row.get('metodo_entrada')
-
                             billing = row.get('billing')
-
                             permanencia = row.get('permanencia')
 
-                            # =========================
-
-                            # Contadores
-
-                            # =========================
 
                             if divisor not in (None, ''): inserted_divisor += 1
-
                             if puerto not in (None, ''): inserted_puerto += 1
-
                             if fecha_fin_contrato not in (None, ''): inserted_fecha_fin += 1
-
                             if sat not in (None, ''): inserted_sat += 1
-
                             if tipo_cliente not in (None, ''): inserted_tipo_cliente += 1
-
                             if tecnico not in (None, ''): inserted_tecnico += 1
-
                             if metodo_entrada not in (None, ''): inserted_metodo_entrada += 1
-
                             if billing not in (None, ''): inserted_billing += 1
-
                             if permanencia not in (None, ''): inserted_permanencia += 1
 
-                            # =========================
-
-                            # INSERT
-
-                            # =========================
 
                             try:
-
                                 cur.execute(insert_sql, (
-
                                     row.get('num_contrato'),
-
                                     row.get('cliente'),
-
                                     row.get('coordenadas'),
-
                                     row.get('estado'),
-
                                     row.get('fecha_inicio_contrato'),
-
                                     row.get('fecha_ingreso'),
-
                                     row.get('comercial'),
-
                                     fecha_instalacion,
-
                                     padded_id,
-
                                     fecha_fin_contrato,
-
                                     divisor,
-
                                     puerto,
-
                                     row.get('comentarios'),
-
                                     sat,
-
                                     tipo_cliente,
-
                                     tecnico,
-
                                     metodo_entrada,
-
                                     billing,
-
                                     permanencia
-
                                 ))
 
-
                             except Exception as e:
-
                                 st.toast(f"⚠️ Error al insertar fila {i}: {e}")
-
                             progress.progress((i + 1) / total)
-
                         conn.commit()
 
-                        # =====================================================
-
-                        # Estadísticas
-
-                        # =====================================================
 
                         st.info(f"📊 Divisores: {inserted_divisor}/{total}")
-
                         st.info(f"📊 Puertos: {inserted_puerto}/{total}")
-
                         st.info(f"📊 Fecha fin: {inserted_fecha_fin}/{total}")
-
                         st.info(f"📊 SAT: {inserted_sat}/{total}")
-
                         st.info(f"📊 Tipo cliente: {inserted_tipo_cliente}/{total}")
-
                         st.info(f"📊 Técnico: {inserted_tecnico}/{total}")
-
                         st.info(f"📊 Método entrada: {inserted_metodo_entrada}/{total}")
-
                         st.info(f"📊 Billing: {inserted_billing}/{total}")
-
                         st.info(f"📊 🔥 Permanencia: {inserted_permanencia}/{total}")
 
-                        # =====================================================
-
-                        # Verificación BD
-
-                        # =====================================================
 
                         cur.execute("""
-
                             SELECT COUNT(*),
-
                                    COUNT(divisor),
-
                                    COUNT(puerto),
-
                                    COUNT(fecha_fin_contrato),
-
                                    COUNT(SAT),
-
                                    COUNT(Tipo_cliente),
-
                                    COUNT(tecnico),
-
                                    COUNT(metodo_entrada),
-
                                    COUNT(billing),
-
                                    COUNT(permanencia)
-
                             FROM seguimiento_contratos
-
                         """)
 
                         stats = cur.fetchone()
-
                         st.toast(
-
                             f"BD → Total:{stats[0]} | Div:{stats[1]} | Pue:{stats[2]} | Fin:{stats[3]} | SAT:{stats[4]} | Tipo:{stats[5]} | Tec:{stats[6]} | Met:{stats[7]} | Bill:{stats[8]} | Perm:{stats[9]}"
-
                         )
 
-                        # =====================================================
-
-                        # Ejemplos
-
-                        # =====================================================
-
                         cur.execute("""
-
                             SELECT apartment_id, fecha_fin_contrato, divisor, puerto, SAT, Tipo_cliente, tecnico, permanencia
-
                             FROM seguimiento_contratos
-
                             WHERE permanencia IS NOT NULL
-
                             LIMIT 5
-
                         """)
 
                         for r in cur.fetchall():
                             st.write(r)
 
-                        # =====================================================
-
-                        # Actualizar datos_uis (incluye permanencia)
-
-                        # =====================================================
 
                         with obtener_conexion() as conn:
-
                             cur = conn.cursor()
-
                             # divisor
                             cur.execute("""
                                    UPDATE datos_uis
@@ -6234,16 +6080,11 @@ def admin_dashboard():
                                """)
 
                             conn.commit()
-
                         st.toast("✅ Proceso completado correctamente.")
 
-
                     except Exception as e:
-
                         st.toast(f"❌ Error en el proceso: {e}")
-
                         import traceback
-
                         st.code(traceback.format_exc())
 
             # ✅ CHECKBOX RESTAURADO - Mostrar registros existentes
