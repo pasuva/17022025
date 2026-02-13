@@ -8,9 +8,8 @@ import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 from modules import login
 from folium.plugins import Geocoder
-from modules.cloudinary import upload_image_to_cloudinary
-from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial, \
-    correo_envio_presupuesto_manual
+from modules.minIO import upload_image_to_cloudinary
+from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController  # Se importa localmente
 import secrets
@@ -51,7 +50,12 @@ def guardar_en_base_de_datos_vip(oferta_data, imagen_incidencia, apartment_id):
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
             extension = os.path.splitext(imagen_incidencia.name)[1]
             filename = f"{apartment_id}{extension}"
-            imagen_url = upload_image_to_cloudinary(imagen_incidencia, filename)
+            imagen_url = upload_image_to_cloudinary(
+                imagen_incidencia,
+                filename,
+                tipo="incidencia",
+                folder=datetime.now().strftime("%Y/%m")  # Organiza por año/mes
+            )
 
         comercial_logueado = st.session_state.get("username", None)
 
@@ -1859,8 +1863,14 @@ def viabilidades_section():
                             nombre_archivo = imagen.name
 
                             # Aquí puedes subir a Cloudinary o a tu sistema de almacenamiento
-                            url = upload_image_to_cloudinary(archivo_bytes,
-                                                             nombre_archivo)  # Necesitas implementar esta función
+                            nombre_archivo = imagen.name
+                            unique_filename = f"{ticket}_{nombre_archivo}"  # Nuevo nombre único
+                            url = upload_image_to_cloudinary(
+                                archivo_bytes,
+                                unique_filename,
+                                tipo="viabilidad",
+                                folder=ticket
+                            )
 
                             # Guardar URL y ticket en base de datos
                             conn = get_db_connection()

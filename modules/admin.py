@@ -24,8 +24,6 @@ from typing import Tuple, Dict, List
 from modules.reportes_pdf import preparar_datos_para_pdf, generar_pdf_reportlab
 from modules.cdr_kpis import mostrar_cdrs
 
-import psycopg2
-
 warnings.filterwarnings("ignore", category=UserWarning)
 
 cookie_name = "my_app"
@@ -1350,23 +1348,28 @@ def guardar_comentario(apartment_id, comentario, tabla):
         st.toast(f"Error al actualizar la base de datos: {str(e)}")
         return False
 
-def upload_file_to_cloudinary(file, public_id=None, folder=None):
+
+def upload_file_to_minio(file, filename, folder=None, tipo="presupuesto"):
     """
-    Sube un archivo genérico (como Excel, PDF, ZIP...) a Cloudinary y devuelve la URL pública.
-    Puedes especificar una carpeta opcional con el parámetro 'folder'.
+    Sube un archivo genérico (PDF, Excel, etc.) a MinIO en el bucket correspondiente.
+
+    Args:
+        file: Objeto UploadedFile de Streamlit o bytes.
+        filename: Nombre del archivo (ej. "presupuesto_123.pdf").
+        folder: Subcarpeta opcional dentro del bucket (ej. "2025/02" o el ticket).
+        tipo: Tipo de archivo para determinar el bucket. Por defecto "presupuesto".
+
+    Returns:
+        URL pública del archivo subido.
     """
-    try:
-        upload_result = cloudinary.uploader.upload(
-            file,
-            resource_type="raw",  # ✅ Permite subir PDF, ZIP, etc.
-            public_id=public_id,  # opcional, si quieres nombre personalizado
-            folder=folder,        # 👈 Carpeta en Cloudinary (p.ej. "PRESUPUESTOS")
-            overwrite=True
-        )
-        return upload_result.get("secure_url")
-    except Exception as e:
-        st.toast(f"❌ Error al subir el archivo a Cloudinary: {e}")
-        return None
+    from modules.minIO import upload_image_to_cloudinary  # Reutilizamos la función genérica de MinIO
+    # La función upload_image_to_cloudinary ya maneja MinIO y acepta el parámetro 'tipo'
+    return upload_image_to_cloudinary(file, filename, folder=folder, tipo=tipo)
+
+
+# Para mantener compatibilidad con las llamadas existentes, podemos renombrar la función
+# o simplemente asignar upload_file_to_cloudinary = upload_file_to_minio
+upload_file_to_cloudinary = upload_file_to_minio
 
 def viabilidades_seccion():
     # 🟩 Submenú horizontal
@@ -1812,9 +1815,10 @@ def viabilidades_seccion():
                             # 🔹 Subir PDF a Cloudinary (como tipo raw)
                             st.toast("📤 Subiendo PDF a Cloudinary...")
                             cloudinary_url = upload_file_to_cloudinary(
-                                io.BytesIO(archivo_bytes),
-                                public_id=nombre_archivo,  # solo el nombre del archivo
-                                folder="PRESUPUESTOS"  # 👈 ahora Cloudinary lo organiza correctamente
+                                archivo_bytes,  # Pasamos los bytes directamente
+                                filename=nombre_archivo,  # Nombre del archivo
+                                folder=st.session_state["selected_ticket"],  # Organiza por ticket dentro del bucket
+                                tipo="presupuesto"
                             )
 
                             if not cloudinary_url:

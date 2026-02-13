@@ -6,7 +6,7 @@ from streamlit_folium import st_folium
 from datetime import datetime
 from modules import login
 from folium.plugins import Geocoder
-from modules.cloudinary import upload_image_to_cloudinary
+from modules.minIO import upload_image_to_cloudinary
 from modules.notificaciones import correo_oferta_comercial, correo_viabilidad_comercial, correo_respuesta_comercial
 from streamlit_option_menu import option_menu
 from streamlit_cookies_controller import CookieController
@@ -87,7 +87,13 @@ def guardar_en_base_de_datos(oferta_data, imagen_incidencia, apartment_id):
         if oferta_data["incidencia"] == "Sí" and imagen_incidencia:
             extension = os.path.splitext(imagen_incidencia.name)[1]
             filename = f"{apartment_id}{extension}"
-            imagen_url = upload_image_to_cloudinary(imagen_incidencia, filename)
+            # Subir a MinIO en bucket "incidencias", con organización por año/mes
+            imagen_url = upload_image_to_cloudinary(
+                imagen_incidencia,
+                filename,
+                tipo="incidencia",
+                folder=datetime.now().strftime("%Y/%m")  # opcional: agrupa por fecha
+            )
 
         comercial_logueado = st.session_state.get("username", None)
 
@@ -1269,22 +1275,26 @@ def guardar_viabilidad_completa(datos, lat, lon):
 
 
 def guardar_imagenes_viabilidad(imagenes, ticket):
-    """Guarda las imágenes asociadas a una viabilidad"""
-    st.toast("📤 Subiendo imágenes...")
+    """Guarda las imágenes asociadas a una viabilidad en MinIO y en BD"""
+    if not imagenes:
+        return
 
+    st.toast("📤 Subiendo imágenes...")
     for imagen in imagenes:
         try:
             archivo_bytes = imagen.getvalue()
             nombre_archivo = imagen.name
-
-            # Subir a Cloudinary
+            # Añadimos el ticket al nombre para evitar colisiones
+            unique_filename = f"{ticket}_{nombre_archivo}"
+            # Subir a MinIO en bucket "viabilidades", con subcarpeta = ticket
             url = upload_image_to_cloudinary(
                 archivo_bytes,
-                nombre_archivo,
-                folder="viabilidades"
+                unique_filename,
+                tipo="viabilidad",
+                folder=ticket  # Todas las imágenes de este ticket juntas
             )
 
-            # Guardar en base de datos
+            # Guardar referencia en la base de datos
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
