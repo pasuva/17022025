@@ -20,6 +20,7 @@ from streamlit_folium import st_folium
 from branca.element import Template, MacroElement
 from modules.reportes_pdf import preparar_datos_para_pdf, generar_pdf_reportlab
 from modules.cdr_kpis import mostrar_cdrs
+from typing import List, Tuple, Dict
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
