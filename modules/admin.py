@@ -18,7 +18,6 @@ import streamlit as st
 from folium.plugins import MarkerCluster, Geocoder, Fullscreen
 from streamlit_folium import st_folium
 from branca.element import Template, MacroElement
-from typing import Tuple, Dict, List
 from modules.reportes_pdf import preparar_datos_para_pdf, generar_pdf_reportlab
 from modules.cdr_kpis import mostrar_cdrs
 
@@ -27,29 +26,29 @@ warnings.filterwarnings("ignore", category=UserWarning)
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos
-#def obtener_conexion():
-#    """Retorna una nueva conexión a la base de datos."""
-#    try:
-#        conn = sqlitecloud.connect(
-#            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
-#        return conn
-#    except sqlite3.Error as e:
-#        print(f"Error al conectar con la base de datos: {e}")
-#        return None
-
 def obtener_conexion():
-    """Retorna una nueva conexión a la base de datos SQLite local."""
+    """Retorna una nueva conexión a la base de datos."""
     try:
-        # Ruta del archivo dentro del contenedor (puedes cambiarla)
-        db_path = "/data/usuarios.db"  # o usa variable de entorno
-        # Verifica si el archivo existe
-        if not os.path.exists(db_path):
-            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
-        conn = sqlite3.connect(db_path)
+        conn = sqlitecloud.connect(
+            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
         return conn
-    except (sqlite3.Error, FileNotFoundError) as e:
+    except sqlite3.Error as e:
         print(f"Error al conectar con la base de datos: {e}")
         return None
+
+#def obtener_conexion():
+#    """Retorna una nueva conexión a la base de datos SQLite local."""
+#    try:
+#        # Ruta del archivo dentro del contenedor (puedes cambiarla)
+#        db_path = "/data/usuarios.db"  # o usa variable de entorno
+#        # Verifica si el archivo existe
+#        if not os.path.exists(db_path):
+#            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+#        conn = sqlite3.connect(db_path)
+#        return conn
+#    except (sqlite3.Error, FileNotFoundError) as e:
+#        print(f"Error al conectar con la base de datos: {e}")
+#        return None
 
 def log_trazabilidad(usuario, accion, detalles):
     """Inserta un registro en la tabla de trazabilidad."""
@@ -2143,24 +2142,24 @@ def viabilidades_seccion():
                     st.rerun()
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)
-#def get_db_connection():
-#    return sqlitecloud.connect(
-#        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-#    )
-
 def get_db_connection():
-    """Retorna una nueva conexión a la base de datos SQLite local."""
-    try:
-        # Ruta del archivo dentro del contenedor (puedes cambiarla)
-        db_path = "/data/usuarios.db"  # o usa variable de entorno
-        # Verifica si el archivo existe
-        if not os.path.exists(db_path):
-            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
-        conn = sqlite3.connect(db_path)
-        return conn
-    except (sqlite3.Error, FileNotFoundError) as e:
-        print(f"Error al conectar con la base de datos: {e}")
-        return None
+    return sqlitecloud.connect(
+        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+    )
+
+#def get_db_connection():
+#    """Retorna una nueva conexión a la base de datos SQLite local."""
+#    try:
+#        # Ruta del archivo dentro del contenedor (puedes cambiarla)
+#        db_path = "/data/usuarios.db"  # o usa variable de entorno
+#        # Verifica si el archivo existe
+#        if not os.path.exists(db_path):
+#            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+#        conn = sqlite3.connect(db_path)
+#        return conn
+#    except (sqlite3.Error, FileNotFoundError) as e:
+#        print(f"Error al conectar con la base de datos: {e}")
+#        return None
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""

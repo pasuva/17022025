@@ -36,23 +36,23 @@ def cached_db_query(query: str, *params):
         return pd.read_sql(query, conn, params=params)
 
 
-#def get_db_connection():
-#    """Obtiene conexión a la base de datos"""
-#    return sqlitecloud.connect(DB_CONNECTION_STRING)
-
 def get_db_connection():
-    """Retorna una nueva conexión a la base de datos SQLite local."""
-    try:
+    """Obtiene conexión a la base de datos"""
+    return sqlitecloud.connect(DB_CONNECTION_STRING)
+
+#def get_db_connection():
+#    """Retorna una nueva conexión a la base de datos SQLite local."""
+#    try:
         # Ruta del archivo dentro del contenedor (puedes cambiarla)
-        db_path = "/data/usuarios.db"  # o usa variable de entorno
-        # Verifica si el archivo existe
-        if not os.path.exists(db_path):
-            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
-        conn = sqlite3.connect(db_path)
-        return conn
-    except (sqlite3.Error, FileNotFoundError) as e:
-        print(f"Error al conectar con la base de datos: {e}")
-        return None
+#        db_path = "/data/usuarios.db"  # o usa variable de entorno
+#        # Verifica si el archivo existe
+#        if not os.path.exists(db_path):
+#            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+#        conn = sqlite3.connect(db_path)
+#        return conn
+#    except (sqlite3.Error, FileNotFoundError) as e:
+#        print(f"Error al conectar con la base de datos: {e}")
+#        return None
 def setup_page():
     """Configuración inicial de la página"""
     st.set_page_config(page_title="Dashboard Demo - Verde tu Operador", layout="wide")
