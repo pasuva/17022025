@@ -4,7 +4,6 @@ import os
 from datetime import datetime, timedelta
 from io import BytesIO
 import pandas as pd
-import numpy as np
 import streamlit as st
 
 # Importar Plotly (instalar con: pip install plotly kaleido)
@@ -22,7 +21,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-from reportlab.lib.units import inch
 
 
 def guardar_grafico_plotly(fig, nombre="grafico"):

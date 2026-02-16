@@ -9,9 +9,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 from io import BytesIO
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-import cloudinary.uploader
-import cloudinary.api
-import ftfy, folium, cloudinary, warnings, json, gspread, urllib, zipfile, sqlite3, datetime, bcrypt, os, sqlitecloud, io
+import ftfy, folium, warnings, json, gspread, urllib, zipfile, sqlite3, datetime, bcrypt, os, sqlitecloud, io
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -29,13 +27,27 @@ warnings.filterwarnings("ignore", category=UserWarning)
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos
+#def obtener_conexion():
+#    """Retorna una nueva conexión a la base de datos."""
+#    try:
+#        conn = sqlitecloud.connect(
+#            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+#        return conn
+#    except sqlite3.Error as e:
+#        print(f"Error al conectar con la base de datos: {e}")
+#        return None
+
 def obtener_conexion():
-    """Retorna una nueva conexión a la base de datos."""
+    """Retorna una nueva conexión a la base de datos SQLite local."""
     try:
-        conn = sqlitecloud.connect(
-            "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY")
+        # Ruta del archivo dentro del contenedor (puedes cambiarla)
+        db_path = "/data/usuarios.db"  # o usa variable de entorno
+        # Verifica si el archivo existe
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+        conn = sqlite3.connect(db_path)
         return conn
-    except sqlite3.Error as e:
+    except (sqlite3.Error, FileNotFoundError) as e:
         print(f"Error al conectar con la base de datos: {e}")
         return None
 
@@ -2131,10 +2143,24 @@ def viabilidades_seccion():
                     st.rerun()
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)
+#def get_db_connection():
+#    return sqlitecloud.connect(
+#        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+#    )
+
 def get_db_connection():
-    return sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-    )
+    """Retorna una nueva conexión a la base de datos SQLite local."""
+    try:
+        # Ruta del archivo dentro del contenedor (puedes cambiarla)
+        db_path = "/data/usuarios.db"  # o usa variable de entorno
+        # Verifica si el archivo existe
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+        conn = sqlite3.connect(db_path)
+        return conn
+    except (sqlite3.Error, FileNotFoundError) as e:
+        print(f"Error al conectar con la base de datos: {e}")
+        return None
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""

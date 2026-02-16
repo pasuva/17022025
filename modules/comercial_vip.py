@@ -2,7 +2,7 @@ import streamlit as st
 from branca.element import Template, MacroElement
 from folium.plugins import MarkerCluster
 import pandas as pd
-import os, re, time, folium, sqlitecloud
+import os, re, time, folium, sqlitecloud, sqlite3
 from streamlit_folium import st_folium
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
@@ -20,10 +20,23 @@ warnings.filterwarnings("ignore", category=UserWarning)
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)
+#def get_db_connection():
+#    return sqlitecloud.connect(
+#        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+#    )
 def get_db_connection():
-    return sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-    )
+    """Retorna una nueva conexión a la base de datos SQLite local."""
+    try:
+        # Ruta del archivo dentro del contenedor (puedes cambiarla)
+        db_path = "/data/usuarios.db"  # o usa variable de entorno
+        # Verifica si el archivo existe
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+        conn = sqlite3.connect(db_path)
+        return conn
+    except (sqlite3.Error, FileNotFoundError) as e:
+        print(f"Error al conectar con la base de datos: {e}")
+        return None
 
 def log_trazabilidad(usuario, accion, detalles):
     conn = get_db_connection()

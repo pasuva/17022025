@@ -1,7 +1,7 @@
 import streamlit as st
 from folium.plugins import MarkerCluster
 import pandas as pd
-import os, re, time, folium, sqlitecloud
+import os, re, time, folium, sqlitecloud, sqlite3
 from streamlit_folium import st_folium
 from datetime import datetime
 from modules import login
@@ -18,10 +18,23 @@ warnings.filterwarnings("ignore", category=UserWarning)
 cookie_name = "my_app"
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)
+#def get_db_connection():
+#    return sqlitecloud.connect(
+#        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+#    )
 def get_db_connection():
-    return sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-    )
+    """Retorna una nueva conexión a la base de datos SQLite local."""
+    try:
+        # Ruta del archivo dentro del contenedor (puedes cambiarla)
+        db_path = "/data/usuarios.db"  # o usa variable de entorno
+        # Verifica si el archivo existe
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+        conn = sqlite3.connect(db_path)
+        return conn
+    except (sqlite3.Error, FileNotFoundError) as e:
+        print(f"Error al conectar con la base de datos: {e}")
+        return None
 
 # Añade esto al principio de tu script (si no lo tienes ya)
 @st.cache_data(ttl=3600)  # Cache por 1 hora

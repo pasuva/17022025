@@ -1,6 +1,5 @@
 import streamlit as st
-import sqlitecloud
-from datetime import datetime
+import sqlitecloud, sqlite3, os
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
@@ -14,8 +13,6 @@ from PIL import Image as PILImage
 import numpy as np
 import json
 from datetime import datetime
-import requests
-from urllib.parse import quote
 
 # Añadir el import para el canvas de firma
 try:
@@ -31,15 +28,27 @@ DB_PATH = "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m
 
 
 # -------------------- CONEXIÓN A BD --------------------
+#def get_db_connection():
+#    try:
+#        conn = sqlitecloud.connect(DB_PATH)
+#        conn.row_factory = None
+#        return conn
+#    except Exception as e:
+#        st.error(f"❌ Error de conexión a BD: {e}")
+#        return None
 def get_db_connection():
+    """Retorna una nueva conexión a la base de datos SQLite local."""
     try:
-        conn = sqlitecloud.connect(DB_PATH)
-        conn.row_factory = None
+        # Ruta del archivo dentro del contenedor (puedes cambiarla)
+        db_path = "/data/usuarios.db"  # o usa variable de entorno
+        # Verifica si el archivo existe
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
+        conn = sqlite3.connect(db_path)
         return conn
-    except Exception as e:
-        st.error(f"❌ Error de conexión a BD: {e}")
+    except (sqlite3.Error, FileNotFoundError) as e:
+        print(f"Error al conectar con la base de datos: {e}")
         return None
-
 #####
 # -------------------- GEOLOCALIZACIÓN SIMPLE --------------------
 def obtener_coordenadas_cartociudad(direccion, cp, poblacion, provincia):
