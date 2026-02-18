@@ -232,7 +232,7 @@ def actualizar_google_sheet_desde_db(sheet_id, sheet_name="Viabilidades"):
     except Exception as e:
         st.toast(f"❌ Error al actualizar la hoja de Google Sheets: {e}")
 
-
+@st.cache_data(ttl=3600, max_entries=1, show_spinner="Cargando contratos desde Google Sheets...")
 def cargar_contratos_google():
     try:
         # --- Detectar entorno y elegir archivo de credenciales ---
@@ -573,16 +573,16 @@ def cargar_datos_uis():
     #return datos_uis, ofertas_df, comercial_rafa_df
     return datos_uis, comercial_rafa_df
 
-def limpiar_mapa():
-    """Evita errores de re-inicialización del mapa"""
-    st.write("### Mapa actualizado")  # Esto forzará un refresh
+#def limpiar_mapa():
+#    """Evita errores de re-inicialización del mapa"""
+#    st.write("### Mapa actualizado")  # Esto forzará un refresh
 
-def cargar_provincias():
-    conn = obtener_conexion()
-    query = "SELECT DISTINCT provincia FROM datos_uis"
-    df = pd.read_sql(query, conn)
-    conn.close()
-    return sorted(df['provincia'].dropna().unique())
+#def cargar_provincias():
+#    conn = obtener_conexion()
+#    query = "SELECT DISTINCT provincia FROM datos_uis"
+#    df = pd.read_sql(query, conn)
+#    conn.close()
+#    return sorted(df['provincia'].dropna().unique())
 
 
 def cargar_datos_por_provincia(provincia):
@@ -1323,26 +1323,26 @@ def mapa_seccion():
 
 
 # Funciones de compatibilidad
-def limpiar_mapa():
-    """Función placeholder para mantener compatibilidad"""
-    pass
+#def limpiar_mapa():
+#    """Función placeholder para mantener compatibilidad"""
+#    pass
 
 
-def cargar_datos_uis():
-    """Función original para mantener compatibilidad"""
-    return cargar_datos_limitados()
+#def cargar_datos_uis():
+#    """Función original para mantener compatibilidad"""
+#    return cargar_datos_limitados()
 
 
-def mostrar_info_rapida(apartment_id: str, datos_filtrados: pd.DataFrame,
-                        comercial_filtradas: pd.DataFrame, dicts: Dict):
-    """Función original para mantener compatibilidad - usar mostrar_info_detallada en su lugar"""
-    mostrar_info_detallada(apartment_id, datos_filtrados, comercial_filtradas, dicts)
+#def mostrar_info_rapida(apartment_id: str, datos_filtrados: pd.DataFrame,
+#                        comercial_filtradas: pd.DataFrame, dicts: Dict):
+#    """Función original para mantener compatibilidad - usar mostrar_info_detallada en su lugar"""
+#    mostrar_info_detallada(apartment_id, datos_filtrados, comercial_filtradas, dicts)
 
 
-def mostrar_info_apartamento(apartment_id, datos_df, comercial_rafa_df):
-    """Función original para mantener compatibilidad - usar mostrar_info_detallada en su lugar"""
-    dicts = crear_diccionarios_optimizados(comercial_rafa_df)
-    mostrar_info_detallada(apartment_id, datos_df, comercial_rafa_df, dicts)
+#def mostrar_info_apartamento(apartment_id, datos_df, comercial_rafa_df):
+#    """Función original para mantener compatibilidad - usar mostrar_info_detallada en su lugar"""
+#    dicts = crear_diccionarios_optimizados(comercial_rafa_df)
+#    mostrar_info_detallada(apartment_id, datos_df, comercial_rafa_df, dicts)
 
 
 def guardar_comentario(apartment_id, comentario, tabla):
@@ -2051,7 +2051,7 @@ def viabilidades_seccion():
                     telefono = st.text_input("📞 Teléfono")
                 col12, col13 = st.columns(2)
                 # Conexión para cargar los OLT desde la tabla
-                conn = get_db_connection()
+                conn = obtener_conexion()
                 cursor = conn.cursor()
                 cursor.execute("SELECT id_olt, nombre_olt FROM olt ORDER BY nombre_olt")
                 olts = cursor.fetchall()
@@ -2083,7 +2083,7 @@ def viabilidades_seccion():
                 comentario = st.text_area("📝 Comentario")
 
                 # ✅ Campo para seleccionar el comercial
-                conn = get_db_connection()
+                conn = obtener_conexion()
                 cursor = conn.cursor()
                 cursor.execute("SELECT username FROM usuarios ORDER BY username")
                 lista_usuarios = [fila[0] for fila in cursor.fetchall()]
@@ -2143,12 +2143,12 @@ def viabilidades_seccion():
                     st.rerun()
 
 # Función para obtener conexión a la base de datos (SQLite Cloud)
-def get_db_connection():
-    return sqlitecloud.connect(
-        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
-    )
+#def obtener_conexion():
+#    return sqlitecloud.connect(
+#        "sqlitecloud://ceafu04onz.g6.sqlite.cloud:8860/usuarios.db?apikey=Qo9m18B9ONpfEGYngUKm99QB5bgzUTGtK7iAcThmwvY"
+#    )
 
-#def get_db_connection():
+#def obtener_conexion():
 #    """Retorna una nueva conexión a la base de datos SQLite local."""
 #    try:
 #        # Ruta del archivo dentro del contenedor (puedes cambiarla)
@@ -2164,7 +2164,7 @@ def get_db_connection():
 
 def generar_ticket():
     """Genera un ticket único con formato: añomesdia(numero_consecutivo)"""
-    conn = get_db_connection()
+    conn = obtener_conexion()
     cursor = conn.cursor()
     fecha_actual = datetime.now().strftime("%Y%m%d")
 
@@ -2189,7 +2189,7 @@ def guardar_viabilidad(datos):
     (latitud, longitud, provincia, municipio, poblacion, vial, numero, letra, cp, comentario, ticket, nombre_cliente, telefono, usuario)
     """
     # Guardar los datos en la base de datos
-    conn = get_db_connection()
+    conn = obtener_conexion()
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO viabilidades (
@@ -2287,7 +2287,7 @@ def guardar_viabilidad(datos):
 
 # Función para obtener viabilidades guardadas en la base de datos
 def obtener_viabilidades():
-    conn = get_db_connection()
+    conn = obtener_conexion()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT latitud, longitud, ticket, serviciable, apartment_id, direccion_id 
@@ -5498,16 +5498,23 @@ def admin_dashboard():
 
             @st.cache_data(ttl=300)
             def cargar_datos():
-                """Carga todos los datos de la base de datos"""
+                """Carga todos los datos de la base de datos (solo columnas necesarias)"""
                 try:
                     conn = obtener_conexion()
 
-                    # Cargar datos
-                    df_uis = pd.read_sql("SELECT * FROM datos_uis", conn)
+                    # datos_uis: columnas usadas
+                    df_uis = pd.read_sql("""
+                        SELECT apartment_id, provincia, municipio, poblacion, id_ams, address_id, olt, cto, latitud, longitud
+                        FROM datos_uis
+                    """, conn)
                     df_uis["apartment_id_normalizado"] = df_uis["apartment_id"].apply(normalizar_apartment_id)
                     df_uis["fuente"] = "UIS"
 
-                    df_via = pd.read_sql("SELECT * FROM viabilidades", conn)
+                    # viabilidades: columnas necesarias (incluye ticket, usuario, serviciable, coste, lat, lon)
+                    df_via = pd.read_sql("""
+                        SELECT apartment_id, ticket, provincia, municipio, poblacion, usuario, serviciable, coste, latitud, longitud
+                        FROM viabilidades
+                    """, conn)
                     # Expandir múltiples IDs
                     df_via_exp = df_via.assign(
                         apartment_id=df_via['apartment_id'].str.split(',')
@@ -5517,12 +5524,20 @@ def admin_dashboard():
                     df_via["apartment_id_normalizado"] = df_via["apartment_id"].apply(normalizar_apartment_id)
                     df_via["fuente"] = "Viabilidad"
 
-                    df_contratos = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
+                    # seguimiento_contratos: columnas necesarias
+                    df_contratos = pd.read_sql("""
+                        SELECT apartment_id, num_contrato, cliente, estado, tecnico, comercial, divisor, puerto
+                        FROM seguimiento_contratos
+                    """, conn)
                     df_contratos["apartment_id_normalizado"] = df_contratos["apartment_id"].apply(
                         normalizar_apartment_id)
                     df_contratos["fuente"] = "Contrato"
 
-                    df_tirc = pd.read_sql("SELECT * FROM TIRC", conn)
+                    # TIRC: columnas necesarias
+                    df_tirc = pd.read_sql("""
+                        SELECT apartment_id, provincia, municipio, poblacion, address_id, OLT, CTO
+                        FROM TIRC
+                    """, conn)
                     df_tirc["apartment_id_normalizado"] = df_tirc["apartment_id"].apply(normalizar_apartment_id)
                     df_tirc["fuente"] = "TIRC"
 
@@ -6135,7 +6150,7 @@ def admin_dashboard():
 
         if sub_seccion == "Precontratos":
             # Conexión a la base de datos para mostrar precontratos existentes
-            conn = get_db_connection()
+            conn = obtener_conexion()
             cursor = conn.cursor()
 
             # Obtener precontratos (los más recientes primero) - CON NUEVOS CAMPOS
@@ -6180,7 +6195,7 @@ def admin_dashboard():
                         if precontrato[8]:  # Si está usado
                             if st.button(f"🔄 Regenerar enlace para {precontrato[1]}", key=f"regen_{precontrato[0]}"):
                                 try:
-                                    conn = get_db_connection()
+                                    conn = obtener_conexion()
                                     cursor = conn.cursor()
                                     # Generar nuevo token
                                     token_valido = False
@@ -7244,7 +7259,7 @@ def admin_dashboard():
 
     elif opcion == "Anuncios":
         st.info(f"📢 Panel de Anuncios Internos")
-        conn = get_db_connection()
+        conn = obtener_conexion()
         cursor = conn.cursor()
 
         # Crear tabla si no existe (sin columna autor)
@@ -9941,9 +9956,9 @@ def home_page():
 
 
 # Si necesitas mantener compatibilidad con la versión anterior
-def obtener_conexion():
-    """Wrapper para mantener compatibilidad"""
-    return get_db_connection()  # Asumiendo que existe esta función
+#def obtener_conexion():
+#    """Wrapper para mantener compatibilidad"""
+#    return obtener_conexion()  # Asumiendo que existe esta función
 
 
 if __name__ == "__main__":

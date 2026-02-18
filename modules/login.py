@@ -1,7 +1,8 @@
+# login.py
 import uuid
 import os
 import base64
-import bcrypt, sqlite3
+import bcrypt
 import sqlitecloud
 import streamlit as st
 from datetime import datetime
@@ -28,7 +29,7 @@ if "login_ok" not in st.session_state:
 
 @lru_cache(maxsize=1)
 def get_latest_version():
-    """Obtiene la última versión con cache para mejorar rendimiento"""
+    """Obtiene la última versión con cache para mejorar rendimiento."""
     try:
         with sqlitecloud.connect(DB_URL) as conn:
             cursor = conn.cursor()
@@ -41,24 +42,12 @@ def get_latest_version():
 
 
 def get_db_connection():
-    """Crea y retorna una conexión a la base de datos"""
+    """Crea y retorna una conexión a la base de datos."""
     return sqlitecloud.connect(DB_URL)
 
-#def get_db_connection():
-#    """Retorna una nueva conexión a la base de datos SQLite local."""
-#    try:
-#        # Ruta del archivo dentro del contenedor (puedes cambiarla)
-#        db_path = "/data/usuarios.db"  # o usa variable de entorno
-#        # Verifica si el archivo existe
-#        if not os.path.exists(db_path):
-#            raise FileNotFoundError(f"No se encuentra la base de datos en {db_path}")
-#        conn = sqlite3.connect(db_path)
-#        return conn
-#    except (sqlite3.Error, FileNotFoundError) as e:
-#        print(f"Error al conectar con la base de datos: {e}")
-#        return None
+
 def verify_user(username, password):
-    """Verifica las credenciales del usuario"""
+    """Verifica las credenciales del usuario."""
     try:
         with get_db_connection() as conn:
             cursor = conn.execute(
@@ -75,7 +64,7 @@ def verify_user(username, password):
 
 
 def log_trazabilidad(usuario, accion, detalles):
-    """Registro de trazas en la base de datos"""
+    """Registro de trazas en la base de datos."""
     try:
         with get_db_connection() as conn:
             conn.execute(
@@ -88,7 +77,7 @@ def log_trazabilidad(usuario, accion, detalles):
 
 
 def set_user_session(controller, username, role, session_id):
-    """Establece la sesión del usuario y las cookies"""
+    """Establece la sesión del usuario y las cookies."""
     st.session_state.update({
         "login_ok": True,
         "username": username,
@@ -96,14 +85,13 @@ def set_user_session(controller, username, role, session_id):
         "session_id": session_id
     })
 
-    # Configurar cookies
     controller.set(f'{COOKIE_NAME}_session_id', session_id, **COOKIE_CONFIG)
     controller.set(f'{COOKIE_NAME}_username', username, **COOKIE_CONFIG)
     controller.set(f'{COOKIE_NAME}_role', role, **COOKIE_CONFIG)
 
 
 def load_and_encode_image(image_path):
-    """Carga y codifica imagen en base64 con cache"""
+    """Carga y codifica imagen en base64 con cache."""
     if 'cached_logo' not in st.session_state:
         try:
             with open(image_path, 'rb') as f:
@@ -114,7 +102,7 @@ def load_and_encode_image(image_path):
 
 
 def render_login_form():
-    """Renderiza el formulario de login"""
+    """Renderiza el formulario de login."""
     st.markdown("""
         <style>
             .user-circle {
@@ -146,7 +134,7 @@ def render_login_form():
 
 
 def handle_automatic_login(controller):
-    """Maneja el login automático mediante cookies"""
+    """Maneja el login automático mediante cookies."""
     cookie_session_id = controller.get(f'{COOKIE_NAME}_session_id')
     cookie_username = controller.get(f'{COOKIE_NAME}_username')
     cookie_role = controller.get(f'{COOKIE_NAME}_role')
@@ -163,24 +151,19 @@ def handle_automatic_login(controller):
 
 
 def login():
-    """Función principal de login"""
+    """Función principal de login."""
     controller = CookieController(key="cookies")
 
-    # Intentar login automático si no está logueado
     if not st.session_state["login_ok"]:
         handle_automatic_login(controller)
 
-    # Mostrar formulario de login si aún no está autenticado
     if not st.session_state["login_ok"]:
         render_login_form()
 
-        # Generar session_id único
         session_id = str(uuid.uuid4())
         st.session_state["session_id"] = session_id
 
-        # Formulario de login centrado
         col1, col2, col3 = st.columns([1, 2, 1])
-
         with col2:
             st.success("🔐 Por favor, inicia sesión con tu usuario y contraseña.")
 
@@ -201,7 +184,6 @@ def login():
                 else:
                     st.error("Usuario o contraseña incorrectos")
 
-            # Mostrar versión
             version_actual = get_latest_version()
             st.markdown(
                 f"<div style='text-align: center; margin-top: 50px;'>"
