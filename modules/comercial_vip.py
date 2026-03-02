@@ -1385,14 +1385,29 @@ def _listado_precontratos():
     st.subheader("Precontratos Existentes")
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Consulta que devuelve UNA fila por precontrato, con indicador de si tiene algún enlace usado
     cursor.execute("""
-        SELECT p.id, p.precontrato_id, p.apartment_id, p.nombre, p.tarifas, p.precio,
-               p.fecha, p.comercial, pl.usado, p.mail, p.permanencia, p.telefono1, p.telefono2
+        SELECT 
+            p.id, 
+            p.precontrato_id, 
+            p.apartment_id, 
+            p.nombre, 
+            p.tarifas, 
+            p.precio,
+            p.fecha, 
+            p.comercial,
+            -- TRUE si existe al menos un enlace usado para este precontrato
+            EXISTS(SELECT 1 FROM precontrato_links WHERE precontrato_id = p.id AND usado = 1) as usado,
+            p.mail, 
+            p.permanencia, 
+            p.telefono1, 
+            p.telefono2
         FROM precontratos p
-        LEFT JOIN precontrato_links pl ON p.id = pl.precontrato_id
         ORDER BY p.fecha DESC
         LIMIT 50
     """)
+
     precontratos = cursor.fetchall()
     conn.close()
 
@@ -1421,10 +1436,13 @@ def _listado_precontratos():
                 if pre[12]:
                     st.write(f"**Teléfono 2:** {pre[12]}")
 
+            # Botón para regenerar enlace (clave única = id del precontrato)
             if st.button(f"🔄 Generar/Regenerar enlace para {pre[1]}", key=f"regen_{pre[0]}"):
                 try:
                     conn = get_db_connection()
                     cursor = conn.cursor()
+
+                    # Generar token único
                     token_valido = False
                     intentos = 0
                     while not token_valido and intentos < 5:
@@ -1433,23 +1451,29 @@ def _listado_precontratos():
                         if cursor.fetchone() is None:
                             token_valido = True
                         intentos += 1
+
                     if token_valido:
                         expiracion = datetime.now() + timedelta(hours=24)
+                        # Insertar nuevo enlace (NO reemplazar, porque queremos mantener el histórico)
                         cursor.execute(
                             """
-                            INSERT OR REPLACE INTO precontrato_links (precontrato_id, token, expiracion, usado)
+                            INSERT INTO precontrato_links (precontrato_id, token, expiracion, usado)
                             VALUES (?, ?, ?, 0)
                             """,
                             (pre[0], token, expiracion),
                         )
                         conn.commit()
                         conn.close()
+
                         base_url = "https://verde-suite.verdesuite.sytes.net/"
                         link = f"{base_url}?precontrato_id={pre[0]}&token={urllib.parse.quote(token)}"
-                        st.success("✅ Enlace generado/regenerado.")
+                        st.success("✅ Nuevo enlace generado correctamente.")
                         st.code(link, language="text")
+                    else:
+                        st.error("❌ No se pudo generar un token único.")
+
                 except Exception as e:
-                    st.error(f"❌ Error: {e}")
+                    st.error(f"❌ Error al generar enlace: {e}")
 
 
 # ==================== FUNCIÓN PRINCIPAL ====================
