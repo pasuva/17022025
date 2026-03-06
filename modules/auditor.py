@@ -7,7 +7,10 @@ import io, sqlite3
 import sqlitecloud
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from streamlit_cookies_controller import CookieController
 import warnings
+
+cookie_name = "my_app"
 
 # -------------------------------------------------------------------
 # Funciones de conexión y trazabilidad (copiadas del main para autonomía)
@@ -102,6 +105,68 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame, col_id: 
 # -------------------------------------------------------------------
 def mostrar_auditoria():
     """Página de auditoría de facturación: comparación con fichero del partner."""
+    controller = CookieController(key="cookies")
+
+    st.markdown(
+        """
+        <style>
+        .footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: #F7FBF9;
+            color: black;
+            text-align: center;
+            padding: 8px 0;
+            font-size: 14px;
+            font-family: 'Segoe UI', sans-serif;
+            z-index: 999;
+        }
+        </style>
+        <div class="footer">
+            <p>© 2025 Verde tu operador · Desarrollado para uso interno</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Sidebar con opción de menú más moderno
+    with st.sidebar:
+        st.sidebar.markdown("""
+                <style>
+                    .user-circle {
+                        width: 100px;
+                        height: 100px;
+                        border-radius: 50%;
+                        background-color: #0073e6;
+                        color: white;
+                        font-size: 50px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        margin: 0 auto 10px auto;
+                        text-align: center;
+                    }
+                    .user-info {
+                        text-align: center;
+                        font-size: 16px;
+                        color: #333;
+                        margin-bottom: 10px;
+                    }
+                    .welcome-msg {
+                        text-align: center;
+                        font-weight: bold;
+                        font-size: 18px;
+                        margin-top: 0;
+                    }
+                </style>
+
+                <div class="user-circle">👤</div>
+                <div class="user-info">Rol: Administrador</div>
+                <div class="welcome-msg">¡Bienvenido, <strong>{username}</strong>!</div>
+                <hr>
+                """.replace("{username}", st.session_state['username']), unsafe_allow_html=True)
 
     st.markdown("""
         <style>
