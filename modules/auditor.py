@@ -6,6 +6,7 @@ import pandas as pd
 import io
 import sqlite3
 import sqlitecloud
+import re
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_cookies_controller import CookieController
@@ -43,6 +44,23 @@ def log_trazabilidad(usuario, accion, detalles):
         print(f"Error registrando trazabilidad: {e}")
 
 # -------------------------------------------------------------------
+# Función de limpieza de identificadores
+# -------------------------------------------------------------------
+def limpiar_identificador(valor, modo='strip'):
+    """
+    Limpia un identificador según el modo:
+    - 'strip': elimina espacios y convierte a string
+    - 'digits': extrae solo dígitos (para IDs numéricos)
+    """
+    if pd.isna(valor) or valor is None:
+        return ""
+    valor = str(valor).strip()
+    if modo == 'digits':
+        # Extraer solo dígitos (eliminar cualquier carácter no numérico)
+        valor = re.sub(r'\D', '', valor)
+    return valor
+
+# -------------------------------------------------------------------
 # Carga de datos desde la base de datos (seguimiento_contratos)
 # -------------------------------------------------------------------
 @st.cache_data(ttl=600, show_spinner="Cargando contratos desde la BD...")
@@ -68,9 +86,11 @@ def cargar_contratos_bd() -> pd.DataFrame:
 # Procesamiento de la comparación
 # -------------------------------------------------------------------
 def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
-                         col_id_bd: str, col_id_partner: str):
+                         col_id_bd: str, col_id_partner: str,
+                         modo_limpieza: str = 'strip'):
     """
     Compara dos DataFrames usando las columnas indicadas como identificador.
+    Aplica limpieza según modo_limpieza ('strip' o 'digits').
     Devuelve tres DataFrames: coincidentes, solo_bd, solo_partner.
     """
     if df_bd.empty or df_partner.empty:
@@ -84,18 +104,16 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
         st.error(f"La columna '{col_id_partner}' no existe en el fichero subido.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Normalizar a string y limpiar espacios
-    df_bd[col_id_bd] = df_bd[col_id_bd].astype(str).str.strip()
-    df_partner[col_id_partner] = df_partner[col_id_partner].astype(str).str.strip()
+    # Limpiar identificadores
+    df_bd['_clean_id'] = df_bd[col_id_bd].apply(lambda x: limpiar_identificador(x, modo_limpieza))
+    df_partner['_clean_id'] = df_partner[col_id_partner].apply(lambda x: limpiar_identificador(x, modo_limpieza))
 
-    # Crear copias con la columna unificada para el merge
-    df_bd_merge = df_bd.copy()
-    df_partner_merge = df_partner.copy()
-    df_bd_merge['_merge_key'] = df_bd_merge[col_id_bd]
-    df_partner_merge['_merge_key'] = df_partner_merge[col_id_partner]
+    # Eliminar filas con ID vacío después de limpieza
+    df_bd_clean = df_bd[df_bd['_clean_id'] != ""].copy()
+    df_partner_clean = df_partner[df_partner['_clean_id'] != ""].copy()
 
     # Realizar merge para identificar coincidencias
-    merged = df_bd_merge.merge(df_partner_merge, on='_merge_key', how='outer',
+    merged = df_bd_clean.merge(df_partner_clean, on='_clean_id', how='outer',
                                 indicator=True, suffixes=('_bd', '_partner'))
 
     coincidentes = merged[merged['_merge'] == 'both']
@@ -106,8 +124,8 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
     for df_temp in [coincidentes, solo_bd, solo_partner]:
         if '_merge' in df_temp.columns:
             df_temp.drop(columns=['_merge'], inplace=True)
-        if '_merge_key' in df_temp.columns:
-            df_temp.drop(columns=['_merge_key'], inplace=True)
+        if '_clean_id' in df_temp.columns:
+            df_temp.drop(columns=['_clean_id'], inplace=True)
 
     return coincidentes, solo_bd, solo_partner
 
@@ -278,12 +296,48 @@ def mostrar_auditoria():
             st.warning("No se ha seleccionado la columna identificadora. Ve a 'Cargar fichero' y selecciona una.")
             return
 
+        # Opciones de limpieza
+        with st.expander("⚙️ Opciones de comparación", expanded=False):
+            modo_limpieza = st.radio(
+                "Modo de limpieza de identificadores:",
+                options=['Solo espacios (por defecto)', 'Extraer solo dígitos (para IDs numéricos)'],
+                index=0,
+                help="Si los identificadores tienen formatos distintos (ej. '12345' vs '12345.0'), prueba con 'Extraer solo dígitos'."
+            )
+            if modo_limpieza == 'Extraer solo dígitos (para IDs numéricos)':
+                modo = 'digits'
+            else:
+                modo = 'strip'
+
+            # Mostrar diagnóstico de valores
+            if st.checkbox("🔍 Mostrar diagnóstico de valores (primeros 10 de cada columna)"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**BD - billing (primeros 10):**")
+                    valores_bd = df_bd['billing'].dropna().astype(str).str.strip().head(10).tolist()
+                    st.write(valores_bd)
+                with col2:
+                    st.write(f"**Partner - {partner_id_col} (primeros 10):**")
+                    valores_partner = df_partner[partner_id_col].dropna().astype(str).str.strip().head(10).tolist()
+                    st.write(valores_partner)
+
+                if modo == 'digits':
+                    st.write("**Versión limpia (solo dígitos):**")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        limpios_bd = [re.sub(r'\D', '', v) for v in valores_bd]
+                        st.write(limpios_bd)
+                    with col2:
+                        limpios_partner = [re.sub(r'\D', '', v) for v in valores_partner]
+                        st.write(limpios_partner)
+
         # Realizar la comparación
         with st.spinner("Comparando datos..."):
             coincidentes, solo_bd, solo_partner = procesar_comparacion(
                 df_bd, df_partner,
                 col_id_bd='billing',
-                col_id_partner=partner_id_col
+                col_id_partner=partner_id_col,
+                modo_limpieza=modo
             )
 
         # -------------------------------------------------------------------
