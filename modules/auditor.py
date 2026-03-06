@@ -8,7 +8,6 @@ import sqlitecloud
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 import warnings
-warnings.filterfilterwarnings("ignore", category=UserWarning)
 
 # -------------------------------------------------------------------
 # Funciones de conexión y trazabilidad (copiadas del main para autonomía)
