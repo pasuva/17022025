@@ -51,13 +51,16 @@ def limpiar_identificador(valor, modo='strip'):
     Limpia un identificador según el modo:
     - 'strip': elimina espacios y convierte a string
     - 'digits': extrae solo dígitos (para IDs numéricos)
+    Si el valor es nulo o vacío, retorna None para poder distinguir.
     """
-    if pd.isna(valor) or valor is None:
-        return ""
+    if pd.isna(valor) or valor is None or str(valor).strip() == "":
+        return None
     valor = str(valor).strip()
     if modo == 'digits':
         # Extraer solo dígitos (eliminar cualquier carácter no numérico)
         valor = re.sub(r'\D', '', valor)
+        if valor == "":
+            return None
     return valor
 
 # -------------------------------------------------------------------
@@ -92,6 +95,7 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
     Compara dos DataFrames usando las columnas indicadas como identificador.
     Aplica limpieza según modo_limpieza ('strip' o 'digits').
     Devuelve tres DataFrames: coincidentes, solo_bd, solo_partner.
+    Incluye todos los registros, incluso aquellos con ID nulo (que van a solo_bd o solo_partner).
     """
     if df_bd.empty or df_partner.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -104,30 +108,55 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
         st.error(f"La columna '{col_id_partner}' no existe en el fichero subido.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Limpiar identificadores
+    # Crear columnas con ID limpio
+    df_bd = df_bd.copy()
+    df_partner = df_partner.copy()
     df_bd['_clean_id'] = df_bd[col_id_bd].apply(lambda x: limpiar_identificador(x, modo_limpieza))
     df_partner['_clean_id'] = df_partner[col_id_partner].apply(lambda x: limpiar_identificador(x, modo_limpieza))
 
-    # Eliminar filas con ID vacío después de limpieza
-    df_bd_clean = df_bd[df_bd['_clean_id'] != ""].copy()
-    df_partner_clean = df_partner[df_partner['_clean_id'] != ""].copy()
+    # Separar registros con ID nulo (no se pueden comparar)
+    bd_nulos = df_bd[df_bd['_clean_id'].isna()].copy()
+    partner_nulos = df_partner[df_partner['_clean_id'].isna()].copy()
 
-    # Realizar merge para identificar coincidencias
-    merged = df_bd_clean.merge(df_partner_clean, on='_clean_id', how='outer',
-                                indicator=True, suffixes=('_bd', '_partner'))
+    # Registros con ID no nulo para comparar
+    bd_validos = df_bd[df_bd['_clean_id'].notna()].copy()
+    partner_validos = df_partner[df_partner['_clean_id'].notna()].copy()
 
-    coincidentes = merged[merged['_merge'] == 'both']
-    solo_bd = merged[merged['_merge'] == 'left_only']
-    solo_partner = merged[merged['_merge'] == 'right_only']
+    # Realizar merge para identificar coincidencias entre válidos
+    if not bd_validos.empty and not partner_validos.empty:
+        merged = bd_validos.merge(partner_validos, on='_clean_id', how='outer',
+                                   indicator=True, suffixes=('_bd', '_partner'))
 
-    # Eliminar columnas auxiliares
-    for df_temp in [coincidentes, solo_bd, solo_partner]:
-        if '_merge' in df_temp.columns:
-            df_temp.drop(columns=['_merge'], inplace=True)
+        coincidentes = merged[merged['_merge'] == 'both'].copy()
+        solo_bd_validos = merged[merged['_merge'] == 'left_only'].copy()
+        solo_partner_validos = merged[merged['_merge'] == 'right_only'].copy()
+    else:
+        coincidentes = pd.DataFrame()
+        solo_bd_validos = bd_validos.copy()
+        solo_partner_validos = partner_validos.copy()
+
+    # Añadir los nulos a los correspondientes
+    # Para los nulos de BD, añadimos a solo_bd (pero sin las columnas del partner)
+    if not bd_nulos.empty:
+        # Añadir columnas del partner vacías para que tengan la misma estructura
+        for col in df_partner.columns:
+            if col not in bd_nulos.columns and col != '_clean_id':
+                bd_nulos[col] = None
+        solo_bd_validos = pd.concat([solo_bd_validos, bd_nulos], ignore_index=True, sort=False)
+
+    if not partner_nulos.empty:
+        # Añadir columnas de BD vacías
+        for col in df_bd.columns:
+            if col not in partner_nulos.columns and col != '_clean_id':
+                partner_nulos[col] = None
+        solo_partner_validos = pd.concat([solo_partner_validos, partner_nulos], ignore_index=True, sort=False)
+
+    # Eliminar columna auxiliar '_clean_id' de todos los DataFrames
+    for df_temp in [coincidentes, solo_bd_validos, solo_partner_validos]:
         if '_clean_id' in df_temp.columns:
             df_temp.drop(columns=['_clean_id'], inplace=True)
 
-    return coincidentes, solo_bd, solo_partner
+    return coincidentes, solo_bd_validos, solo_partner_validos
 
 # -------------------------------------------------------------------
 # Función principal de la sección de auditoría
@@ -222,7 +251,8 @@ def mostrar_auditoria():
     st.sidebar.markdown("### 📊 Datos internos")
     st.sidebar.info(f"Total contratos en BD: **{len(df_bd):,}**")
     if 'billing' in df_bd.columns:
-        st.sidebar.info(f"Billing no nulos: **{df_bd['billing'].notna().sum():,}**")
+        nulos_bd = df_bd['billing'].isna().sum()
+        st.sidebar.info(f"Billing no nulos: **{df_bd['billing'].notna().sum():,}** (nulos: {nulos_bd})")
     else:
         st.sidebar.warning("La columna 'billing' no existe en la BD.")
 
@@ -247,7 +277,7 @@ def mostrar_auditoria():
                 else:
                     df_partner = pd.read_excel(uploaded_file)
 
-                # Normalizar nombres de columnas a minúsculas
+                # Normalizar nombres de columnas a minúsculas (para facilitar búsqueda)
                 df_partner.columns = [c.lower() for c in df_partner.columns]
 
                 st.success(f"Fichero cargado correctamente: {len(df_partner)} filas.")
@@ -313,11 +343,11 @@ def mostrar_auditoria():
             if st.checkbox("🔍 Mostrar diagnóstico de valores (primeros 10 de cada columna)"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.write("**BD - billing (primeros 10):**")
+                    st.write("**BD - billing (primeros 10 no nulos):**")
                     valores_bd = df_bd['billing'].dropna().astype(str).str.strip().head(10).tolist()
                     st.write(valores_bd)
                 with col2:
-                    st.write(f"**Partner - {partner_id_col} (primeros 10):**")
+                    st.write(f"**Partner - {partner_id_col} (primeros 10 no nulos):**")
                     valores_partner = df_partner[partner_id_col].dropna().astype(str).str.strip().head(10).tolist()
                     st.write(valores_partner)
 
@@ -325,10 +355,10 @@ def mostrar_auditoria():
                     st.write("**Versión limpia (solo dígitos):**")
                     col1, col2 = st.columns(2)
                     with col1:
-                        limpios_bd = [re.sub(r'\D', '', v) for v in valores_bd]
+                        limpios_bd = [re.sub(r'\D', '', v) for v in valores_bd if v is not None]
                         st.write(limpios_bd)
                     with col2:
-                        limpios_partner = [re.sub(r'\D', '', v) for v in valores_partner]
+                        limpios_partner = [re.sub(r'\D', '', v) for v in valores_partner if v is not None]
                         st.write(limpios_partner)
 
         # Realizar la comparación
