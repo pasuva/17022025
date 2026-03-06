@@ -3,7 +3,8 @@
 
 import streamlit as st
 import pandas as pd
-import io, sqlite3
+import io
+import sqlite3
 import sqlitecloud
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
@@ -13,7 +14,7 @@ import warnings
 cookie_name = "my_app"
 
 # -------------------------------------------------------------------
-# Funciones de conexión y trazabilidad (copiadas del main para autonomía)
+# Funciones de conexión y trazabilidad
 # -------------------------------------------------------------------
 def obtener_conexion():
     """Retorna una nueva conexión a la base de datos SQLite Cloud."""
@@ -66,37 +67,47 @@ def cargar_contratos_bd() -> pd.DataFrame:
 # -------------------------------------------------------------------
 # Procesamiento de la comparación
 # -------------------------------------------------------------------
-def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame, col_id: str = "billing"):
+def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
+                         col_id_bd: str, col_id_partner: str):
     """
-    Compara dos DataFrames usando la columna 'billing' como identificador.
+    Compara dos DataFrames usando las columnas indicadas como identificador.
     Devuelve tres DataFrames: coincidentes, solo_bd, solo_partner.
     """
     if df_bd.empty or df_partner.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Asegurar que la columna existe en ambos
-    if col_id not in df_bd.columns:
-        st.error(f"La columna '{col_id}' no existe en los datos de la base de datos.")
+    # Asegurar que las columnas existen
+    if col_id_bd not in df_bd.columns:
+        st.error(f"La columna '{col_id_bd}' no existe en los datos de la base de datos.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    if col_id not in df_partner.columns:
-        st.error(f"La columna '{col_id}' no existe en el fichero subido.")
+    if col_id_partner not in df_partner.columns:
+        st.error(f"La columna '{col_id_partner}' no existe en el fichero subido.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     # Normalizar a string y limpiar espacios
-    df_bd[col_id] = df_bd[col_id].astype(str).str.strip()
-    df_partner[col_id] = df_partner[col_id].astype(str).str.strip()
+    df_bd[col_id_bd] = df_bd[col_id_bd].astype(str).str.strip()
+    df_partner[col_id_partner] = df_partner[col_id_partner].astype(str).str.strip()
+
+    # Crear copias con la columna unificada para el merge
+    df_bd_merge = df_bd.copy()
+    df_partner_merge = df_partner.copy()
+    df_bd_merge['_merge_key'] = df_bd_merge[col_id_bd]
+    df_partner_merge['_merge_key'] = df_partner_merge[col_id_partner]
 
     # Realizar merge para identificar coincidencias
-    merged = df_bd.merge(df_partner, on=col_id, how='outer', indicator=True)
+    merged = df_bd_merge.merge(df_partner_merge, on='_merge_key', how='outer',
+                                indicator=True, suffixes=('_bd', '_partner'))
 
     coincidentes = merged[merged['_merge'] == 'both']
     solo_bd = merged[merged['_merge'] == 'left_only']
     solo_partner = merged[merged['_merge'] == 'right_only']
 
-    # Eliminar columna auxiliar
-    coincidentes = coincidentes.drop(columns=['_merge'])
-    solo_bd = solo_bd.drop(columns=['_merge'])
-    solo_partner = solo_partner.drop(columns=['_merge'])
+    # Eliminar columnas auxiliares
+    for df_temp in [coincidentes, solo_bd, solo_partner]:
+        if '_merge' in df_temp.columns:
+            df_temp.drop(columns=['_merge'], inplace=True)
+        if '_merge_key' in df_temp.columns:
+            df_temp.drop(columns=['_merge_key'], inplace=True)
 
     return coincidentes, solo_bd, solo_partner
 
@@ -174,7 +185,7 @@ def mostrar_auditoria():
         </style>
     """, unsafe_allow_html=True)
 
-    # Submenú horizontal (similar al estilo de otras secciones)
+    # Submenú horizontal
     sub_seccion = st.radio(
         "Selecciona una vista",
         ["Cargar fichero", "Informe comparativo"],
@@ -202,7 +213,7 @@ def mostrar_auditoria():
     # -------------------------------------------------------------------
     if sub_seccion == "Cargar fichero":
         st.header("📁 Cargar fichero del partner")
-        st.markdown("Sube el archivo Excel o CSV que has recibido del partner. Debe contener una columna llamada **billing** como identificador.")
+        st.markdown("Sube el archivo Excel o CSV que has recibido del partner. Debe contener una columna con el identificador de alta (normalmente **Servicio Id**).")
 
         uploaded_file = st.file_uploader(
             "Selecciona archivo",
@@ -224,9 +235,25 @@ def mostrar_auditoria():
                 st.success(f"Fichero cargado correctamente: {len(df_partner)} filas.")
                 st.dataframe(df_partner.head(10), width='stretch')
 
-                # Guardar en session_state para usarlo en la otra pestaña
+                # Seleccionar la columna que contiene el identificador
+                # Por defecto, buscar "servicio id" o similar
+                opciones = df_partner.columns.tolist()
+                indice_default = 0
+                for i, col in enumerate(opciones):
+                    if 'servicio' in col or 'id' in col or 'billing' in col:
+                        indice_default = i
+                        break
+
+                columna_id = st.selectbox(
+                    "Selecciona la columna que contiene el identificador de alta (Servicio Id):",
+                    options=opciones,
+                    index=indice_default
+                )
+
+                # Guardar en session_state
                 st.session_state['df_partner'] = df_partner
                 st.session_state['partner_filename'] = uploaded_file.name
+                st.session_state['partner_id_col'] = columna_id
 
                 st.info("Ahora ve a la pestaña **Informe comparativo** para ver el análisis.")
             except Exception as e:
@@ -245,10 +272,19 @@ def mostrar_auditoria():
 
         df_partner = st.session_state['df_partner']
         partner_filename = st.session_state.get('partner_filename', 'fichero_partner')
+        partner_id_col = st.session_state.get('partner_id_col', None)
+
+        if partner_id_col is None:
+            st.warning("No se ha seleccionado la columna identificadora. Ve a 'Cargar fichero' y selecciona una.")
+            return
 
         # Realizar la comparación
         with st.spinner("Comparando datos..."):
-            coincidentes, solo_bd, solo_partner = procesar_comparacion(df_bd, df_partner, col_id='billing')
+            coincidentes, solo_bd, solo_partner = procesar_comparacion(
+                df_bd, df_partner,
+                col_id_bd='billing',
+                col_id_partner=partner_id_col
+            )
 
         # -------------------------------------------------------------------
         # Métricas resumen
@@ -265,25 +301,45 @@ def mostrar_auditoria():
         st.caption(f"Solo en partner: {len(solo_partner)}")
 
         # -------------------------------------------------------------------
+        # Separar coincidentes según estado
+        # -------------------------------------------------------------------
+        estados_validos = ['FINALIZADO']  # Solo se considera válido para facturación
+        if not coincidentes.empty and 'estado' in coincidentes.columns:
+            coincidentes_validos = coincidentes[coincidentes['estado'].isin(estados_validos)]
+            coincidentes_problematicos = coincidentes[~coincidentes['estado'].isin(estados_validos)]
+        else:
+            coincidentes_validos = coincidentes
+            coincidentes_problematicos = pd.DataFrame()
+
+        # Mostrar alerta si hay problemáticos
+        if not coincidentes_problematicos.empty:
+            st.error(f"⚠️ **Atención:** Se han encontrado **{len(coincidentes_problematicos)}** contratos coincidentes con estado distinto de FINALIZADO. Revisa si se está cobrando indebidamente.")
+
+        # -------------------------------------------------------------------
         # Pestañas para cada categoría
         # -------------------------------------------------------------------
         if len(coincidentes) > 0 or len(solo_bd) > 0 or len(solo_partner) > 0:
-            tab1, tab2, tab3 = st.tabs([
-                f"✅ Coincidentes ({len(coincidentes)})",
+            # Creamos pestañas: Coincidentes totales, Problemáticos, Solo BD, Solo Partner
+            tab_titles = [
+                f"✅ Coincidentes totales ({len(coincidentes)})",
+                f"⚠️ Coincidentes no finalizados ({len(coincidentes_problematicos)})",
                 f"🔵 Solo en BD ({len(solo_bd)})",
                 f"🟠 Solo en partner ({len(solo_partner)})"
-            ])
+            ]
+            tabs = st.tabs(tab_titles)
 
             # Función auxiliar para mostrar tabla con AgGrid
             def mostrar_tabla_con_aggrid(df, key_suffix):
                 if df.empty:
                     st.info("No hay registros en esta categoría.")
                     return
-                # Seleccionar columnas para mostrar (podríamos permitir elegir)
-                cols_mostrar = df.columns.tolist()
-                # Si hay muchas columnas, limitar a las más relevantes
-                columnas_importantes = ['billing', 'num_contrato', 'cliente', 'estado', 'fecha_inicio_contrato', 'comercial']
-                cols_mostrar = [c for c in columnas_importantes if c in df.columns] + [c for c in cols_mostrar if c not in columnas_importantes][:5]
+                # Seleccionar columnas para mostrar
+                columnas_importantes = ['billing', 'num_contrato', 'cliente', 'estado',
+                                        'fecha_inicio_contrato', 'comercial', partner_id_col]
+                cols_mostrar = [c for c in columnas_importantes if c in df.columns]
+                # Añadir algunas columnas adicionales si hay espacio
+                otras_cols = [c for c in df.columns if c not in cols_mostrar][:5]
+                cols_mostrar += otras_cols
                 df_display = df[cols_mostrar].copy()
 
                 gb = GridOptionsBuilder.from_dataframe(df_display)
@@ -308,11 +364,21 @@ def mostrar_auditoria():
                     key=f"grid_{key_suffix}"
                 )
 
-            with tab1:
-                mostrar_tabla_con_aggrid(coincidentes, "coincidentes")
-            with tab2:
+            with tabs[0]:
+                mostrar_tabla_con_aggrid(coincidentes, "coincidentes_total")
+            with tabs[1]:
+                if not coincidentes_problematicos.empty:
+                    mostrar_tabla_con_aggrid(coincidentes_problematicos, "coincidentes_problematicos")
+                    # Resumen de estados problemáticos
+                    st.markdown("#### Distribución de estados problemáticos")
+                    estado_counts = coincidentes_problematicos['estado'].value_counts().reset_index()
+                    estado_counts.columns = ['Estado', 'Cantidad']
+                    st.dataframe(estado_counts, width='stretch', hide_index=True)
+                else:
+                    st.success("¡No hay coincidentes con estados problemáticos!")
+            with tabs[2]:
                 mostrar_tabla_con_aggrid(solo_bd, "solo_bd")
-            with tab3:
+            with tabs[3]:
                 mostrar_tabla_con_aggrid(solo_partner, "solo_partner")
 
             # -------------------------------------------------------------------
@@ -326,6 +392,8 @@ def mostrar_auditoria():
                     df_bd.to_excel(writer, sheet_name='Contratos_BD', index=False)
                     df_partner.to_excel(writer, sheet_name='Fichero_Partner', index=False)
                     coincidentes.to_excel(writer, sheet_name='Coincidentes', index=False)
+                    if not coincidentes_problematicos.empty:
+                        coincidentes_problematicos.to_excel(writer, sheet_name='Coincidentes_Problematicos', index=False)
                     solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
                     solo_partner.to_excel(writer, sheet_name='Solo_Partner', index=False)
                 output.seek(0)
@@ -363,27 +431,19 @@ def mostrar_auditoria():
             st.info("No hay datos para mostrar tras la comparación.")
 
         # -------------------------------------------------------------------
-        # Análisis adicional: estados de los coincidentes
+        # Análisis adicional de estados (opcional, ya se ve en pestaña)
         # -------------------------------------------------------------------
-        if len(coincidentes) > 0 and 'estado' in coincidentes.columns:
-            with st.expander("🔍 Análisis de estados en los coincidentes"):
-                st.markdown("Distribución de estados de los contratos que sí aparecen en el fichero del partner:")
+        if not coincidentes.empty and 'estado' in coincidentes.columns:
+            with st.expander("🔍 Ver distribución completa de estados en coincidentes"):
                 estado_counts = coincidentes['estado'].value_counts().reset_index()
                 estado_counts.columns = ['Estado', 'Cantidad']
                 st.dataframe(estado_counts, width='stretch', hide_index=True)
-
-                # Posible alerta: si hay estados no facturables (ej. 'Cancelado', 'Resuelto')
-                estados_no_facturables = ['Cancelado', 'Resuelto', 'Anulado']
-                problematicos = coincidentes[coincidentes['estado'].isin(estados_no_facturables)]
-                if not problematicos.empty:
-                    st.warning(f"⚠️ Se encontraron {len(problematicos)} contratos con estado no facturable en los coincidentes. Revisa si se está cobrando indebidamente.")
-                    st.dataframe(problematicos[['billing', 'num_contrato', 'estado']], width='stretch')
 
         # Registrar en trazabilidad
         log_trazabilidad(
             st.session_state.get("username", "auditor"),
             "Auditoría de facturación",
-            f"Comparación realizada con fichero {partner_filename}. Coincidentes={len(coincidentes)}, Solo BD={len(solo_bd)}, Solo Partner={len(solo_partner)}"
+            f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)}, Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)}, Solo Partner={len(solo_partner)}"
         )
 
 # -------------------------------------------------------------------
