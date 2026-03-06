@@ -1,5 +1,5 @@
 # auditor.py
-# Módulo para auditoría de facturación comparando contratos internos con ficheros de Adamo y Likes.
+# Módulo para auditoría de facturación comparando contratos internos con fichero del partner.
 
 import streamlit as st
 import pandas as pd
@@ -179,7 +179,7 @@ def mostrar_auditoria():
         </style>
     """, unsafe_allow_html=True)
 
-    # Submenú horizontal principal
+    # Submenú horizontal
     sub_seccion = st.radio(
         "Selecciona una vista",
         ["Cargar fichero", "Informe comparativo"],
@@ -203,37 +203,16 @@ def mostrar_auditoria():
         st.sidebar.warning("La columna 'billing' no existe en la BD.")
 
     # -------------------------------------------------------------------
-    # Pestaña 1: Cargar fichero del partner (con subtipos)
+    # Pestaña 1: Cargar fichero del partner
     # -------------------------------------------------------------------
     if sub_seccion == "Cargar fichero":
         st.header("📁 Cargar fichero del partner")
-
-        # Submenú para elegir qué tipo de fichero cargar
-        tipo_fichero = st.radio(
-            "Selecciona el tipo de fichero:",
-            ["Adamo", "Likes"],
-            horizontal=True,
-            key="tipo_carga"
-        )
-
-        # Definir claves de session_state según el tipo
-        if tipo_fichero == "Adamo":
-            session_key_df = 'df_partner_adamo'
-            session_key_filename = 'partner_filename_adamo'
-            session_key_col = 'partner_id_col_adamo'
-            default_col_name = "Servicio Id"
-        else:  # Likes
-            session_key_df = 'df_partner_likes'
-            session_key_filename = 'partner_filename_likes'
-            session_key_col = 'partner_id_col_likes'
-            default_col_name = "Identificador (ajusta según el fichero)"
-
-        st.markdown(f"Sube el archivo Excel o CSV de **{tipo_fichero}**. Debes indicar qué columna contiene el identificador de alta (normalmente **{default_col_name}**).")
+        st.markdown("Sube el archivo Excel o CSV que has recibido del partner. Debes indicar qué columna contiene el identificador de alta (normalmente **Servicio Id**).")
 
         uploaded_file = st.file_uploader(
             "Selecciona archivo",
             type=["xlsx", "xls", "csv"],
-            key=f"uploader_{tipo_fichero}"
+            key="auditor_file"
         )
 
         if uploaded_file is not None:
@@ -249,71 +228,50 @@ def mostrar_auditoria():
 
                 # Seleccionar la columna que contiene el identificador
                 opciones = df_partner.columns.tolist()
-                # Buscar una columna que contenga palabras clave (para Adamo, "servicio id"; para Likes, podría ser "id" o similar)
+                # Buscar una columna que contenga "servicio id" (insensible a mayúsculas/minúsculas)
                 sugerida = None
-                keywords = ["servicio id", "id", "identificador"] if tipo_fichero == "Adamo" else ["id", "identificador", "codigo"]
                 for col in opciones:
-                    lower_col = col.lower()
-                    if any(kw in lower_col for kw in keywords):
+                    if 'servicio id' in col.lower():
                         sugerida = col
                         break
                 indice_default = opciones.index(sugerida) if sugerida else 0
 
                 columna_id = st.selectbox(
-                    f"Selecciona la columna que contiene el identificador de alta ({default_col_name}):",
+                    "Selecciona la columna que contiene el identificador de alta (Servicio Id):",
                     options=opciones,
-                    index=indice_default,
-                    key=f"select_{tipo_fichero}"
+                    index=indice_default
                 )
 
-                # Guardar en session_state con claves específicas
-                st.session_state[session_key_df] = df_partner
-                st.session_state[session_key_filename] = uploaded_file.name
-                st.session_state[session_key_col] = columna_id
+                # Guardar en session_state
+                st.session_state['df_partner'] = df_partner
+                st.session_state['partner_filename'] = uploaded_file.name
+                st.session_state['partner_id_col'] = columna_id
 
-                st.info(f"Fichero de {tipo_fichero} guardado. Ahora ve a la pestaña **Informe comparativo** y selecciona '{tipo_fichero}' para ver el análisis.")
+                st.info("Ahora ve a la pestaña **Informe comparativo** para ver el análisis.")
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
 
     # -------------------------------------------------------------------
-    # Pestaña 2: Informe comparativo (con subtipos)
+    # Pestaña 2: Informe comparativo
     # -------------------------------------------------------------------
     else:  # sub_seccion == "Informe comparativo"
         st.header("📋 Informe comparativo")
 
-        # Submenú para elegir qué informe ver
-        tipo_informe = st.radio(
-            "Selecciona el informe a visualizar:",
-            ["Adamo", "Likes"],
-            horizontal=True,
-            key="tipo_informe"
-        )
-
-        # Definir claves de session_state según el tipo
-        if tipo_informe == "Adamo":
-            session_key_df = 'df_partner_adamo'
-            session_key_filename = 'partner_filename_adamo'
-            session_key_col = 'partner_id_col_adamo'
-        else:
-            session_key_df = 'df_partner_likes'
-            session_key_filename = 'partner_filename_likes'
-            session_key_col = 'partner_id_col_likes'
-
-        # Verificar si tenemos datos del partner para este tipo
-        if session_key_df not in st.session_state or st.session_state[session_key_df] is None:
-            st.warning(f"Primero debes cargar un fichero de {tipo_informe} en la pestaña 'Cargar fichero'.")
+        # Verificar si tenemos datos del partner
+        if 'df_partner' not in st.session_state or st.session_state['df_partner'] is None:
+            st.warning("Primero debes cargar un fichero del partner en la pestaña 'Cargar fichero'.")
             return
 
-        df_partner = st.session_state[session_key_df]
-        partner_filename = st.session_state.get(session_key_filename, f'fichero_{tipo_informe.lower()}')
-        partner_id_col = st.session_state.get(session_key_col, None)
+        df_partner = st.session_state['df_partner']
+        partner_filename = st.session_state.get('partner_filename', 'fichero_partner')
+        partner_id_col = st.session_state.get('partner_id_col', None)
 
         if partner_id_col is None:
-            st.warning(f"No se ha seleccionado la columna identificadora para {tipo_informe}. Ve a 'Cargar fichero' y selecciona una.")
+            st.warning("No se ha seleccionado la columna identificadora. Ve a 'Cargar fichero' y selecciona una.")
             return
 
         # Realizar la comparación
-        with st.spinner(f"Comparando datos con {tipo_informe}..."):
+        with st.spinner("Comparando datos..."):
             coincidentes, solo_bd, solo_partner = procesar_comparacion(
                 df_bd, df_partner,
                 col_bd='billing',
@@ -327,12 +285,12 @@ def mostrar_auditoria():
         with col1:
             st.metric("Contratos en BD", len(df_bd))
         with col2:
-            st.metric(f"Registros {tipo_informe}", len(df_partner))
+            st.metric("Registros partner", len(df_partner))
         with col3:
             st.metric("Coincidentes", len(coincidentes))
         with col4:
             st.metric("Solo en BD", len(solo_bd))
-        st.caption(f"Solo en {tipo_informe}: {len(solo_partner)}")
+        st.caption(f"Solo en partner: {len(solo_partner)}")
 
         # -------------------------------------------------------------------
         # Separar coincidentes según estado
@@ -347,7 +305,7 @@ def mostrar_auditoria():
 
         # Mostrar alerta si hay problemáticos
         if not coincidentes_problematicos.empty:
-            st.error(f"⚠️ **Atención:** Se han encontrado **{len(coincidentes_problematicos)}** contratos coincidentes con estado distinto de FINALIZADO en el informe de {tipo_informe}. Revisa si se está cobrando indebidamente.")
+            st.error(f"⚠️ **Atención:** Se han encontrado **{len(coincidentes_problematicos)}** contratos coincidentes con estado distinto de FINALIZADO. Revisa si se está cobrando indebidamente.")
 
         # -------------------------------------------------------------------
         # Pestañas para cada categoría
@@ -358,7 +316,7 @@ def mostrar_auditoria():
                 f"✅ Coincidentes totales ({len(coincidentes)})",
                 f"⚠️ Coincidentes no finalizados ({len(coincidentes_problematicos)})",
                 f"🔵 Solo en BD ({len(solo_bd)})",
-                f"🟠 Solo en {tipo_informe} ({len(solo_partner)})"
+                f"🟠 Solo en partner ({len(solo_partner)})"
             ]
             tabs = st.tabs(tab_titles)
 
@@ -395,7 +353,7 @@ def mostrar_auditoria():
                     update_mode=GridUpdateMode.NO_UPDATE,
                     height=400,
                     theme='alpine-dark',
-                    key=f"grid_{tipo_informe}_{key_suffix}"
+                    key=f"grid_{key_suffix}"
                 )
 
             with tabs[0]:
@@ -424,18 +382,18 @@ def mostrar_auditoria():
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_bd.to_excel(writer, sheet_name='Contratos_BD', index=False)
-                    df_partner.to_excel(writer, sheet_name=f'Fichero_{tipo_informe}', index=False)
+                    df_partner.to_excel(writer, sheet_name='Fichero_Partner', index=False)
                     coincidentes.to_excel(writer, sheet_name='Coincidentes', index=False)
                     if not coincidentes_problematicos.empty:
                         coincidentes_problematicos.to_excel(writer, sheet_name='Coincidentes_Problematicos', index=False)
                     solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
-                    solo_partner.to_excel(writer, sheet_name=f'Solo_{tipo_informe}', index=False)
+                    solo_partner.to_excel(writer, sheet_name='Solo_Partner', index=False)
                 output.seek(0)
 
                 st.download_button(
-                    label=f"📥 Descargar informe {tipo_informe} (Excel)",
+                    label="📥 Descargar informe completo (Excel)",
                     data=output,
-                    file_name=f"auditoria_{tipo_informe.lower()}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    file_name=f"auditoria_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
@@ -445,13 +403,13 @@ def mostrar_auditoria():
                 output_disc = io.BytesIO()
                 with pd.ExcelWriter(output_disc, engine='xlsxwriter') as writer:
                     solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
-                    solo_partner.to_excel(writer, sheet_name=f'Solo_{tipo_informe}', index=False)
+                    solo_partner.to_excel(writer, sheet_name='Solo_Partner', index=False)
                 output_disc.seek(0)
 
                 st.download_button(
-                    label=f"📥 Descargar solo discrepancias ({tipo_informe})",
+                    label="📥 Descargar solo discrepancias",
                     data=output_disc,
-                    file_name=f"discrepancias_{tipo_informe.lower()}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    file_name=f"discrepancias_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
@@ -476,8 +434,8 @@ def mostrar_auditoria():
         # Registrar en trazabilidad
         log_trazabilidad(
             st.session_state.get("username", "auditor"),
-            f"Auditoría de facturación - {tipo_informe}",
-            f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)}, Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)}, Solo {tipo_informe}={len(solo_partner)}"
+            "Auditoría de facturación",
+            f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)}, Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)}, Solo Partner={len(solo_partner)}"
         )
 
 # -------------------------------------------------------------------
