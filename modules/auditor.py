@@ -1,7 +1,7 @@
 # auditor.py
-# Módulo para auditoría de facturación comparando contratos internos con ficheros de Adamo y Likes.
-# Adamo: comparación simple por billing (exactamente como funcionaba).
-# Likes: comparación por nombre del cliente con limpieza y matching difuso.
+# Módulo para auditoría de facturación comparando contratos internos con ficheros de Adamo, Likes y Bayma.
+# Adamo: comparación simple por billing.
+# Likes y Bayma: comparación por nombre del cliente con limpieza y matching difuso.
 
 import streamlit as st
 import pandas as pd
@@ -48,7 +48,7 @@ def log_trazabilidad(usuario, accion, detalles):
         print(f"Error registrando trazabilidad: {e}")
 
 # -------------------------------------------------------------------
-# Normalización de texto para comparación por nombre (solo para Likes)
+# Normalización de texto para comparación por nombre (para Likes y Bayma)
 # -------------------------------------------------------------------
 def normalizar_texto(texto):
     """Elimina tildes, pasa a minúsculas y elimina espacios extras."""
@@ -62,7 +62,6 @@ def normalizar_texto(texto):
 def limpiar_nombre_para_comparacion(nombre):
     """
     Limpia el nombre eliminando números, signos de puntuación y palabras vacías comunes.
-    Solo se usa para Likes.
     """
     if pd.isna(nombre) or nombre is None:
         return ""
@@ -284,7 +283,7 @@ def mostrar_auditoria():
 
         tipo_fichero = st.radio(
             "Selecciona el tipo de fichero:",
-            ["Adamo", "Likes"],
+            ["Adamo", "Likes", "Bayma"],
             horizontal=True,
             key="tipo_carga"
         )
@@ -294,10 +293,15 @@ def mostrar_auditoria():
             session_key_filename = 'partner_filename_adamo'
             session_key_col = 'partner_id_col_adamo'
             texto_ayuda = "normalmente **Servicio Id**"
-        else:
+        elif tipo_fichero == "Likes":
             session_key_df = 'df_partner_likes'
             session_key_filename = 'partner_filename_likes'
             session_key_nombre = 'partner_nombre_cols_likes'
+            texto_ayuda = "selecciona las columnas que forman el nombre del cliente"
+        else:  # Bayma
+            session_key_df = 'df_partner_bayma'
+            session_key_filename = 'partner_filename_bayma'
+            session_key_nombre = 'partner_nombre_cols_bayma'
             texto_ayuda = "selecciona las columnas que forman el nombre del cliente"
 
         st.markdown(f"Sube el archivo Excel o CSV de **{tipo_fichero}**. {texto_ayuda}.")
@@ -337,42 +341,44 @@ def mostrar_auditoria():
                     st.session_state[session_key_filename] = uploaded_file.name
                     st.session_state[session_key_col] = columna_id
 
-                else:  # Likes
+                else:  # Likes o Bayma
                     st.markdown("#### Configuración del nombre del cliente")
                     st.info("Selecciona las columnas que contienen el nombre y apellidos. Se concatenarán en el orden: Nombre, Primer apellido, Segundo apellido.")
 
-                    # Intentar encontrar las columnas por defecto
+                    # Intentar encontrar las columnas por defecto (para Likes se mantiene la misma lógica)
                     opciones_con_ninguno = ["(ninguno)"] + opciones
                     indice_nombre = 0
                     indice_apellido1 = 0
                     indice_apellido2 = 0
 
-                    for i, col in enumerate(opciones):
-                        col_lower = col.lower()
-                        if col_lower == 'name':
-                            indice_nombre = i
-                        elif col_lower == 'firstsurname':
-                            indice_apellido1 = i + 1  # +1 porque opciones_con_ninguno tiene "(ninguno)" al inicio
-                        elif col_lower == 'lastsurname':
-                            indice_apellido2 = i + 1
+                    # Para Bayma no hay nombres predefinidos, se dejan en 0
+                    if tipo_fichero == "Likes":
+                        for i, col in enumerate(opciones):
+                            col_lower = col.lower()
+                            if col_lower == 'name':
+                                indice_nombre = i
+                            elif col_lower == 'firstsurname':
+                                indice_apellido1 = i + 1
+                            elif col_lower == 'lastsurname':
+                                indice_apellido2 = i + 1
 
                     col_nombre = st.selectbox(
                         "Columna que contiene el nombre (obligatorio):",
                         options=opciones,
                         index=indice_nombre,
-                        key="col_nombre"
+                        key=f"col_nombre_{tipo_fichero}"
                     )
                     col_apellido1 = st.selectbox(
                         "Columna que contiene el primer apellido (opcional):",
                         options=opciones_con_ninguno,
                         index=indice_apellido1,
-                        key="col_apellido1"
+                        key=f"col_apellido1_{tipo_fichero}"
                     )
                     col_apellido2 = st.selectbox(
                         "Columna que contiene el segundo apellido (opcional):",
                         options=opciones_con_ninguno,
                         index=indice_apellido2,
-                        key="col_apellido2"
+                        key=f"col_apellido2_{tipo_fichero}"
                     )
 
                     st.session_state[session_key_df] = df_partner
@@ -395,7 +401,7 @@ def mostrar_auditoria():
 
         tipo_informe = st.radio(
             "Selecciona el informe a visualizar:",
-            ["Adamo", "Likes"],
+            ["Adamo", "Likes", "Bayma"],
             horizontal=True,
             key="tipo_informe"
         )
@@ -482,12 +488,19 @@ def mostrar_auditoria():
             )
 
         # =================================================================
-        # CASO LIKES: comparación por nombre con limpieza y matching difuso
+        # CASO LIKES O BAYMA: comparación por nombre con limpieza y matching difuso
         # =================================================================
-        else:  # Likes
-            session_key_df = 'df_partner_likes'
-            session_key_filename = 'partner_filename_likes'
-            session_key_nombre = 'partner_nombre_cols_likes'
+        else:  # Likes o Bayma
+            if tipo_informe == "Likes":
+                session_key_df = 'df_partner_likes'
+                session_key_filename = 'partner_filename_likes'
+                session_key_nombre = 'partner_nombre_cols_likes'
+                partner_nombre_display = "Likes"
+            else:  # Bayma
+                session_key_df = 'df_partner_bayma'
+                session_key_filename = 'partner_filename_bayma'
+                session_key_nombre = 'partner_nombre_cols_bayma'
+                partner_nombre_display = "Bayma"
 
             if session_key_df not in st.session_state or st.session_state[session_key_df] is None:
                 st.warning(f"Primero debes cargar un fichero de {tipo_informe} en la pestaña 'Cargar fichero'.")
@@ -496,7 +509,7 @@ def mostrar_auditoria():
             partner_filename = st.session_state.get(session_key_filename, f'fichero_{tipo_informe.lower()}')
             config_nombre = st.session_state.get(session_key_nombre, None)
             if config_nombre is None:
-                st.warning("No se ha configurado el nombre para Likes. Ve a 'Cargar fichero' y selecciona las columnas.")
+                st.warning(f"No se ha configurado el nombre para {tipo_informe}. Ve a 'Cargar fichero' y selecciona las columnas.")
                 return
 
             opciones_bd = df_bd.columns.tolist()
@@ -505,12 +518,12 @@ def mostrar_auditoria():
                 "Selecciona la columna de la BD que contiene el nombre del cliente:",
                 options=opciones_bd,
                 index=indice_bd,
-                key="col_bd_nombre"
+                key=f"col_bd_nombre_{tipo_informe}"
             )
 
             # Parámetros de matching difuso
-            usar_match_aproximado = st.checkbox("Usar coincidencias aproximadas (umbral 0.8)", value=True, key="usar_match")
-            umbral_match = st.slider("Umbral de similitud", min_value=0.5, max_value=1.0, value=0.8, step=0.05, key="umbral_match", disabled=not usar_match_aproximado)
+            usar_match_aproximado = st.checkbox("Usar coincidencias aproximadas (umbral 0.8)", value=True, key=f"usar_match_{tipo_informe}")
+            umbral_match = st.slider("Umbral de similitud", min_value=0.5, max_value=1.0, value=0.8, step=0.05, key=f"umbral_match_{tipo_informe}", disabled=not usar_match_aproximado)
 
             # Construir nombre original en partner
             def construir_nombre_fila(row):
@@ -533,102 +546,141 @@ def mostrar_auditoria():
 
             # Obtener nombres únicos y sus claves
             bd_unicos = df_bd[['_key', '_key_original']].drop_duplicates('_key').set_index('_key')['_key_original'].to_dict()
-            likes_unicos = df_partner[['_key', '_key_original']].drop_duplicates('_key').set_index('_key')['_key_original'].to_dict()
+            partner_unicos = df_partner[['_key', '_key_original']].drop_duplicates('_key').set_index('_key')['_key_original'].to_dict()
+
+            # Mapeos de clave a nombre original (para usar más tarde)
+            partner_nombre_map = partner_unicos
+            bd_nombre_map = bd_unicos
+            bd_nombres_originales = list(bd_nombre_map.values())
 
             bd_keys_set = set(bd_unicos.keys())
-            likes_keys_set = set(likes_unicos.keys())
+            partner_keys_set = set(partner_unicos.keys())
 
             # Coincidencias exactas
-            exactas_keys = bd_keys_set & likes_keys_set
+            exactas_keys = bd_keys_set & partner_keys_set
 
             # Inicializar asignaciones
             bd_asignado = {k: False for k in bd_keys_set}
-            likes_asignado = {k: False for k in likes_keys_set}
-            match_dict = {}  # key_likes -> key_bd
+            partner_asignado = {k: False for k in partner_keys_set}
+            match_dict = {}  # key_partner -> key_bd
 
             # Primero asignar las exactas
             for k in exactas_keys:
                 match_dict[k] = k
                 bd_asignado[k] = True
-                likes_asignado[k] = True
+                partner_asignado[k] = True
 
             if usar_match_aproximado:
-                # Para los likes no asignados, buscar el mejor match en BD no asignado con similitud >= umbral
-                likes_no_asignados = [k for k in likes_keys_set if not likes_asignado[k]]
+                # Para los partner no asignados, buscar el mejor match en BD no asignado con similitud >= umbral
+                partner_no_asignados = [k for k in partner_keys_set if not partner_asignado[k]]
                 bd_no_asignados = [k for k in bd_keys_set if not bd_asignado[k]]
 
-                if likes_no_asignados and bd_no_asignados:
-                    likes_nombres = [likes_unicos[k] for k in likes_no_asignados]
+                if partner_no_asignados and bd_no_asignados:
+                    partner_nombres = [partner_unicos[k] for k in partner_no_asignados]
                     bd_nombres = [bd_unicos[k] for k in bd_no_asignados]
 
-                    for i, like_key in enumerate(likes_no_asignados):
-                        like_nombre = likes_nombres[i]
-                        matches = difflib.get_close_matches(like_nombre, bd_nombres, n=1, cutoff=umbral_match)
+                    for i, partner_key in enumerate(partner_no_asignados):
+                        partner_nombre = partner_nombres[i]
+                        matches = difflib.get_close_matches(partner_nombre, bd_nombres, n=1, cutoff=umbral_match)
                         if matches:
                             match_nombre = matches[0]
                             idx = bd_nombres.index(match_nombre)
                             bd_key = bd_no_asignados[idx]
                             if not bd_asignado[bd_key]:
-                                match_dict[like_key] = bd_key
+                                match_dict[partner_key] = bd_key
                                 bd_asignado[bd_key] = True
-                                likes_asignado[like_key] = True
+                                partner_asignado[partner_key] = True
                                 bd_no_asignados.pop(idx)
                                 bd_nombres.pop(idx)
 
             # Determinar conjuntos finales
             coincidentes_keys = set(match_dict.keys())
             solo_bd_keys = {k for k in bd_keys_set if not bd_asignado[k]}
-            solo_likes_keys = {k for k in likes_keys_set if not likes_asignado[k]}
+            solo_partner_keys = {k for k in partner_keys_set if not partner_asignado[k]}
 
             num_coincidentes_unicos = len(coincidentes_keys)
             num_solo_bd_unicos = len(solo_bd_keys)
-            num_solo_likes_unicos = len(solo_likes_keys)
+            num_solo_partner_unicos = len(solo_partner_keys)
 
             # Construir DataFrames de detalle (todas las filas)
             with st.spinner(f"Comparando datos con {tipo_informe}..."):
                 merged = df_bd.merge(df_partner, on='_key', how='outer', indicator=True, suffixes=('_bd', '_partner'))
                 coincidentes = merged[merged['_key'].isin(coincidentes_keys)].copy()
                 solo_bd = merged[merged['_key'].isin(solo_bd_keys) & (merged['_merge'] == 'left_only')].copy()
-                solo_partner = merged[merged['_key'].isin(solo_likes_keys) & (merged['_merge'] == 'right_only')].copy()
-                # Limpiar columnas auxiliares
+                solo_partner = merged[merged['_key'].isin(solo_partner_keys) & (merged['_merge'] == 'right_only')].copy()
+
+                # Guardar versiones con clave para análisis de estados (antes de limpiar)
+                coincidentes_con_key = coincidentes.copy()
+                solo_bd_con_key = solo_bd.copy()
+                solo_partner_con_key = solo_partner.copy()
+
+                # Limpiar columnas auxiliares de los DataFrames que mostraremos
                 for df_temp in [coincidentes, solo_bd, solo_partner]:
                     for col in ['_key', '_key_original', '_key_limpio', '_key_original_bd', '_key_original_partner', '_key_limpio_bd', '_key_limpio_partner']:
                         if col in df_temp.columns:
                             df_temp.drop(columns=[col], inplace=True)
 
-            likes_nombre_map = likes_unicos
-            bd_nombre_map = bd_unicos
-            bd_nombres_originales = list(bd_nombre_map.values())
+            # Análisis de estados
+            estados_validos = ['FINALIZADO']
+
+            # Coincidentes problemáticos (estado != FINALIZADO)
+            if not coincidentes_con_key.empty and 'estado' in coincidentes_con_key.columns:
+                coincidentes_problematicos = coincidentes_con_key[~coincidentes_con_key['estado'].isin(estados_validos)].copy()
+                # Limpiar columnas internas
+                for col in ['_key', '_key_original', '_key_limpio', '_key_original_bd', '_key_original_partner', '_key_limpio_bd', '_key_limpio_partner']:
+                    if col in coincidentes_problematicos.columns:
+                        coincidentes_problematicos.drop(columns=[col], inplace=True)
+            else:
+                coincidentes_problematicos = pd.DataFrame()
+
+            # Solo en BD que están FINALIZADOS
+            if not solo_bd_con_key.empty and 'estado' in solo_bd_con_key.columns:
+                solo_bd_finalizados = solo_bd_con_key[solo_bd_con_key['estado'].isin(estados_validos)].copy()
+                # Limpiar columnas internas
+                for col in ['_key', '_key_original', '_key_limpio', '_key_original_bd', '_key_original_partner', '_key_limpio_bd', '_key_limpio_partner']:
+                    if col in solo_bd_finalizados.columns:
+                        solo_bd_finalizados.drop(columns=[col], inplace=True)
+                # Obtener claves únicas de estos finalizados
+                solo_bd_finalizados_keys = set(solo_bd_con_key[solo_bd_con_key['estado'].isin(estados_validos)]['_key'].unique())
+                solo_bd_finalizados_nombres = [bd_nombre_map.get(k, k) for k in solo_bd_finalizados_keys]
+            else:
+                solo_bd_finalizados = pd.DataFrame()
+                solo_bd_finalizados_nombres = []
 
             def get_close_matches_names(nombre, corte=0.6, max_n=3):
                 return difflib.get_close_matches(nombre, bd_nombres_originales, n=max_n, cutoff=corte)
 
             # -------------------------------------------------------------------
-            # Métricas resumen para Likes
+            # Métricas resumen
             # -------------------------------------------------------------------
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Contratos en BD", len(df_bd))
             with col2:
-                st.metric("Registros Likes", len(df_partner))
+                st.metric(f"Registros {partner_nombre_display}", len(df_partner))
             with col3:
                 st.metric("Coincidentes", f"{num_coincidentes_unicos} clientes\n({len(coincidentes)} registros)")
             with col4:
                 st.metric("Solo en BD", f"{num_solo_bd_unicos} clientes\n({len(solo_bd)} registros)")
-            st.caption(f"Solo en Likes: {num_solo_likes_unicos} clientes ({len(solo_partner)} registros)")
+            st.caption(f"Solo en {partner_nombre_display}: {num_solo_partner_unicos} clientes ({len(solo_partner)} registros)")
+
+            # Mostrar alerta si hay coincidentes problemáticos
+            if not coincidentes_problematicos.empty:
+                st.error(f"⚠️ **Atención:** Se han encontrado **{len(coincidentes_problematicos)}** contratos coincidentes con estado distinto de FINALIZADO. Revisa si se está cobrando indebidamente.")
 
             # -------------------------------------------------------------------
-            # Pestañas para Likes
+            # Pestañas
             # -------------------------------------------------------------------
             tab_titles = [
                 f"✅ Coincidentes ({len(coincidentes)} registros, {num_coincidentes_unicos} clientes)",
+                f"⚠️ Coincidentes no finalizados ({len(coincidentes_problematicos)} registros)",
                 f"🔵 Solo en BD ({len(solo_bd)} registros, {num_solo_bd_unicos} clientes)",
-                f"🟠 Solo en Likes ({len(solo_partner)} registros, {num_solo_likes_unicos} clientes)"
+                f"🟠 Solo en {partner_nombre_display} ({len(solo_partner)} registros, {num_solo_partner_unicos} clientes)"
             ]
             tabs = st.tabs(tab_titles)
 
-            with tabs[0]:
-                mostrar_tabla_con_aggrid(coincidentes, "likes_coincidentes")
+            with tabs[0]:  # Coincidentes totales
+                mostrar_tabla_con_aggrid(coincidentes, f"{tipo_informe}_coincidentes")
                 if num_coincidentes_unicos > 0:
                     with st.expander(f"📋 Lista de clientes únicos coincidentes"):
                         df_nombres = pd.DataFrame({
@@ -636,8 +688,18 @@ def mostrar_auditoria():
                         }).sort_values('Cliente')
                         st.dataframe(df_nombres, width='stretch', hide_index=True)
 
-            with tabs[1]:
-                mostrar_tabla_con_aggrid(solo_bd, "likes_solo_bd")
+            with tabs[1]:  # Coincidentes no finalizados
+                if not coincidentes_problematicos.empty:
+                    mostrar_tabla_con_aggrid(coincidentes_problematicos, f"{tipo_informe}_problematicos")
+                    st.markdown("#### Distribución de estados problemáticos")
+                    estado_counts = coincidentes_problematicos['estado'].value_counts().reset_index()
+                    estado_counts.columns = ['Estado', 'Cantidad']
+                    st.dataframe(estado_counts, width='stretch', hide_index=True)
+                else:
+                    st.success("¡No hay coincidentes con estados problemáticos!")
+
+            with tabs[2]:  # Solo en BD
+                mostrar_tabla_con_aggrid(solo_bd, f"{tipo_informe}_solo_bd")
                 if num_solo_bd_unicos > 0:
                     with st.expander(f"📋 Lista de clientes únicos solo en BD ({num_solo_bd_unicos})"):
                         df_nombres = pd.DataFrame({
@@ -645,60 +707,77 @@ def mostrar_auditoria():
                         }).sort_values('Cliente')
                         st.dataframe(df_nombres, width='stretch', hide_index=True)
 
-            with tabs[2]:
-                mostrar_tabla_con_aggrid(solo_partner, "likes_solo_partner")
-                if num_solo_likes_unicos > 0:
-                    with st.expander(f"📋 Lista de clientes únicos solo en Likes ({num_solo_likes_unicos}) con posibles coincidencias en BD"):
+                # Mostrar los que están FINALIZADOS dentro de solo en BD
+                if not solo_bd_finalizados.empty:
+                    with st.expander(f"🔍 Clientes solo en BD con estado FINALIZADO ({len(solo_bd_finalizados)} registros, {len(solo_bd_finalizados_nombres)} clientes)"):
+                        st.markdown("Estos clientes están en nuestra BD como finalizados, pero no aparecen en el fichero. Podrían ser ingresos perdidos si deberían estar facturándose.")
+                        mostrar_tabla_con_aggrid(solo_bd_finalizados, f"{tipo_informe}_solo_bd_finalizados")
+                        if solo_bd_finalizados_nombres:
+                            df_nombres_fin = pd.DataFrame({
+                                'Cliente': sorted(solo_bd_finalizados_nombres)
+                            })
+                            st.dataframe(df_nombres_fin, width='stretch', hide_index=True)
+
+            with tabs[3]:  # Solo en partner
+                mostrar_tabla_con_aggrid(solo_partner, f"{tipo_informe}_solo_partner")
+                if num_solo_partner_unicos > 0:
+                    with st.expander(f"📋 Lista de clientes únicos solo en {partner_nombre_display} ({num_solo_partner_unicos}) con posibles coincidencias en BD"):
                         data = []
-                        for key in solo_likes_keys:
-                            nombre_likes = likes_nombre_map.get(key, key)
-                            matches = get_close_matches_names(nombre_likes, corte=0.6, max_n=3)
+                        for key in solo_partner_keys:
+                            nombre_partner = partner_nombre_map.get(key, key)
+                            matches = get_close_matches_names(nombre_partner, corte=0.6, max_n=3)
                             if matches:
                                 matches_str = ", ".join(matches)
                             else:
                                 matches_str = "Sin coincidencias cercanas"
                             data.append({
-                                'Cliente en Likes': nombre_likes,
+                                f'Cliente en {partner_nombre_display}': nombre_partner,
                                 'Posibles coincidencias en BD': matches_str
                             })
-                        df_sugerencias = pd.DataFrame(data).sort_values('Cliente en Likes')
+                        df_sugerencias = pd.DataFrame(data).sort_values(f'Cliente en {partner_nombre_display}')
                         st.dataframe(df_sugerencias, width='stretch', hide_index=True)
                         st.caption("Se muestran hasta 3 posibles coincidencias por nombre usando similitud difusa (corte 0.6). Revisa manualmente si alguna corresponde.")
 
             # -------------------------------------------------------------------
-            # Interpretación de resultados para Likes
+            # Interpretación de resultados
             # -------------------------------------------------------------------
             st.markdown("---")
-            st.subheader("📌 Interpretación de resultados (Likes)")
+            st.subheader(f"📌 Interpretación de resultados ({partner_nombre_display})")
             st.markdown(f"""
-            **Likes** es nuestro proveedor de líneas móviles (y ocasionalmente fibra). El objetivo de esta auditoría es verificar que **todos los clientes que nos factura Likes están dados de alta en nuestro sistema (`seguimiento_contratos`)**.
+            **{partner_nombre_display}** es nuestro proveedor. El objetivo de esta auditoría es verificar que **todos los clientes que nos factura {partner_nombre_display} están dados de alta en nuestro sistema (`seguimiento_contratos`)**.
 
-            - **Clientes únicos en Likes:** {num_solo_likes_unicos + num_coincidentes_unicos}  
+            - **Clientes únicos en {partner_nombre_display}:** {num_solo_partner_unicos + num_coincidentes_unicos}  
             - **Clientes únicos en BD:** {num_solo_bd_unicos + num_coincidentes_unicos}
 
             **Lo que nos interesa:**
 
-            ✅ **Coincidentes ({num_coincidentes_unicos} clientes, {len(coincidentes)} registros):**  
+            ✅ **Coincidentes totales ({num_coincidentes_unicos} clientes, {len(coincidentes)} registros):**  
             Estos clientes están correctamente dados de alta en nuestro sistema (coincidencia exacta o aproximada con umbral {umbral_match if usar_match_aproximado else 'exacta'}).
 
-            ❌ **Solo en Likes ({num_solo_likes_unicos} clientes, {len(solo_partner)} registros):**  
-            **¡ATENCIÓN!** Estos clientes aparecen en la factura de Likes pero **no están en nuestra base de datos** (ni exacta ni aproximadamente).  
-            → **Acción:** Revisa la lista de nombres en el expander de la pestaña "Solo en Likes". Allí se muestran posibles coincidencias en la BD con un umbral más bajo (0.6) para ayudar a identificar falsos negativos.
+            ⚠️ **Coincidentes no finalizados ({len(coincidentes_problematicos)} registros):**  
+            Son clientes que aparecen en la factura de {partner_nombre_display} y también en BD, pero su contrato **no está FINALIZADO**. Si se está cobrando, habría que revisar si es correcto.
+
+            ❌ **Solo en {partner_nombre_display} ({num_solo_partner_unicos} clientes, {len(solo_partner)} registros):**  
+            **¡ATENCIÓN!** Estos clientes aparecen en la factura de {partner_nombre_display} pero **no están en nuestra base de datos** (ni exacta ni aproximadamente).  
+            → **Acción:** Revisa la lista de nombres en el expander de la pestaña "Solo en {partner_nombre_display}". Allí se muestran posibles coincidencias en la BD con un umbral más bajo (0.6) para ayudar a identificar falsos negativos.
 
             🔵 **Solo en BD ({num_solo_bd_unicos} clientes, {len(solo_bd)} registros):**  
-            Estos clientes están en nuestra base de datos pero no aparecen en la factura de Likes.  
+            Estos clientes están en nuestra base de datos pero no aparecen en la factura de {partner_nombre_display}.  
             → **Acción:** Verificar si son clientes de solo fibra (en cuyo caso es normal) o si deberían tener también línea móvil y no se está facturando.
 
+            **Dentro de Solo en BD, hay {len(solo_bd_finalizados)} registros con estado FINALIZADO ({len(solo_bd_finalizados_nombres)} clientes).**  
+            Estos podrían ser **ingresos perdidos** si deberían estar siendo facturados por {partner_nombre_display}. Revísalos en el expander correspondiente.
+
             **Resumen de la deuda/reclamación:**  
-            - **Posible facturación indebida:** {num_solo_likes_unicos} clientes facturados sin contrato (revisar coincidencias sugeridas).
-            - **Posible ingreso perdido:** {num_solo_bd_unicos} clientes con contrato pero sin factura (si son de móvil).
+            - **Posible facturación indebida:** {len(coincidentes_problematicos)} registros coincidentes no finalizados + {num_solo_partner_unicos} clientes facturados sin contrato (revisar coincidencias sugeridas).
+            - **Posible ingreso perdido:** {len(solo_bd_finalizados)} registros de clientes finalizados en BD que no están en {partner_nombre_display}.
             """)
 
-            # Registrar en trazabilidad para Likes
+            # Registrar en trazabilidad
             log_trazabilidad(
                 st.session_state.get("username", "auditor"),
                 f"Auditoría de facturación - {tipo_informe}",
-                f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)} regs ({num_coincidentes_unicos} cltes), Solo BD={len(solo_bd)} regs ({num_solo_bd_unicos} cltes), Solo {tipo_informe}={len(solo_partner)} regs ({num_solo_likes_unicos} cltes) (umbral_match={umbral_match if usar_match_aproximado else 'exacto'})"
+                f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)} regs ({num_coincidentes_unicos} cltes), Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)} regs ({num_solo_bd_unicos} cltes), Solo {tipo_informe}={len(solo_partner)} regs ({num_solo_partner_unicos} cltes), BD finalizados sin factura={len(solo_bd_finalizados)} regs ({len(solo_bd_finalizados_nombres)} cltes) (umbral_match={umbral_match if usar_match_aproximado else 'exacto'})"
             )
 
         # -------------------------------------------------------------------
@@ -713,6 +792,10 @@ def mostrar_auditoria():
                 coincidentes.to_excel(writer, sheet_name='Coincidentes', index=False)
                 if tipo_informe == "Adamo" and 'coincidentes_problematicos' in locals() and not coincidentes_problematicos.empty:
                     coincidentes_problematicos.to_excel(writer, sheet_name='Coincidentes_Problematicos', index=False)
+                if tipo_informe != "Adamo" and 'coincidentes_problematicos' in locals() and not coincidentes_problematicos.empty:
+                    coincidentes_problematicos.to_excel(writer, sheet_name='Coincidentes_Problematicos', index=False)
+                if tipo_informe != "Adamo" and 'solo_bd_finalizados' in locals() and not solo_bd_finalizados.empty:
+                    solo_bd_finalizados.to_excel(writer, sheet_name='Solo_BD_Finalizados', index=False)
                 solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
                 solo_partner.to_excel(writer, sheet_name=f'Solo_{tipo_informe}', index=False)
             output.seek(0)
