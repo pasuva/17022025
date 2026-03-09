@@ -1,11 +1,16 @@
 # auditor.py
-# Módulo para auditoría de facturación comparando contratos internos con fichero del partner.
+# Módulo para auditoría de facturación comparando contratos internos con ficheros de Adamo y Likes.
+# Adamo: comparación simple por billing (exactamente como funcionaba).
+# Likes: comparación por nombre del cliente con limpieza y matching difuso.
 
 import streamlit as st
 import pandas as pd
 import io
 import sqlite3
 import sqlitecloud
+import unicodedata
+import re
+import difflib
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_cookies_controller import CookieController
@@ -43,6 +48,44 @@ def log_trazabilidad(usuario, accion, detalles):
         print(f"Error registrando trazabilidad: {e}")
 
 # -------------------------------------------------------------------
+# Normalización de texto para comparación por nombre (solo para Likes)
+# -------------------------------------------------------------------
+def normalizar_texto(texto):
+    """Elimina tildes, pasa a minúsculas y elimina espacios extras."""
+    if pd.isna(texto) or texto is None:
+        return ""
+    texto = str(texto)
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+    texto = re.sub(r'\s+', ' ', texto.strip().lower())
+    return texto
+
+def limpiar_nombre_para_comparacion(nombre):
+    """
+    Limpia el nombre eliminando números, signos de puntuación y palabras vacías comunes.
+    Solo se usa para Likes.
+    """
+    if pd.isna(nombre) or nombre is None:
+        return ""
+    nombre = str(nombre)
+    nombre = re.sub(r'\d+', '', nombre)
+    nombre = re.sub(r'[.,;:\-\(\)]', ' ', nombre)
+    stopwords = [
+        'SEDE', 'CENTRO', 'BAR', 'CAFE', 'RESTAURANTE', 'LOCAL', 'NAVE', 'TALLER',
+        'OFICINA', 'DESPACHO', 'ALMACEN', 'GARAJE', 'APARTAMENTO', 'VIVIENDA',
+        'CASA', 'CHALET', 'ADOSADO', 'PAREADO', 'UNIFAMILIAR', 'BLOQUE', 'PORTAL',
+        'ESCALERA', 'BAJO', 'ENTREPLANTA', 'ATICO', 'DUPLEX', 'ESTUDIO',
+        'POLIGONO', 'PARQUE', 'MERCADO', 'GALERIA', 'PASEO', 'AVENIDA', 'CALLE',
+        'PLAZA', 'CARRETERA', 'CAMINO', 'URBANIZACION', 'RESIDENCIAL', 'BARRIO',
+        'CONJUNTO', 'COMPLEJO', 'EDIFICIO', 'TORRE',
+        'SL', 'SLU', 'SC', 'SA', 'SLL', 'L', 'S', 'C', 'A', 'U',
+        'NAN'
+    ]
+    for palabra in stopwords:
+        nombre = re.sub(r'\b' + re.escape(palabra) + r'\b', '', nombre, flags=re.IGNORECASE)
+    nombre = re.sub(r'\s+', ' ', nombre).strip()
+    return nombre
+
+# -------------------------------------------------------------------
 # Carga de datos desde la base de datos (seguimiento_contratos)
 # -------------------------------------------------------------------
 @st.cache_data(ttl=600, show_spinner="Cargando contratos desde la BD...")
@@ -55,7 +98,6 @@ def cargar_contratos_bd() -> pd.DataFrame:
     try:
         query = "SELECT * FROM seguimiento_contratos"
         df = pd.read_sql(query, conn)
-        # Normalizar nombres de columnas a minúsculas para facilitar manejo
         df.columns = [c.lower() for c in df.columns]
         return df
     except Exception as e:
@@ -65,10 +107,10 @@ def cargar_contratos_bd() -> pd.DataFrame:
         conn.close()
 
 # -------------------------------------------------------------------
-# Procesamiento de la comparación (versión simple que funcionaba)
+# Procesamiento de la comparación (versión simple que funcionaba para Adamo)
 # -------------------------------------------------------------------
-def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
-                         col_bd: str, col_partner: str):
+def procesar_comparacion_simple(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
+                                col_bd: str, col_partner: str):
     """
     Compara dos DataFrames usando las columnas indicadas.
     Devuelve tres DataFrames: coincidentes, solo_bd, solo_partner.
@@ -76,7 +118,6 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
     if df_bd.empty or df_partner.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Asegurar que las columnas existen
     if col_bd not in df_bd.columns:
         st.error(f"La columna '{col_bd}' no existe en los datos de la base de datos.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -84,13 +125,11 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
         st.error(f"La columna '{col_partner}' no existe en el fichero subido.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Normalizar a string y limpiar espacios
     df_bd = df_bd.copy()
     df_partner = df_partner.copy()
     df_bd['_key'] = df_bd[col_bd].astype(str).str.strip()
     df_partner['_key'] = df_partner[col_partner].astype(str).str.strip()
 
-    # Realizar merge para identificar coincidencias
     merged = df_bd.merge(df_partner, left_on='_key', right_on='_key',
                          how='outer', indicator=True, suffixes=('_bd', '_partner'))
 
@@ -98,7 +137,6 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
     solo_bd = merged[merged['_merge'] == 'left_only']
     solo_partner = merged[merged['_merge'] == 'right_only']
 
-    # Eliminar columna auxiliar
     for df_temp in [coincidentes, solo_bd, solo_partner]:
         if '_key' in df_temp.columns:
             df_temp.drop(columns=['_key'], inplace=True)
@@ -106,10 +144,50 @@ def procesar_comparacion(df_bd: pd.DataFrame, df_partner: pd.DataFrame,
     return coincidentes, solo_bd, solo_partner
 
 # -------------------------------------------------------------------
+# Función auxiliar para mostrar tablas con AgGrid (reutilizable)
+# -------------------------------------------------------------------
+def mostrar_tabla_con_aggrid(df, key_suffix, columnas_extra=None):
+    if df.empty:
+        st.info("No hay registros en esta categoría.")
+        return
+    # Seleccionar todas las columnas excepto las internas (que empiezan con '_')
+    cols_a_mostrar = [c for c in df.columns if not c.startswith('_')]
+    # Priorizar columnas importantes
+    columnas_importantes = ['billing', 'num_contrato', 'cliente', 'estado',
+                            'fecha_inicio_contrato', 'comercial']
+    if columnas_extra:
+        columnas_importantes.extend(columnas_extra)
+    cols_prioritarias = [c for c in cols_a_mostrar if any(imp in c for imp in columnas_importantes)]
+    otras_cols = [c for c in cols_a_mostrar if c not in cols_prioritarias]
+    cols_ordenadas = cols_prioritarias + otras_cols
+    df_display = df[cols_ordenadas].copy()
+
+    gb = GridOptionsBuilder.from_dataframe(df_display)
+    gb.configure_default_column(
+        filter=True,
+        floatingFilter=True,
+        sortable=True,
+        resizable=True,
+        minWidth=100,
+        flex=1
+    )
+    gb.configure_pagination(paginationAutoPageSize=True)
+    gridOptions = gb.build()
+
+    AgGrid(
+        df_display,
+        gridOptions=gridOptions,
+        enable_enterprise_modules=True,
+        update_mode=GridUpdateMode.NO_UPDATE,
+        height=400,
+        theme='alpine-dark',
+        key=f"grid_{key_suffix}"
+    )
+
+# -------------------------------------------------------------------
 # Función principal de la sección de auditoría
 # -------------------------------------------------------------------
 def mostrar_auditoria():
-    """Página de auditoría de facturación: comparación con fichero del partner."""
     controller = CookieController(key="cookies")
 
     st.markdown(
@@ -136,7 +214,6 @@ def mostrar_auditoria():
         unsafe_allow_html=True
     )
 
-    # Sidebar con opción de menú más moderno
     with st.sidebar:
         st.sidebar.markdown("""
                 <style>
@@ -179,7 +256,6 @@ def mostrar_auditoria():
         </style>
     """, unsafe_allow_html=True)
 
-    # Submenú horizontal
     sub_seccion = st.radio(
         "Selecciona una vista",
         ["Cargar fichero", "Informe comparativo"],
@@ -187,14 +263,12 @@ def mostrar_auditoria():
         label_visibility="collapsed"
     )
 
-    # Cargar datos de la BD (cacheados)
     df_bd = cargar_contratos_bd()
 
     if df_bd.empty:
         st.warning("No se pudieron cargar contratos desde la base de datos.")
         return
 
-    # Mostrar información básica de la BD
     st.sidebar.markdown("### 📊 Datos internos")
     st.sidebar.info(f"Total contratos en BD: **{len(df_bd):,}**")
     if 'billing' in df_bd.columns:
@@ -203,165 +277,185 @@ def mostrar_auditoria():
         st.sidebar.warning("La columna 'billing' no existe en la BD.")
 
     # -------------------------------------------------------------------
-    # Pestaña 1: Cargar fichero del partner
+    # Cargar fichero
     # -------------------------------------------------------------------
     if sub_seccion == "Cargar fichero":
         st.header("📁 Cargar fichero del partner")
-        st.markdown("Sube el archivo Excel o CSV que has recibido del partner. Debes indicar qué columna contiene el identificador de alta (normalmente **Servicio Id**).")
+
+        tipo_fichero = st.radio(
+            "Selecciona el tipo de fichero:",
+            ["Adamo", "Likes"],
+            horizontal=True,
+            key="tipo_carga"
+        )
+
+        if tipo_fichero == "Adamo":
+            session_key_df = 'df_partner_adamo'
+            session_key_filename = 'partner_filename_adamo'
+            session_key_col = 'partner_id_col_adamo'
+            texto_ayuda = "normalmente **Servicio Id**"
+        else:
+            session_key_df = 'df_partner_likes'
+            session_key_filename = 'partner_filename_likes'
+            session_key_nombre = 'partner_nombre_cols_likes'
+            texto_ayuda = "selecciona las columnas que forman el nombre del cliente"
+
+        st.markdown(f"Sube el archivo Excel o CSV de **{tipo_fichero}**. {texto_ayuda}.")
 
         uploaded_file = st.file_uploader(
             "Selecciona archivo",
             type=["xlsx", "xls", "csv"],
-            key="auditor_file"
+            key=f"uploader_{tipo_fichero}"
         )
 
         if uploaded_file is not None:
             try:
-                # Leer según extensión
                 if uploaded_file.name.endswith('.csv'):
-                    df_partner = pd.read_csv(uploaded_file)
+                    df_partner = pd.read_csv(uploaded_file, sep=';')
                 else:
                     df_partner = pd.read_excel(uploaded_file)
 
                 st.success(f"Fichero cargado correctamente: {len(df_partner)} filas.")
                 st.dataframe(df_partner.head(10), width='stretch')
 
-                # Seleccionar la columna que contiene el identificador
                 opciones = df_partner.columns.tolist()
-                # Buscar una columna que contenga "servicio id" (insensible a mayúsculas/minúsculas)
-                sugerida = None
-                for col in opciones:
-                    if 'servicio id' in col.lower():
-                        sugerida = col
-                        break
-                indice_default = opciones.index(sugerida) if sugerida else 0
 
-                columna_id = st.selectbox(
-                    "Selecciona la columna que contiene el identificador de alta (Servicio Id):",
-                    options=opciones,
-                    index=indice_default
-                )
+                if tipo_fichero == "Adamo":
+                    sugerida = None
+                    for col in opciones:
+                        if 'servicio id' in col.lower():
+                            sugerida = col
+                            break
+                    indice_default = opciones.index(sugerida) if sugerida else 0
+                    columna_id = st.selectbox(
+                        "Selecciona la columna que contiene el identificador de alta (Servicio Id):",
+                        options=opciones,
+                        index=indice_default,
+                        key=f"select_{tipo_fichero}"
+                    )
+                    st.session_state[session_key_df] = df_partner
+                    st.session_state[session_key_filename] = uploaded_file.name
+                    st.session_state[session_key_col] = columna_id
 
-                # Guardar en session_state
-                st.session_state['df_partner'] = df_partner
-                st.session_state['partner_filename'] = uploaded_file.name
-                st.session_state['partner_id_col'] = columna_id
+                else:  # Likes
+                    st.markdown("#### Configuración del nombre del cliente")
+                    st.info("Selecciona las columnas que contienen el nombre y apellidos. Se concatenarán en el orden: Nombre, Primer apellido, Segundo apellido.")
 
-                st.info("Ahora ve a la pestaña **Informe comparativo** para ver el análisis.")
+                    # Intentar encontrar las columnas por defecto
+                    opciones_con_ninguno = ["(ninguno)"] + opciones
+                    indice_nombre = 0
+                    indice_apellido1 = 0
+                    indice_apellido2 = 0
+
+                    for i, col in enumerate(opciones):
+                        col_lower = col.lower()
+                        if col_lower == 'name':
+                            indice_nombre = i
+                        elif col_lower == 'firstsurname':
+                            indice_apellido1 = i + 1  # +1 porque opciones_con_ninguno tiene "(ninguno)" al inicio
+                        elif col_lower == 'lastsurname':
+                            indice_apellido2 = i + 1
+
+                    col_nombre = st.selectbox(
+                        "Columna que contiene el nombre (obligatorio):",
+                        options=opciones,
+                        index=indice_nombre,
+                        key="col_nombre"
+                    )
+                    col_apellido1 = st.selectbox(
+                        "Columna que contiene el primer apellido (opcional):",
+                        options=opciones_con_ninguno,
+                        index=indice_apellido1,
+                        key="col_apellido1"
+                    )
+                    col_apellido2 = st.selectbox(
+                        "Columna que contiene el segundo apellido (opcional):",
+                        options=opciones_con_ninguno,
+                        index=indice_apellido2,
+                        key="col_apellido2"
+                    )
+
+                    st.session_state[session_key_df] = df_partner
+                    st.session_state[session_key_filename] = uploaded_file.name
+                    st.session_state[session_key_nombre] = {
+                        'nombre': col_nombre,
+                        'apellido1': None if col_apellido1 == "(ninguno)" else col_apellido1,
+                        'apellido2': None if col_apellido2 == "(ninguno)" else col_apellido2
+                    }
+
+                st.info(f"Fichero de {tipo_fichero} guardado. Ahora ve a la pestaña **Informe comparativo** y selecciona '{tipo_fichero}' para ver el análisis.")
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
 
     # -------------------------------------------------------------------
-    # Pestaña 2: Informe comparativo
+    # Informe comparativo
     # -------------------------------------------------------------------
-    else:  # sub_seccion == "Informe comparativo"
+    else:
         st.header("📋 Informe comparativo")
 
-        # Verificar si tenemos datos del partner
-        if 'df_partner' not in st.session_state or st.session_state['df_partner'] is None:
-            st.warning("Primero debes cargar un fichero del partner en la pestaña 'Cargar fichero'.")
-            return
+        tipo_informe = st.radio(
+            "Selecciona el informe a visualizar:",
+            ["Adamo", "Likes"],
+            horizontal=True,
+            key="tipo_informe"
+        )
 
-        df_partner = st.session_state['df_partner']
-        partner_filename = st.session_state.get('partner_filename', 'fichero_partner')
-        partner_id_col = st.session_state.get('partner_id_col', None)
+        # =================================================================
+        # CASO ADAMO: comparación simple por billing (código original)
+        # =================================================================
+        if tipo_informe == "Adamo":
+            session_key_df = 'df_partner_adamo'
+            session_key_filename = 'partner_filename_adamo'
+            session_key_col = 'partner_id_col_adamo'
+            col_bd = 'billing'
 
-        if partner_id_col is None:
-            st.warning("No se ha seleccionado la columna identificadora. Ve a 'Cargar fichero' y selecciona una.")
-            return
+            if session_key_df not in st.session_state or st.session_state[session_key_df] is None:
+                st.warning(f"Primero debes cargar un fichero de {tipo_informe} en la pestaña 'Cargar fichero'.")
+                return
+            df_partner = st.session_state[session_key_df]
+            partner_filename = st.session_state.get(session_key_filename, f'fichero_{tipo_informe.lower()}')
+            partner_id_col = st.session_state.get(session_key_col, None)
+            if partner_id_col is None:
+                st.warning(f"No se ha seleccionado la columna identificadora para {tipo_informe}. Ve a 'Cargar fichero' y selecciona una.")
+                return
 
-        # Realizar la comparación
-        with st.spinner("Comparando datos..."):
-            coincidentes, solo_bd, solo_partner = procesar_comparacion(
-                df_bd, df_partner,
-                col_bd='billing',
-                col_partner=partner_id_col
-            )
+            with st.spinner(f"Comparando datos con {tipo_informe}..."):
+                coincidentes, solo_bd, solo_partner = procesar_comparacion_simple(
+                    df_bd, df_partner,
+                    col_bd=col_bd,
+                    col_partner=partner_id_col
+                )
 
-        # -------------------------------------------------------------------
-        # Métricas resumen
-        # -------------------------------------------------------------------
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Contratos en BD", len(df_bd))
-        with col2:
-            st.metric("Registros partner", len(df_partner))
-        with col3:
-            st.metric("Coincidentes", len(coincidentes))
-        with col4:
-            st.metric("Solo en BD", len(solo_bd))
-        st.caption(f"Solo en partner: {len(solo_partner)}")
+            # Para Adamo, el número de registros coincide con el de clientes (IDs únicos)
+            num_coincidentes_unicos = len(coincidentes)
+            num_solo_bd_unicos = len(solo_bd)
+            num_solo_likes_unicos = len(solo_partner)
 
-        # -------------------------------------------------------------------
-        # Separar coincidentes según estado
-        # -------------------------------------------------------------------
-        estados_validos = ['FINALIZADO']
-        if not coincidentes.empty and 'estado' in coincidentes.columns:
-            coincidentes_validos = coincidentes[coincidentes['estado'].isin(estados_validos)]
-            coincidentes_problematicos = coincidentes[~coincidentes['estado'].isin(estados_validos)]
-        else:
-            coincidentes_validos = coincidentes
-            coincidentes_problematicos = pd.DataFrame()
+            # Separar coincidentes según estado
+            estados_validos = ['FINALIZADO']
+            if not coincidentes.empty and 'estado' in coincidentes.columns:
+                coincidentes_problematicos = coincidentes[~coincidentes['estado'].isin(estados_validos)]
+            else:
+                coincidentes_problematicos = pd.DataFrame()
 
-        # Mostrar alerta si hay problemáticos
-        if not coincidentes_problematicos.empty:
-            st.error(f"⚠️ **Atención:** Se han encontrado **{len(coincidentes_problematicos)}** contratos coincidentes con estado distinto de FINALIZADO. Revisa si se está cobrando indebidamente.")
+            # Mostrar alerta si hay problemáticos
+            if not coincidentes_problematicos.empty:
+                st.error(f"⚠️ **Atención:** Se han encontrado **{len(coincidentes_problematicos)}** contratos coincidentes con estado distinto de FINALIZADO. Revisa si se está cobrando indebidamente.")
 
-        # -------------------------------------------------------------------
-        # Pestañas para cada categoría
-        # -------------------------------------------------------------------
-        if len(coincidentes) > 0 or len(solo_bd) > 0 or len(solo_partner) > 0:
-            # Creamos pestañas: Coincidentes totales, Problemáticos, Solo BD, Solo Partner
+            # Pestañas: Coincidentes totales, Problemáticos, Solo BD, Solo Partner
             tab_titles = [
                 f"✅ Coincidentes totales ({len(coincidentes)})",
                 f"⚠️ Coincidentes no finalizados ({len(coincidentes_problematicos)})",
                 f"🔵 Solo en BD ({len(solo_bd)})",
-                f"🟠 Solo en partner ({len(solo_partner)})"
+                f"🟠 Solo en {tipo_informe} ({len(solo_partner)})"
             ]
             tabs = st.tabs(tab_titles)
 
-            # Función auxiliar para mostrar tabla con AgGrid
-            def mostrar_tabla_con_aggrid(df, key_suffix):
-                if df.empty:
-                    st.info("No hay registros en esta categoría.")
-                    return
-                # Seleccionar columnas para mostrar
-                columnas_importantes = ['billing', 'num_contrato', 'cliente', 'estado',
-                                        'fecha_inicio_contrato', 'comercial', partner_id_col]
-                cols_mostrar = [c for c in columnas_importantes if c in df.columns]
-                # Añadir algunas columnas adicionales si hay espacio
-                otras_cols = [c for c in df.columns if c not in cols_mostrar][:5]
-                cols_mostrar += otras_cols
-                df_display = df[cols_mostrar].copy()
-
-                gb = GridOptionsBuilder.from_dataframe(df_display)
-                gb.configure_default_column(
-                    filter=True,
-                    floatingFilter=True,
-                    sortable=True,
-                    resizable=True,
-                    minWidth=100,
-                    flex=1
-                )
-                gb.configure_pagination(paginationAutoPageSize=True)
-                gridOptions = gb.build()
-
-                AgGrid(
-                    df_display,
-                    gridOptions=gridOptions,
-                    enable_enterprise_modules=True,
-                    update_mode=GridUpdateMode.NO_UPDATE,
-                    height=400,
-                    theme='alpine-dark',
-                    key=f"grid_{key_suffix}"
-                )
-
             with tabs[0]:
-                mostrar_tabla_con_aggrid(coincidentes, "coincidentes_total")
+                mostrar_tabla_con_aggrid(coincidentes, "adamo_coincidentes", [partner_id_col])
             with tabs[1]:
                 if not coincidentes_problematicos.empty:
-                    mostrar_tabla_con_aggrid(coincidentes_problematicos, "coincidentes_problematicos")
-                    # Resumen de estados problemáticos
+                    mostrar_tabla_con_aggrid(coincidentes_problematicos, "adamo_problematicos", [partner_id_col])
                     st.markdown("#### Distribución de estados problemáticos")
                     estado_counts = coincidentes_problematicos['estado'].value_counts().reset_index()
                     estado_counts.columns = ['Estado', 'Cantidad']
@@ -369,74 +463,287 @@ def mostrar_auditoria():
                 else:
                     st.success("¡No hay coincidentes con estados problemáticos!")
             with tabs[2]:
-                mostrar_tabla_con_aggrid(solo_bd, "solo_bd")
+                mostrar_tabla_con_aggrid(solo_bd, "adamo_solo_bd", [partner_id_col])
             with tabs[3]:
-                mostrar_tabla_con_aggrid(solo_partner, "solo_partner")
+                mostrar_tabla_con_aggrid(solo_partner, "adamo_solo_partner", [partner_id_col])
+
+            # Análisis adicional de estados (expandible)
+            if not coincidentes.empty and 'estado' in coincidentes.columns:
+                with st.expander("🔍 Ver distribución completa de estados en coincidentes"):
+                    estado_counts = coincidentes['estado'].value_counts().reset_index()
+                    estado_counts.columns = ['Estado', 'Cantidad']
+                    st.dataframe(estado_counts, width='stretch', hide_index=True)
+
+            # Registrar en trazabilidad
+            log_trazabilidad(
+                st.session_state.get("username", "auditor"),
+                f"Auditoría de facturación - {tipo_informe}",
+                f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)}, Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)}, Solo {tipo_informe}={len(solo_partner)}"
+            )
+
+        # =================================================================
+        # CASO LIKES: comparación por nombre con limpieza y matching difuso
+        # =================================================================
+        else:  # Likes
+            session_key_df = 'df_partner_likes'
+            session_key_filename = 'partner_filename_likes'
+            session_key_nombre = 'partner_nombre_cols_likes'
+
+            if session_key_df not in st.session_state or st.session_state[session_key_df] is None:
+                st.warning(f"Primero debes cargar un fichero de {tipo_informe} en la pestaña 'Cargar fichero'.")
+                return
+            df_partner = st.session_state[session_key_df]
+            partner_filename = st.session_state.get(session_key_filename, f'fichero_{tipo_informe.lower()}')
+            config_nombre = st.session_state.get(session_key_nombre, None)
+            if config_nombre is None:
+                st.warning("No se ha configurado el nombre para Likes. Ve a 'Cargar fichero' y selecciona las columnas.")
+                return
+
+            opciones_bd = df_bd.columns.tolist()
+            indice_bd = opciones_bd.index('cliente') if 'cliente' in opciones_bd else 0
+            col_bd_nombre = st.selectbox(
+                "Selecciona la columna de la BD que contiene el nombre del cliente:",
+                options=opciones_bd,
+                index=indice_bd,
+                key="col_bd_nombre"
+            )
+
+            # Parámetros de matching difuso
+            usar_match_aproximado = st.checkbox("Usar coincidencias aproximadas (umbral 0.8)", value=True, key="usar_match")
+            umbral_match = st.slider("Umbral de similitud", min_value=0.5, max_value=1.0, value=0.8, step=0.05, key="umbral_match", disabled=not usar_match_aproximado)
+
+            # Construir nombre original en partner
+            def construir_nombre_fila(row):
+                partes = []
+                if config_nombre['nombre'] and config_nombre['nombre'] in row:
+                    partes.append(str(row[config_nombre['nombre']]))
+                if config_nombre['apellido1'] and config_nombre['apellido1'] in row:
+                    partes.append(str(row[config_nombre['apellido1']]))
+                if config_nombre['apellido2'] and config_nombre['apellido2'] in row:
+                    partes.append(str(row[config_nombre['apellido2']]))
+                return ' '.join(partes).strip()
+
+            df_partner['_key_original'] = df_partner.apply(construir_nombre_fila, axis=1)
+            df_partner['_key_limpio'] = df_partner['_key_original'].apply(limpiar_nombre_para_comparacion)
+            df_partner['_key'] = df_partner['_key_limpio'].apply(normalizar_texto)
+
+            df_bd['_key_original'] = df_bd[col_bd_nombre].astype(str)
+            df_bd['_key_limpio'] = df_bd['_key_original'].apply(limpiar_nombre_para_comparacion)
+            df_bd['_key'] = df_bd['_key_limpio'].apply(normalizar_texto)
+
+            # Obtener nombres únicos y sus claves
+            bd_unicos = df_bd[['_key', '_key_original']].drop_duplicates('_key').set_index('_key')['_key_original'].to_dict()
+            likes_unicos = df_partner[['_key', '_key_original']].drop_duplicates('_key').set_index('_key')['_key_original'].to_dict()
+
+            bd_keys_set = set(bd_unicos.keys())
+            likes_keys_set = set(likes_unicos.keys())
+
+            # Coincidencias exactas
+            exactas_keys = bd_keys_set & likes_keys_set
+
+            # Inicializar asignaciones
+            bd_asignado = {k: False for k in bd_keys_set}
+            likes_asignado = {k: False for k in likes_keys_set}
+            match_dict = {}  # key_likes -> key_bd
+
+            # Primero asignar las exactas
+            for k in exactas_keys:
+                match_dict[k] = k
+                bd_asignado[k] = True
+                likes_asignado[k] = True
+
+            if usar_match_aproximado:
+                # Para los likes no asignados, buscar el mejor match en BD no asignado con similitud >= umbral
+                likes_no_asignados = [k for k in likes_keys_set if not likes_asignado[k]]
+                bd_no_asignados = [k for k in bd_keys_set if not bd_asignado[k]]
+
+                if likes_no_asignados and bd_no_asignados:
+                    likes_nombres = [likes_unicos[k] for k in likes_no_asignados]
+                    bd_nombres = [bd_unicos[k] for k in bd_no_asignados]
+
+                    for i, like_key in enumerate(likes_no_asignados):
+                        like_nombre = likes_nombres[i]
+                        matches = difflib.get_close_matches(like_nombre, bd_nombres, n=1, cutoff=umbral_match)
+                        if matches:
+                            match_nombre = matches[0]
+                            idx = bd_nombres.index(match_nombre)
+                            bd_key = bd_no_asignados[idx]
+                            if not bd_asignado[bd_key]:
+                                match_dict[like_key] = bd_key
+                                bd_asignado[bd_key] = True
+                                likes_asignado[like_key] = True
+                                bd_no_asignados.pop(idx)
+                                bd_nombres.pop(idx)
+
+            # Determinar conjuntos finales
+            coincidentes_keys = set(match_dict.keys())
+            solo_bd_keys = {k for k in bd_keys_set if not bd_asignado[k]}
+            solo_likes_keys = {k for k in likes_keys_set if not likes_asignado[k]}
+
+            num_coincidentes_unicos = len(coincidentes_keys)
+            num_solo_bd_unicos = len(solo_bd_keys)
+            num_solo_likes_unicos = len(solo_likes_keys)
+
+            # Construir DataFrames de detalle (todas las filas)
+            with st.spinner(f"Comparando datos con {tipo_informe}..."):
+                merged = df_bd.merge(df_partner, on='_key', how='outer', indicator=True, suffixes=('_bd', '_partner'))
+                coincidentes = merged[merged['_key'].isin(coincidentes_keys)].copy()
+                solo_bd = merged[merged['_key'].isin(solo_bd_keys) & (merged['_merge'] == 'left_only')].copy()
+                solo_partner = merged[merged['_key'].isin(solo_likes_keys) & (merged['_merge'] == 'right_only')].copy()
+                # Limpiar columnas auxiliares
+                for df_temp in [coincidentes, solo_bd, solo_partner]:
+                    for col in ['_key', '_key_original', '_key_limpio', '_key_original_bd', '_key_original_partner', '_key_limpio_bd', '_key_limpio_partner']:
+                        if col in df_temp.columns:
+                            df_temp.drop(columns=[col], inplace=True)
+
+            likes_nombre_map = likes_unicos
+            bd_nombre_map = bd_unicos
+            bd_nombres_originales = list(bd_nombre_map.values())
+
+            def get_close_matches_names(nombre, corte=0.6, max_n=3):
+                return difflib.get_close_matches(nombre, bd_nombres_originales, n=max_n, cutoff=corte)
 
             # -------------------------------------------------------------------
-            # Botones de descarga
+            # Métricas resumen para Likes
             # -------------------------------------------------------------------
-            col_d1, col_d2, col_d3 = st.columns(3)
-            with col_d1:
-                # Descargar informe completo Excel
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df_bd.to_excel(writer, sheet_name='Contratos_BD', index=False)
-                    df_partner.to_excel(writer, sheet_name='Fichero_Partner', index=False)
-                    coincidentes.to_excel(writer, sheet_name='Coincidentes', index=False)
-                    if not coincidentes_problematicos.empty:
-                        coincidentes_problematicos.to_excel(writer, sheet_name='Coincidentes_Problematicos', index=False)
-                    solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
-                    solo_partner.to_excel(writer, sheet_name='Solo_Partner', index=False)
-                output.seek(0)
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Contratos en BD", len(df_bd))
+            with col2:
+                st.metric("Registros Likes", len(df_partner))
+            with col3:
+                st.metric("Coincidentes", f"{num_coincidentes_unicos} clientes\n({len(coincidentes)} registros)")
+            with col4:
+                st.metric("Solo en BD", f"{num_solo_bd_unicos} clientes\n({len(solo_bd)} registros)")
+            st.caption(f"Solo en Likes: {num_solo_likes_unicos} clientes ({len(solo_partner)} registros)")
 
-                st.download_button(
-                    label="📥 Descargar informe completo (Excel)",
-                    data=output,
-                    file_name=f"auditoria_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+            # -------------------------------------------------------------------
+            # Pestañas para Likes
+            # -------------------------------------------------------------------
+            tab_titles = [
+                f"✅ Coincidentes ({len(coincidentes)} registros, {num_coincidentes_unicos} clientes)",
+                f"🔵 Solo en BD ({len(solo_bd)} registros, {num_solo_bd_unicos} clientes)",
+                f"🟠 Solo en Likes ({len(solo_partner)} registros, {num_solo_likes_unicos} clientes)"
+            ]
+            tabs = st.tabs(tab_titles)
 
-            with col_d2:
-                # Descargar solo discrepancias (solo BD y solo partner)
-                output_disc = io.BytesIO()
-                with pd.ExcelWriter(output_disc, engine='xlsxwriter') as writer:
-                    solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
-                    solo_partner.to_excel(writer, sheet_name='Solo_Partner', index=False)
-                output_disc.seek(0)
+            with tabs[0]:
+                mostrar_tabla_con_aggrid(coincidentes, "likes_coincidentes")
+                if num_coincidentes_unicos > 0:
+                    with st.expander(f"📋 Lista de clientes únicos coincidentes"):
+                        df_nombres = pd.DataFrame({
+                            'Cliente': [bd_nombre_map.get(k, k) for k in coincidentes_keys if k in bd_nombre_map]
+                        }).sort_values('Cliente')
+                        st.dataframe(df_nombres, width='stretch', hide_index=True)
 
-                st.download_button(
-                    label="📥 Descargar solo discrepancias",
-                    data=output_disc,
-                    file_name=f"discrepancias_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+            with tabs[1]:
+                mostrar_tabla_con_aggrid(solo_bd, "likes_solo_bd")
+                if num_solo_bd_unicos > 0:
+                    with st.expander(f"📋 Lista de clientes únicos solo en BD ({num_solo_bd_unicos})"):
+                        df_nombres = pd.DataFrame({
+                            'Cliente': [bd_nombre_map[k] for k in solo_bd_keys if k in bd_nombre_map]
+                        }).sort_values('Cliente')
+                        st.dataframe(df_nombres, width='stretch', hide_index=True)
 
-            with col_d3:
-                if st.button("🔄 Refrescar datos de BD", use_container_width=True):
-                    st.cache_data.clear()
-                    st.rerun()
+            with tabs[2]:
+                mostrar_tabla_con_aggrid(solo_partner, "likes_solo_partner")
+                if num_solo_likes_unicos > 0:
+                    with st.expander(f"📋 Lista de clientes únicos solo en Likes ({num_solo_likes_unicos}) con posibles coincidencias en BD"):
+                        data = []
+                        for key in solo_likes_keys:
+                            nombre_likes = likes_nombre_map.get(key, key)
+                            matches = get_close_matches_names(nombre_likes, corte=0.6, max_n=3)
+                            if matches:
+                                matches_str = ", ".join(matches)
+                            else:
+                                matches_str = "Sin coincidencias cercanas"
+                            data.append({
+                                'Cliente en Likes': nombre_likes,
+                                'Posibles coincidencias en BD': matches_str
+                            })
+                        df_sugerencias = pd.DataFrame(data).sort_values('Cliente en Likes')
+                        st.dataframe(df_sugerencias, width='stretch', hide_index=True)
+                        st.caption("Se muestran hasta 3 posibles coincidencias por nombre usando similitud difusa (corte 0.6). Revisa manualmente si alguna corresponde.")
 
-        else:
-            st.info("No hay datos para mostrar tras la comparación.")
+            # -------------------------------------------------------------------
+            # Interpretación de resultados para Likes
+            # -------------------------------------------------------------------
+            st.markdown("---")
+            st.subheader("📌 Interpretación de resultados (Likes)")
+            st.markdown(f"""
+            **Likes** es nuestro proveedor de líneas móviles (y ocasionalmente fibra). El objetivo de esta auditoría es verificar que **todos los clientes que nos factura Likes están dados de alta en nuestro sistema (`seguimiento_contratos`)**.
+
+            - **Clientes únicos en Likes:** {num_solo_likes_unicos + num_coincidentes_unicos}  
+            - **Clientes únicos en BD:** {num_solo_bd_unicos + num_coincidentes_unicos}
+
+            **Lo que nos interesa:**
+
+            ✅ **Coincidentes ({num_coincidentes_unicos} clientes, {len(coincidentes)} registros):**  
+            Estos clientes están correctamente dados de alta en nuestro sistema (coincidencia exacta o aproximada con umbral {umbral_match if usar_match_aproximado else 'exacta'}).
+
+            ❌ **Solo en Likes ({num_solo_likes_unicos} clientes, {len(solo_partner)} registros):**  
+            **¡ATENCIÓN!** Estos clientes aparecen en la factura de Likes pero **no están en nuestra base de datos** (ni exacta ni aproximadamente).  
+            → **Acción:** Revisa la lista de nombres en el expander de la pestaña "Solo en Likes". Allí se muestran posibles coincidencias en la BD con un umbral más bajo (0.6) para ayudar a identificar falsos negativos.
+
+            🔵 **Solo en BD ({num_solo_bd_unicos} clientes, {len(solo_bd)} registros):**  
+            Estos clientes están en nuestra base de datos pero no aparecen en la factura de Likes.  
+            → **Acción:** Verificar si son clientes de solo fibra (en cuyo caso es normal) o si deberían tener también línea móvil y no se está facturando.
+
+            **Resumen de la deuda/reclamación:**  
+            - **Posible facturación indebida:** {num_solo_likes_unicos} clientes facturados sin contrato (revisar coincidencias sugeridas).
+            - **Posible ingreso perdido:** {num_solo_bd_unicos} clientes con contrato pero sin factura (si son de móvil).
+            """)
+
+            # Registrar en trazabilidad para Likes
+            log_trazabilidad(
+                st.session_state.get("username", "auditor"),
+                f"Auditoría de facturación - {tipo_informe}",
+                f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)} regs ({num_coincidentes_unicos} cltes), Solo BD={len(solo_bd)} regs ({num_solo_bd_unicos} cltes), Solo {tipo_informe}={len(solo_partner)} regs ({num_solo_likes_unicos} cltes) (umbral_match={umbral_match if usar_match_aproximado else 'exacto'})"
+            )
 
         # -------------------------------------------------------------------
-        # Análisis adicional de estados (opcional)
+        # Botones de descarga (comunes para ambos casos)
         # -------------------------------------------------------------------
-        if not coincidentes.empty and 'estado' in coincidentes.columns:
-            with st.expander("🔍 Ver distribución completa de estados en coincidentes"):
-                estado_counts = coincidentes['estado'].value_counts().reset_index()
-                estado_counts.columns = ['Estado', 'Cantidad']
-                st.dataframe(estado_counts, width='stretch', hide_index=True)
+        col_d1, col_d2, col_d3 = st.columns(3)
+        with col_d1:
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_bd.to_excel(writer, sheet_name='Contratos_BD', index=False)
+                df_partner.to_excel(writer, sheet_name=f'Fichero_{tipo_informe}', index=False)
+                coincidentes.to_excel(writer, sheet_name='Coincidentes', index=False)
+                if tipo_informe == "Adamo" and 'coincidentes_problematicos' in locals() and not coincidentes_problematicos.empty:
+                    coincidentes_problematicos.to_excel(writer, sheet_name='Coincidentes_Problematicos', index=False)
+                solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
+                solo_partner.to_excel(writer, sheet_name=f'Solo_{tipo_informe}', index=False)
+            output.seek(0)
 
-        # Registrar en trazabilidad
-        log_trazabilidad(
-            st.session_state.get("username", "auditor"),
-            "Auditoría de facturación",
-            f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)}, Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)}, Solo Partner={len(solo_partner)}"
-        )
+            st.download_button(
+                label=f"📥 Descargar informe {tipo_informe} (Excel)",
+                data=output,
+                file_name=f"auditoria_{tipo_informe.lower()}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+        with col_d2:
+            output_disc = io.BytesIO()
+            with pd.ExcelWriter(output_disc, engine='xlsxwriter') as writer:
+                solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
+                solo_partner.to_excel(writer, sheet_name=f'Solo_{tipo_informe}', index=False)
+            output_disc.seek(0)
+
+            st.download_button(
+                label=f"📥 Descargar solo discrepancias ({tipo_informe})",
+                data=output_disc,
+                file_name=f"discrepancias_{tipo_informe.lower()}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+        with col_d3:
+            if st.button("🔄 Refrescar datos de BD", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
 
 # -------------------------------------------------------------------
 # Para pruebas independientes (descomentar si se ejecuta solo)
