@@ -9330,13 +9330,14 @@ def mostrar_kpis_seguimiento_contratos():
             # ============================================
             def corregir_fecha_instalacion(fecha_str):
                 """
-                Convierte cualquier fecha reconocible a formato YYYY-MM-DD.
+                Convierte cualquier fecha reconocible a formato DD/MM/YYYY.
                 Maneja:
-                  - DD/MM/YYYY (ej. 17/02/2025)
-                  - YYYY-DD-MM (ej. 2026-12-01 → 2026-01-12)  # el que ya corregíamos
-                  - YYYY-MM-DD (lo deja igual)
+                  - DD/MM/YYYY (lo deja igual)
+                  - YYYY-DD-MM (ej. 2026-12-01 → 01/12/2026)
+                  - YYYY-MM-DD (ej. 2025-02-17 → 17/02/2025)
+                  - YYYYMMDD (ej. 20250217 → 17/02/2025)
                   - Fechas con hora (las trunca)
-                Si no puede, devuelve el original o NaT.
+                Si no puede, devuelve el original.
                 """
                 if pd.isna(fecha_str) or str(fecha_str) in ['NaT', 'nan', 'None', '']:
                     return fecha_str
@@ -9344,24 +9345,22 @@ def mostrar_kpis_seguimiento_contratos():
                 fecha_str = str(fecha_str).strip()
                 # Si ya es datetime, extraer solo la parte de la fecha
                 if isinstance(fecha_str, pd.Timestamp):
-                    return fecha_str.strftime('%Y-%m-%d')
+                    return fecha_str.strftime('%d/%m/%Y')
 
                 # Quitar posible hora
                 if ' ' in fecha_str:
                     fecha_str = fecha_str.split(' ')[0]
 
-                # Intentar detectar formato
                 try:
                     # Caso 1: formato DD/MM/YYYY (con barras)
                     if '/' in fecha_str and fecha_str.count('/') == 2:
                         parts = fecha_str.split('/')
                         if len(parts) == 3:
                             dia, mes, anio = parts
-                            # Verificar que sean dígitos y rangos razonables
                             if dia.isdigit() and mes.isdigit() and anio.isdigit():
                                 d, m, a = int(dia), int(mes), int(anio)
                                 if 1 <= d <= 31 and 1 <= m <= 12 and 1900 <= a <= 2100:
-                                    return f"{a:04d}-{m:02d}-{d:02d}"
+                                    return f"{d:02d}/{m:02d}/{a:04d}"  # ya está bien, pero aseguramos formato
 
                     # Caso 2: formato YYYY-DD-MM (con guiones, año-día-mes)
                     if '-' in fecha_str and fecha_str.count('-') == 2:
@@ -9371,9 +9370,9 @@ def mostrar_kpis_seguimiento_contratos():
                             if anio.isdigit() and dia.isdigit() and mes.isdigit():
                                 a, d, m = int(anio), int(dia), int(mes)
                                 if 1900 <= a <= 2100 and 1 <= d <= 31 and 1 <= m <= 12:
-                                    return f"{a:04d}-{m:02d}-{d:02d}"
+                                    return f"{d:02d}/{m:02d}/{a:04d}"
 
-                    # Caso 3: ya podría ser YYYY-MM-DD (lo dejamos igual si es válido)
+                    # Caso 3: formato YYYY-MM-DD (año-mes-día)
                     if '-' in fecha_str and fecha_str.count('-') == 2:
                         parts = fecha_str.split('-')
                         if len(parts) == 3:
@@ -9381,14 +9380,14 @@ def mostrar_kpis_seguimiento_contratos():
                             if anio.isdigit() and mes.isdigit() and dia.isdigit():
                                 a, m, d = int(anio), int(mes), int(dia)
                                 if 1900 <= a <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
-                                    return fecha_str  # ya está bien
+                                    return f"{d:02d}/{m:02d}/{a:04d}"
 
                     # Caso 4: fecha compacta YYYYMMDD
                     if len(fecha_str) == 8 and fecha_str.isdigit():
                         anio = fecha_str[0:4]
                         mes = fecha_str[4:6]
                         dia = fecha_str[6:8]
-                        return f"{anio}-{mes}-{dia}"
+                        return f"{int(dia):02d}/{int(mes):02d}/{int(anio):04d}"
 
                 except Exception as e:
                     # Si falla, intentamos con pandas
@@ -9396,14 +9395,14 @@ def mostrar_kpis_seguimiento_contratos():
 
                 # Último recurso: usar pandas para parsear
                 try:
-                    fecha_dt = pd.to_datetime(fecha_str, errors='coerce',
-                                              dayfirst=True)  # probamos primero con día primero
+                    # Probamos primero con día primero (formato europeo)
+                    fecha_dt = pd.to_datetime(fecha_str, errors='coerce', dayfirst=True)
                     if pd.notna(fecha_dt):
-                        return fecha_dt.strftime('%Y-%m-%d')
+                        return fecha_dt.strftime('%d/%m/%Y')
                     # Si no, probamos con año primero
                     fecha_dt = pd.to_datetime(fecha_str, errors='coerce', yearfirst=True)
                     if pd.notna(fecha_dt):
-                        return fecha_dt.strftime('%Y-%m-%d')
+                        return fecha_dt.strftime('%d/%m/%Y')
                 except:
                     pass
 
@@ -9871,51 +9870,32 @@ def mostrar_kpis_seguimiento_contratos():
                     df_a_mostrar['permanencia'] = None
 
             # ============================================
-            # CORREGIR FORMATO DE FECHA_INSTALACION (MEJORADA)
+            # CORREGIR FORMATO DE FECHA_INSTALACION (SOLO TEXTO)
             # ============================================
             if 'fecha_instalacion' in df_a_mostrar.columns:
                 # Guardar valores originales para comparación
                 fechas_originales = df_a_mostrar['fecha_instalacion'].copy()
 
-                # Mostrar algunas fechas antes de la corrección
+                # Mostrar algunas fechas antes de la corrección (opcional)
                 st.write("🔍 **Ejemplos de fechas de instalación antes de corregir:**")
                 ejemplos_antes = df_a_mostrar[['fecha_instalacion']].dropna().head(5)
                 st.write(ejemplos_antes)
 
-                # Aplicar corrección
-                df_a_mostrar['fecha_instalacion_corregida'] = df_a_mostrar['fecha_instalacion'].apply(
-                    corregir_fecha_instalacion)
+                # Aplicar corrección y reemplazar directamente la columna
+                df_a_mostrar['fecha_instalacion'] = df_a_mostrar['fecha_instalacion'].apply(corregir_fecha_instalacion)
 
-                # Verificar si hubo cambios
-                cambios = (fechas_originales.astype(str) != df_a_mostrar['fecha_instalacion_corregida'].astype(
-                    str)).sum()
-
+                # Verificar cuántas cambiaron
+                cambios = (fechas_originales.astype(str) != df_a_mostrar['fecha_instalacion'].astype(str)).sum()
                 if cambios > 0:
-                    st.success(f"✅ Se corrigieron {cambios} fechas de instalación (año-dia-mes → año-mes-dia)")
+                    st.success(f"✅ Se corrigieron {cambios} fechas de instalación (formato unificado a YYYY-MM-DD)")
 
-                    # Mostrar algunos ejemplos de corrección
+                    # Mostrar algunos ejemplos de corrección (opcional)
                     st.write("📊 **Ejemplos de corrección:**")
-                    ejemplos_df = df_a_mostrar[['fecha_instalacion', 'fecha_instalacion_corregida']].dropna().head(5)
-                    for idx, row in ejemplos_df.iterrows():
-                        st.write(f"  • {row['fecha_instalacion']} → {row['fecha_instalacion_corregida']}")
-
-                # Intentar convertir a datetime
-                try:
-                    df_a_mostrar['fecha_instalacion_datetime'] = pd.to_datetime(
-                        df_a_mostrar['fecha_instalacion_corregida'],
-                        errors='coerce'
-                    )
-
-                    # Reemplazar la columna original
-                    df_a_mostrar['fecha_instalacion'] = df_a_mostrar['fecha_instalacion_datetime']
-                    df_a_mostrar = df_a_mostrar.drop(['fecha_instalacion_corregida', 'fecha_instalacion_datetime'],
-                                                     axis=1)
-
-                except Exception as e:
-                    st.warning(f"⚠️ Error al convertir fechas: {e}")
-                    # Al menos mantener las correcciones en formato string
-                    df_a_mostrar['fecha_instalacion'] = df_a_mostrar['fecha_instalacion_corregida']
-                    df_a_mostrar = df_a_mostrar.drop('fecha_instalacion_corregida', axis=1)
+                    ejemplos_df = pd.DataFrame({
+                        'original': fechas_originales.head(5),
+                        'corregida': df_a_mostrar['fecha_instalacion'].head(5)
+                    })
+                    st.dataframe(ejemplos_df)
 
             # ============================================
             # FILTROS (ACTUALIZADOS - SIN FECHA INGRESO)
