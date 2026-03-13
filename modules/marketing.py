@@ -9475,12 +9475,90 @@ def mostrar_kpis_seguimiento_contratos():
                             columnas_para_merge.append(col_importe_remesa)
 
                         if len(columnas_para_merge) > 1:  # Si hay al menos una columna además del ID
-                            # Hacer un merge LEFT por ID de contrato
-                            df_expandido = df_contratos_mod.merge(
-                                df_tipos_mod[columnas_para_merge],
-                                on='id_contrato_num',
-                                how='left'
-                            )
+
+                            # ============================================
+                            # IDENTIFICAR CLIENTES ESPECIALES
+                            # ============================================
+                            # Buscar columna de cliente (similar a como se hace después)
+                            col_cliente = next((col for col in df_contratos_mod.columns if 'cliente' in col), None)
+                            clientes_especiales = ['NETCAN', 'ASTURPHONE', 'AIR ASTURIAS']
+
+                            # Crear máscara para filas especiales (si existe columna cliente)
+                            if col_cliente:
+                                mask_especial = df_contratos_mod[col_cliente].astype(str).str.contains(
+                                    '|'.join(clientes_especiales), case=False, na=False
+                                )
+                            else:
+                                mask_especial = pd.Series([False] * len(df_contratos_mod))
+
+                            # Separar DataFrames
+                            df_especiales = df_contratos_mod[mask_especial].copy()
+                            df_normales = df_contratos_mod[~mask_especial].copy()
+
+                            # ============================================
+                            # PROCESAR CONTRATOS NORMALES
+                            # ============================================
+                            if not df_normales.empty:
+                                # Eliminar duplicados (una fila por contrato)
+                                df_normales = df_normales.drop_duplicates(subset=['num_contrato'], keep='first')
+
+                                # Merge normal (left join) con tipos
+                                df_normales_exp = df_normales.merge(
+                                    df_tipos_mod[columnas_para_merge],
+                                    on='id_contrato_num',
+                                    how='left'
+                                )
+                            else:
+                                df_normales_exp = pd.DataFrame()
+
+                            # ============================================
+                            # PROCESAR CONTRATOS ESPECIALES
+                            # ============================================
+                            if not df_especiales.empty:
+                                # Agrupar servicios por ID de contrato (concatenar)
+                                servicios_agrupados = df_tipos_mod.groupby('id_contrato_num').agg({
+                                    col_servicio: lambda x: ' | '.join(x.dropna().unique()) if col_servicio else None,
+                                    col_importe_remesa: lambda x: ' | '.join(
+                                        x.dropna().astype(str).unique()) if col_importe_remesa else None
+                                }).reset_index() if col_servicio or col_importe_remesa else pd.DataFrame()
+
+                                # Merge left (conserva todas las filas de especiales)
+                                df_especiales_exp = df_especiales.merge(
+                                    servicios_agrupados,
+                                    on='id_contrato_num',
+                                    how='left'
+                                )
+
+                                # Si no hay servicios agrupados (porque no hay columnas), igualmente unimos
+                                if servicios_agrupados.empty and (col_servicio or col_importe_remesa):
+                                    # Crear columnas vacías
+                                    if col_servicio:
+                                        df_especiales_exp[col_servicio] = None
+                                    if col_importe_remesa:
+                                        df_especiales_exp[col_importe_remesa] = None
+                            else:
+                                df_especiales_exp = pd.DataFrame()
+
+                            # ============================================
+                            # COMBINAR RESULTADOS
+                            # ============================================
+                            df_expandido = pd.concat([df_normales_exp, df_especiales_exp], ignore_index=True)
+
+                            # Asegurar que las columnas de servicio e importe existen (por si algún grupo no las tenía)
+                            if col_servicio and col_servicio not in df_expandido.columns:
+                                df_expandido[col_servicio] = None
+                            if col_importe_remesa and col_importe_remesa not in df_expandido.columns:
+                                df_expandido[col_importe_remesa] = None
+
+                            # Renombrar columnas (igual que antes)
+                            if col_servicio:
+                                df_expandido.rename(columns={col_servicio: 'servicio_contratado'}, inplace=True)
+                            if col_importe_remesa:
+                                df_expandido.rename(columns={col_importe_remesa: 'importe_remesa'}, inplace=True)
+
+                            # ============================================
+                            # CONTINÚA EL CÓDIGO ORIGINAL (formato importe, detección de coincidencias, etc.)
+                            # ============================================
 
                             # Renombrar columnas
                             if col_servicio:
