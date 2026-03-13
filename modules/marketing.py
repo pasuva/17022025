@@ -9330,83 +9330,36 @@ def mostrar_kpis_seguimiento_contratos():
             # ============================================
             def corregir_fecha_instalacion(fecha_str):
                 """
-                Convierte cualquier fecha reconocible a formato DD/MM/YYYY.
-                Maneja:
-                  - DD/MM/YYYY (lo deja igual)
-                  - YYYY-DD-MM (ej. 2026-12-01 → 01/12/2026)
-                  - YYYY-MM-DD (ej. 2025-02-17 → 17/02/2025)
-                  - YYYYMMDD (ej. 20250217 → 17/02/2025)
-                  - Fechas con hora (las trunca)
-                Si no puede, devuelve el original.
+                Convierte una fecha a formato DD/MM/YYYY.
+                - Si es nulo o vacío, devuelve el mismo.
+                - Usa pd.to_datetime con dayfirst=True para interpretar correctamente.
+                - Si falla, prueba con dayfirst=False.
+                - Finalmente formatea a DD/MM/YYYY.
                 """
                 if pd.isna(fecha_str) or str(fecha_str) in ['NaT', 'nan', 'None', '']:
                     return fecha_str
 
-                fecha_str = str(fecha_str).strip()
-                # Si ya es datetime, extraer solo la parte de la fecha
-                if isinstance(fecha_str, pd.Timestamp):
+                # Si ya es datetime, formatear directamente
+                if isinstance(fecha_str, (pd.Timestamp, datetime)):
                     return fecha_str.strftime('%d/%m/%Y')
 
-                # Quitar posible hora
-                if ' ' in fecha_str:
-                    fecha_str = fecha_str.split(' ')[0]
-
+                # Intentar convertir con dayfirst=True (europeo)
                 try:
-                    # Caso 1: formato DD/MM/YYYY (con barras)
-                    if '/' in fecha_str and fecha_str.count('/') == 2:
-                        parts = fecha_str.split('/')
-                        if len(parts) == 3:
-                            dia, mes, anio = parts
-                            if dia.isdigit() and mes.isdigit() and anio.isdigit():
-                                d, m, a = int(dia), int(mes), int(anio)
-                                if 1 <= d <= 31 and 1 <= m <= 12 and 1900 <= a <= 2100:
-                                    return f"{d:02d}/{m:02d}/{a:04d}"  # ya está bien, pero aseguramos formato
-
-                    # Caso 2: formato YYYY-DD-MM (con guiones, año-día-mes)
-                    if '-' in fecha_str and fecha_str.count('-') == 2:
-                        parts = fecha_str.split('-')
-                        if len(parts) == 3:
-                            anio, dia, mes = parts
-                            if anio.isdigit() and dia.isdigit() and mes.isdigit():
-                                a, d, m = int(anio), int(dia), int(mes)
-                                if 1900 <= a <= 2100 and 1 <= d <= 31 and 1 <= m <= 12:
-                                    return f"{d:02d}/{m:02d}/{a:04d}"
-
-                    # Caso 3: formato YYYY-MM-DD (año-mes-día)
-                    if '-' in fecha_str and fecha_str.count('-') == 2:
-                        parts = fecha_str.split('-')
-                        if len(parts) == 3:
-                            anio, mes, dia = parts
-                            if anio.isdigit() and mes.isdigit() and dia.isdigit():
-                                a, m, d = int(anio), int(mes), int(dia)
-                                if 1900 <= a <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
-                                    return f"{d:02d}/{m:02d}/{a:04d}"
-
-                    # Caso 4: fecha compacta YYYYMMDD
-                    if len(fecha_str) == 8 and fecha_str.isdigit():
-                        anio = fecha_str[0:4]
-                        mes = fecha_str[4:6]
-                        dia = fecha_str[6:8]
-                        return f"{int(dia):02d}/{int(mes):02d}/{int(anio):04d}"
-
-                except Exception as e:
-                    # Si falla, intentamos con pandas
-                    pass
-
-                # Último recurso: usar pandas para parsear
-                try:
-                    # Probamos primero con día primero (formato europeo)
                     fecha_dt = pd.to_datetime(fecha_str, errors='coerce', dayfirst=True)
-                    if pd.notna(fecha_dt):
-                        return fecha_dt.strftime('%d/%m/%Y')
-                    # Si no, probamos con año primero
-                    fecha_dt = pd.to_datetime(fecha_str, errors='coerce', yearfirst=True)
                     if pd.notna(fecha_dt):
                         return fecha_dt.strftime('%d/%m/%Y')
                 except:
                     pass
 
-                # Si todo falla, devolvemos el original
+                # Si no, probar con dayfirst=False (americano) como último recurso
+                try:
+                    fecha_dt = pd.to_datetime(fecha_str, errors='coerce', dayfirst=False)
+                    if pd.notna(fecha_dt):
+                        return fecha_dt.strftime('%d/%m/%Y')
+                except:
+                    pass
+
+                # Si todo falla, devolver el original
                 return fecha_str
 
             # ============================================

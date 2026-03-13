@@ -5937,445 +5937,249 @@ def admin_dashboard():
 
             st.toast("✅ Análisis completado y datos listos para exportación")
 
-
-
-
-
         elif sub_seccion == "Seguimiento de Contratos":
-
             st.info("ℹ️ Aquí puedes cargar contratos, mapear columnas, guardar en BD y sincronizar con datos UIS.")
 
             # Función de normalización de fechas (definida dentro para que esté disponible)
-
             def normalizar_fecha(valor):
-
                 """
-
                 Convierte cualquier fecha reconocible a formato YYYY-MM-DD.
-
                 Si no puede, devuelve None.
-
                 """
 
                 if pd.isna(valor) or valor in (None, '', 'NaT'):
                     return None
 
                 # Si ya es datetime, formatear
-
                 if isinstance(valor, (pd.Timestamp, datetime)):
                     return valor.strftime('%Y-%m-%d')
 
                 # Si es string, intentar parsear
-
                 try:
-
                     # Intentar con dayfirst (para DD/MM/YYYY)
-
                     fecha = pd.to_datetime(valor, dayfirst=True, errors='coerce')
-
                     if pd.notna(fecha):
                         return fecha.strftime('%Y-%m-%d')
-
                     # Si no, probar con inferencia automática
-
                     fecha = pd.to_datetime(valor, errors='coerce')
-
                     if pd.notna(fecha):
                         return fecha.strftime('%Y-%m-%d')
-
                 except:
-
                     pass
-
                 return None
 
             if st.button("🔄 Actualizar contratos"):
-
                 with st.spinner("Cargando y guardando contratos desde Google Sheets..."):
-
                     try:
-
                         df = cargar_contratos_google()
-
                         df.columns = df.columns.map(lambda x: str(x).strip().lower() if x is not None else "")
-
                         conn = obtener_conexion()
-
                         cur = conn.cursor()
-
                         cur.execute("DELETE FROM seguimiento_contratos")
-
                         conn.commit()
-
                         total = len(df)
-
                         progress = st.progress(0)
 
                         insert_sql = '''INSERT INTO seguimiento_contratos (
-
                                     num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
-
                                     comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios,
-
                                     SAT, Tipo_cliente, tecnico, metodo_entrada, billing, permanencia
-
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
                         inserted_divisor = 0
-
                         inserted_puerto = 0
-
                         inserted_fecha_fin = 0
-
                         inserted_sat = 0
-
                         inserted_tipo_cliente = 0
-
                         inserted_tecnico = 0
-
                         inserted_metodo_entrada = 0
-
                         inserted_billing = 0
-
                         inserted_permanencia = 0
-
                         inserted_fecha_instalacion = 0  # nuevo contador
 
                         for i, row in df.iterrows():
-
                             ap_id = row.get('apartment_id')
-
                             try:
-
                                 padded_id = 'P' + str(int(ap_id)).zfill(10)
-
                             except:
-
                                 padded_id = None
 
                             # Normalizar todas las fechas
-
                             fecha_instalacion = normalizar_fecha(row.get('fecha_instalacion'))
-
                             fecha_inicio = normalizar_fecha(row.get('fecha_inicio_contrato'))
-
                             fecha_ingreso = normalizar_fecha(row.get('fecha_ingreso'))
-
                             fecha_fin = normalizar_fecha(row.get('fecha_fin_contrato'))
-
                             divisor = row.get('divisor')
-
                             puerto = row.get('puerto')
-
                             sat = row.get('sat')
-
                             tipo_cliente = row.get('tipo_cliente')
-
                             tecnico = row.get('tecnico')
-
                             metodo_entrada = row.get('metodo_entrada')
-
                             billing = row.get('billing')
-
                             permanencia = row.get('permanencia')
 
                             # Contadores
-
                             if divisor not in (None, ''): inserted_divisor += 1
-
                             if puerto not in (None, ''): inserted_puerto += 1
-
                             if fecha_fin not in (None, ''): inserted_fecha_fin += 1
-
                             if sat not in (None, ''): inserted_sat += 1
-
                             if tipo_cliente not in (None, ''): inserted_tipo_cliente += 1
-
                             if tecnico not in (None, ''): inserted_tecnico += 1
-
                             if metodo_entrada not in (None, ''): inserted_metodo_entrada += 1
-
                             if billing not in (None, ''): inserted_billing += 1
-
                             if permanencia not in (None, ''): inserted_permanencia += 1
-
                             if fecha_instalacion not in (None, ''): inserted_fecha_instalacion += 1
 
                             try:
-
                                 cur.execute(insert_sql, (
-
                                     row.get('num_contrato'),
-
                                     row.get('cliente'),
-
                                     row.get('coordenadas'),
-
                                     row.get('estado'),
-
                                     fecha_inicio,  # normalizada
-
                                     fecha_ingreso,  # normalizada
-
                                     row.get('comercial'),
-
                                     fecha_instalacion,  # normalizada
-
                                     padded_id,
-
                                     fecha_fin,  # normalizada
-
                                     divisor,
-
                                     puerto,
-
                                     row.get('comentarios'),
-
                                     sat,
-
                                     tipo_cliente,
-
                                     tecnico,
-
                                     metodo_entrada,
-
                                     billing,
-
                                     permanencia
-
                                 ))
 
                             except Exception as e:
-
                                 st.toast(f"⚠️ Error al insertar fila {i}: {e}")
-
                             progress.progress((i + 1) / total)
 
                         conn.commit()
-
                         st.info(f"📊 Fechas instalación: {inserted_fecha_instalacion}/{total}")
-
                         st.info(f"📊 Divisores: {inserted_divisor}/{total}")
-
                         st.info(f"📊 Puertos: {inserted_puerto}/{total}")
-
                         st.info(f"📊 Fecha fin: {inserted_fecha_fin}/{total}")
-
                         st.info(f"📊 SAT: {inserted_sat}/{total}")
-
                         st.info(f"📊 Tipo cliente: {inserted_tipo_cliente}/{total}")
-
                         st.info(f"📊 Técnico: {inserted_tecnico}/{total}")
-
                         st.info(f"📊 Método entrada: {inserted_metodo_entrada}/{total}")
-
                         st.info(f"📊 Billing: {inserted_billing}/{total}")
-
                         st.info(f"📊 🔥 Permanencia: {inserted_permanencia}/{total}")
 
                         # Mostrar estadísticas de la BD
-
                         cur.execute("""
-
                                     SELECT COUNT(*),
-
                                            COUNT(divisor),
-
                                            COUNT(puerto),
-
                                            COUNT(fecha_fin_contrato),
-
                                            COUNT(SAT),
-
                                            COUNT(Tipo_cliente),
-
                                            COUNT(tecnico),
-
                                            COUNT(metodo_entrada),
-
                                            COUNT(billing),
-
                                            COUNT(permanencia)
-
                                     FROM seguimiento_contratos
-
                                 """)
-
                         stats = cur.fetchone()
-
                         st.toast(
-
                             f"BD → Total:{stats[0]} | Div:{stats[1]} | Pue:{stats[2]} | Fin:{stats[3]} | SAT:{stats[4]} | Tipo:{stats[5]} | Tec:{stats[6]} | Met:{stats[7]} | Bill:{stats[8]} | Perm:{stats[9]}"
-
                         )
 
                         # Mostrar algunas filas de ejemplo con fecha de instalación
-
                         cur.execute("""
-
                                     SELECT num_contrato, fecha_instalacion, fecha_fin_contrato, divisor, puerto, SAT, Tipo_cliente, tecnico, permanencia
-
                                     FROM seguimiento_contratos
-
                                     WHERE fecha_instalacion IS NOT NULL
-
                                     LIMIT 5
-
                                 """)
 
                         st.write("Ejemplos de registros con fecha de instalación:")
-
                         for r in cur.fetchall():
                             st.write(r)
 
                         # Sincronizar con datos_uis
-
                         with obtener_conexion() as conn:
-
                             cur = conn.cursor()
-
                             # divisor
-
                             cur.execute("""
-
                                            UPDATE datos_uis
-
                                            SET divisor = (
-
                                                SELECT sc.divisor
-
                                                FROM seguimiento_contratos sc
-
                                                WHERE sc.apartment_id = datos_uis.apartment_id
-
                                                AND sc.divisor IS NOT NULL
-
                                                LIMIT 1
-
                                            )
-
                                            WHERE apartment_id IN (
-
                                                SELECT apartment_id FROM seguimiento_contratos
-
                                                WHERE divisor IS NOT NULL
-
                                            )
-
                                        """)
 
                             # puerto
-
                             cur.execute("""
-
                                            UPDATE datos_uis
-
                                            SET puerto = (
-
                                                SELECT sc.puerto
-
                                                FROM seguimiento_contratos sc
-
                                                WHERE sc.apartment_id = datos_uis.apartment_id
-
                                                AND sc.puerto IS NOT NULL
-
                                                LIMIT 1
-
                                            )
-
                                            WHERE apartment_id IN (
-
                                                SELECT apartment_id FROM seguimiento_contratos
-
                                                WHERE puerto IS NOT NULL
-
                                            )
-
                                        """)
 
                             # fecha fin
-
                             cur.execute("""
-
                                            UPDATE datos_uis
-
                                            SET fecha_fin_contrato = (
-
                                                SELECT sc.fecha_fin_contrato
-
                                                FROM seguimiento_contratos sc
-
                                                WHERE sc.apartment_id = datos_uis.apartment_id
-
                                                AND sc.fecha_fin_contrato IS NOT NULL
-
                                                LIMIT 1
-
                                            )
-
                                            WHERE apartment_id IN (
-
                                                SELECT apartment_id FROM seguimiento_contratos
-
                                                WHERE fecha_fin_contrato IS NOT NULL
-
                                            )
-
                                        """)
-
                             conn.commit()
-
                         st.toast("✅ Proceso completado correctamente.")
 
-
                     except Exception as e:
-
                         st.toast(f"❌ Error en el proceso: {e}")
-
                         import traceback
-
                         st.code(traceback.format_exc())
 
             # ✅ CHECKBOX RESTAURADO - Mostrar registros existentes
-
             if st.checkbox("Mostrar registros existentes en la base de datos", key="view_existing_contracts_contratos"):
-
                 with st.spinner("Cargando registros de contratos..."):
-
                     try:
-
                         conn = obtener_conexion()
-
                         existing = pd.read_sql("SELECT * FROM seguimiento_contratos", conn)
-
                         conn.close()
 
                         if existing.empty:
-
                             st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
-
                         else:
-
                             # Opcional: formatear fechas para mostrar en DD/MM/YYYY
-
                             for col in ['fecha_inicio_contrato', 'fecha_ingreso', 'fecha_instalacion',
                                         'fecha_fin_contrato']:
-
                                 if col in existing.columns:
                                     existing[col] = pd.to_datetime(existing[col], errors='coerce').dt.strftime(
                                         '%d/%m/%Y')
-
                             cols = st.multiselect("Filtra columnas a mostrar", existing.columns,
-
                                                   default=existing.columns,
-
                                                   key="cols_existing")
-
                             st.dataframe(existing[cols], width='stretch')
-
                     except Exception as e:
-
                         st.toast(f"❌ Error al cargar registros existentes: {e}")
 
         if sub_seccion == "Precontratos":
