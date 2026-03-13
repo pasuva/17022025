@@ -9330,74 +9330,84 @@ def mostrar_kpis_seguimiento_contratos():
             # ============================================
             def corregir_fecha_instalacion(fecha_str):
                 """
-                Convierte fechas en formato AÑO-DIA-MES a AÑO-MES-DIA
-                Ejemplo: 2026-12-01 → 2026-01-12 (donde 12 es el día, 01 es el mes)
+                Convierte cualquier fecha reconocible a formato YYYY-MM-DD.
+                Maneja:
+                  - DD/MM/YYYY (ej. 17/02/2025)
+                  - YYYY-DD-MM (ej. 2026-12-01 → 2026-01-12)  # el que ya corregíamos
+                  - YYYY-MM-DD (lo deja igual)
+                  - Fechas con hora (las trunca)
+                Si no puede, devuelve el original o NaT.
                 """
                 if pd.isna(fecha_str) or str(fecha_str) in ['NaT', 'nan', 'None', '']:
                     return fecha_str
 
                 fecha_str = str(fecha_str).strip()
-
                 # Si ya es datetime, extraer solo la parte de la fecha
                 if isinstance(fecha_str, pd.Timestamp):
                     return fecha_str.strftime('%Y-%m-%d')
 
-                # Remover hora si existe
+                # Quitar posible hora
                 if ' ' in fecha_str:
                     fecha_str = fecha_str.split(' ')[0]
 
+                # Intentar detectar formato
                 try:
-                    # Formato YYYY-DD-MM (con guiones) - ESTE ES EL PROBLEMA
+                    # Caso 1: formato DD/MM/YYYY (con barras)
+                    if '/' in fecha_str and fecha_str.count('/') == 2:
+                        parts = fecha_str.split('/')
+                        if len(parts) == 3:
+                            dia, mes, anio = parts
+                            # Verificar que sean dígitos y rangos razonables
+                            if dia.isdigit() and mes.isdigit() and anio.isdigit():
+                                d, m, a = int(dia), int(mes), int(anio)
+                                if 1 <= d <= 31 and 1 <= m <= 12 and 1900 <= a <= 2100:
+                                    return f"{a:04d}-{m:02d}-{d:02d}"
+
+                    # Caso 2: formato YYYY-DD-MM (con guiones, año-día-mes)
                     if '-' in fecha_str and fecha_str.count('-') == 2:
                         parts = fecha_str.split('-')
                         if len(parts) == 3:
-                            year, day, month = parts
+                            anio, dia, mes = parts
+                            if anio.isdigit() and dia.isdigit() and mes.isdigit():
+                                a, d, m = int(anio), int(dia), int(mes)
+                                if 1900 <= a <= 2100 and 1 <= d <= 31 and 1 <= m <= 12:
+                                    return f"{a:04d}-{m:02d}-{d:02d}"
 
-                            # Verificar que todos sean dígitos
-                            if year.isdigit() and day.isdigit() and month.isdigit():
-                                year_int, day_int, month_int = int(year), int(day), int(month)
-
-                                # Validaciones básicas
-                                if 2000 <= year_int <= 2100 and 1 <= day_int <= 31 and 1 <= month_int <= 12:
-                                    # INTERCAMBIAR DÍA Y MES (porque viene en formato AÑO-DIA-MES)
-                                    return f"{year_int}-{month_int:02d}-{day_int:02d}"
-
-                    # Formato YYYY/DD/MM (con barras)
-                    elif '/' in fecha_str and fecha_str.count('/') == 2:
-                        parts = fecha_str.split('/')
+                    # Caso 3: ya podría ser YYYY-MM-DD (lo dejamos igual si es válido)
+                    if '-' in fecha_str and fecha_str.count('-') == 2:
+                        parts = fecha_str.split('-')
                         if len(parts) == 3:
-                            year, day, month = parts
-                            if year.isdigit() and day.isdigit() and month.isdigit():
-                                year_int, day_int, month_int = int(year), int(day), int(month)
-                                if 2000 <= year_int <= 2100 and 1 <= day_int <= 31 and 1 <= month_int <= 12:
-                                    # INTERCAMBIAR DÍA Y MES
-                                    return f"{year_int}-{month_int:02d}-{day_int:02d}"
+                            anio, mes, dia = parts
+                            if anio.isdigit() and mes.isdigit() and dia.isdigit():
+                                a, m, d = int(anio), int(mes), int(dia)
+                                if 1900 <= a <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
+                                    return fecha_str  # ya está bien
 
-                    # Si no tiene guiones ni barras, intentar parsear directamente
+                    # Caso 4: fecha compacta YYYYMMDD
                     if len(fecha_str) == 8 and fecha_str.isdigit():
-                        # Podría ser YYYYDDMM
-                        year = fecha_str[0:4]
-                        day = fecha_str[4:6]
-                        month = fecha_str[6:8]
-                        if year.isdigit() and day.isdigit() and month.isdigit():
-                            year_int, day_int, month_int = int(year), int(day), int(month)
-                            if 2000 <= year_int <= 2100 and 1 <= day_int <= 31 and 1 <= month_int <= 12:
-                                # INTERCAMBIAR DÍA Y MES
-                                return f"{year_int}-{month_int:02d}-{day_int:02d}"
+                        anio = fecha_str[0:4]
+                        mes = fecha_str[4:6]
+                        dia = fecha_str[6:8]
+                        return f"{anio}-{mes}-{dia}"
 
                 except Exception as e:
-                    print(f"Error corrigiendo fecha {fecha_str}: {e}")
+                    # Si falla, intentamos con pandas
+                    pass
 
-                # Si no se pudo convertir, intentar parsear con pandas
+                # Último recurso: usar pandas para parsear
                 try:
-                    # Primero intentar como AÑO-MES-DIA (formato normal)
+                    fecha_dt = pd.to_datetime(fecha_str, errors='coerce',
+                                              dayfirst=True)  # probamos primero con día primero
+                    if pd.notna(fecha_dt):
+                        return fecha_dt.strftime('%Y-%m-%d')
+                    # Si no, probamos con año primero
                     fecha_dt = pd.to_datetime(fecha_str, errors='coerce', yearfirst=True)
                     if pd.notna(fecha_dt):
                         return fecha_dt.strftime('%Y-%m-%d')
                 except:
                     pass
 
-                # Devolver original si todo falla
+                # Si todo falla, devolvemos el original
                 return fecha_str
 
             # ============================================
@@ -9893,9 +9903,7 @@ def mostrar_kpis_seguimiento_contratos():
                 try:
                     df_a_mostrar['fecha_instalacion_datetime'] = pd.to_datetime(
                         df_a_mostrar['fecha_instalacion_corregida'],
-                        errors='coerce',
-                        yearfirst=True,
-                        format='%Y-%m-%d'
+                        errors='coerce'
                     )
 
                     # Reemplazar la columna original
