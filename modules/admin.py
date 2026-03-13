@@ -5940,9 +5940,54 @@ def admin_dashboard():
 
 
 
+
         elif sub_seccion == "Seguimiento de Contratos":
 
             st.info("ℹ️ Aquí puedes cargar contratos, mapear columnas, guardar en BD y sincronizar con datos UIS.")
+
+            # Función de normalización de fechas (definida dentro para que esté disponible)
+
+            def normalizar_fecha(valor):
+
+                """
+
+                Convierte cualquier fecha reconocible a formato YYYY-MM-DD.
+
+                Si no puede, devuelve None.
+
+                """
+
+                if pd.isna(valor) or valor in (None, '', 'NaT'):
+                    return None
+
+                # Si ya es datetime, formatear
+
+                if isinstance(valor, (pd.Timestamp, datetime)):
+                    return valor.strftime('%Y-%m-%d')
+
+                # Si es string, intentar parsear
+
+                try:
+
+                    # Intentar con dayfirst (para DD/MM/YYYY)
+
+                    fecha = pd.to_datetime(valor, dayfirst=True, errors='coerce')
+
+                    if pd.notna(fecha):
+                        return fecha.strftime('%Y-%m-%d')
+
+                    # Si no, probar con inferencia automática
+
+                    fecha = pd.to_datetime(valor, errors='coerce')
+
+                    if pd.notna(fecha):
+                        return fecha.strftime('%Y-%m-%d')
+
+                except:
+
+                    pass
+
+                return None
 
             if st.button("🔄 Actualizar contratos"):
 
@@ -5968,57 +6013,13 @@ def admin_dashboard():
 
                         insert_sql = '''INSERT INTO seguimiento_contratos (
 
-                            num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
+                                    num_contrato, cliente, coordenadas, estado, fecha_inicio_contrato, fecha_ingreso,
 
-                            comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios,
+                                    comercial, fecha_instalacion, apartment_id, fecha_fin_contrato, divisor, puerto, comentarios,
 
-                            SAT, Tipo_cliente, tecnico, metodo_entrada, billing, permanencia
+                                    SAT, Tipo_cliente, tecnico, metodo_entrada, billing, permanencia
 
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
-
-                        # Función para normalizar fechas
-
-                        def normalizar_fecha(valor):
-
-                            """
-
-                            Convierte cualquier fecha reconocible a formato YYYY-MM-DD.
-
-                            Si no puede, devuelve None.
-
-                            """
-
-                            if pd.isna(valor) or valor in (None, '', 'NaT'):
-                                return None
-
-                            # Si ya es datetime, formatear
-
-                            if isinstance(valor, (pd.Timestamp, datetime)):
-                                return valor.strftime('%Y-%m-%d')
-
-                            # Si es string, intentar parsear
-
-                            try:
-
-                                # Intentar con dayfirst (para DD/MM/YYYY)
-
-                                fecha = pd.to_datetime(valor, dayfirst=True, errors='coerce')
-
-                                if pd.notna(fecha):
-                                    return fecha.strftime('%Y-%m-%d')
-
-                                # Si no, probar con inferencia automática
-
-                                fecha = pd.to_datetime(valor, errors='coerce')
-
-                                if pd.notna(fecha):
-                                    return fecha.strftime('%Y-%m-%d')
-
-                            except:
-
-                                pass
-
-                            return None
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
                         inserted_divisor = 0
 
@@ -6038,6 +6039,8 @@ def admin_dashboard():
 
                         inserted_permanencia = 0
 
+                        inserted_fecha_instalacion = 0  # nuevo contador
+
                         for i, row in df.iterrows():
 
                             ap_id = row.get('apartment_id')
@@ -6054,11 +6057,11 @@ def admin_dashboard():
 
                             fecha_instalacion = normalizar_fecha(row.get('fecha_instalacion'))
 
-                            fecha_fin_contrato = normalizar_fecha(row.get('fecha_fin_contrato'))
-
                             fecha_inicio = normalizar_fecha(row.get('fecha_inicio_contrato'))
 
                             fecha_ingreso = normalizar_fecha(row.get('fecha_ingreso'))
+
+                            fecha_fin = normalizar_fecha(row.get('fecha_fin_contrato'))
 
                             divisor = row.get('divisor')
 
@@ -6076,11 +6079,13 @@ def admin_dashboard():
 
                             permanencia = row.get('permanencia')
 
+                            # Contadores
+
                             if divisor not in (None, ''): inserted_divisor += 1
 
                             if puerto not in (None, ''): inserted_puerto += 1
 
-                            if fecha_fin_contrato not in (None, ''): inserted_fecha_fin += 1
+                            if fecha_fin not in (None, ''): inserted_fecha_fin += 1
 
                             if sat not in (None, ''): inserted_sat += 1
 
@@ -6093,6 +6098,8 @@ def admin_dashboard():
                             if billing not in (None, ''): inserted_billing += 1
 
                             if permanencia not in (None, ''): inserted_permanencia += 1
+
+                            if fecha_instalacion not in (None, ''): inserted_fecha_instalacion += 1
 
                             try:
 
@@ -6116,7 +6123,7 @@ def admin_dashboard():
 
                                     padded_id,
 
-                                    fecha_fin_contrato,  # normalizada
+                                    fecha_fin,  # normalizada
 
                                     divisor,
 
@@ -6146,6 +6153,8 @@ def admin_dashboard():
 
                         conn.commit()
 
+                        st.info(f"📊 Fechas instalación: {inserted_fecha_instalacion}/{total}")
+
                         st.info(f"📊 Divisores: {inserted_divisor}/{total}")
 
                         st.info(f"📊 Puertos: {inserted_puerto}/{total}")
@@ -6164,31 +6173,33 @@ def admin_dashboard():
 
                         st.info(f"📊 🔥 Permanencia: {inserted_permanencia}/{total}")
 
+                        # Mostrar estadísticas de la BD
+
                         cur.execute("""
 
-                            SELECT COUNT(*),
+                                    SELECT COUNT(*),
 
-                                   COUNT(divisor),
+                                           COUNT(divisor),
 
-                                   COUNT(puerto),
+                                           COUNT(puerto),
 
-                                   COUNT(fecha_fin_contrato),
+                                           COUNT(fecha_fin_contrato),
 
-                                   COUNT(SAT),
+                                           COUNT(SAT),
 
-                                   COUNT(Tipo_cliente),
+                                           COUNT(Tipo_cliente),
 
-                                   COUNT(tecnico),
+                                           COUNT(tecnico),
 
-                                   COUNT(metodo_entrada),
+                                           COUNT(metodo_entrada),
 
-                                   COUNT(billing),
+                                           COUNT(billing),
 
-                                   COUNT(permanencia)
+                                           COUNT(permanencia)
 
-                            FROM seguimiento_contratos
+                                    FROM seguimiento_contratos
 
-                        """)
+                                """)
 
                         stats = cur.fetchone()
 
@@ -6198,20 +6209,26 @@ def admin_dashboard():
 
                         )
 
+                        # Mostrar algunas filas de ejemplo con fecha de instalación
+
                         cur.execute("""
 
-                            SELECT apartment_id, fecha_fin_contrato, divisor, puerto, SAT, Tipo_cliente, tecnico, permanencia
+                                    SELECT num_contrato, fecha_instalacion, fecha_fin_contrato, divisor, puerto, SAT, Tipo_cliente, tecnico, permanencia
 
-                            FROM seguimiento_contratos
+                                    FROM seguimiento_contratos
 
-                            WHERE permanencia IS NOT NULL
+                                    WHERE fecha_instalacion IS NOT NULL
 
-                            LIMIT 5
+                                    LIMIT 5
 
-                        """)
+                                """)
+
+                        st.write("Ejemplos de registros con fecha de instalación:")
 
                         for r in cur.fetchall():
                             st.write(r)
+
+                        # Sincronizar con datos_uis
 
                         with obtener_conexion() as conn:
 
@@ -6221,91 +6238,91 @@ def admin_dashboard():
 
                             cur.execute("""
 
-                                   UPDATE datos_uis
+                                           UPDATE datos_uis
 
-                                   SET divisor = (
+                                           SET divisor = (
 
-                                       SELECT sc.divisor
+                                               SELECT sc.divisor
 
-                                       FROM seguimiento_contratos sc
+                                               FROM seguimiento_contratos sc
 
-                                       WHERE sc.apartment_id = datos_uis.apartment_id
+                                               WHERE sc.apartment_id = datos_uis.apartment_id
 
-                                       AND sc.divisor IS NOT NULL
+                                               AND sc.divisor IS NOT NULL
 
-                                       LIMIT 1
+                                               LIMIT 1
 
-                                   )
+                                           )
 
-                                   WHERE apartment_id IN (
+                                           WHERE apartment_id IN (
 
-                                       SELECT apartment_id FROM seguimiento_contratos
+                                               SELECT apartment_id FROM seguimiento_contratos
 
-                                       WHERE divisor IS NOT NULL
+                                               WHERE divisor IS NOT NULL
 
-                                   )
+                                           )
 
-                               """)
+                                       """)
 
                             # puerto
 
                             cur.execute("""
 
-                                   UPDATE datos_uis
+                                           UPDATE datos_uis
 
-                                   SET puerto = (
+                                           SET puerto = (
 
-                                       SELECT sc.puerto
+                                               SELECT sc.puerto
 
-                                       FROM seguimiento_contratos sc
+                                               FROM seguimiento_contratos sc
 
-                                       WHERE sc.apartment_id = datos_uis.apartment_id
+                                               WHERE sc.apartment_id = datos_uis.apartment_id
 
-                                       AND sc.puerto IS NOT NULL
+                                               AND sc.puerto IS NOT NULL
 
-                                       LIMIT 1
+                                               LIMIT 1
 
-                                   )
+                                           )
 
-                                   WHERE apartment_id IN (
+                                           WHERE apartment_id IN (
 
-                                       SELECT apartment_id FROM seguimiento_contratos
+                                               SELECT apartment_id FROM seguimiento_contratos
 
-                                       WHERE puerto IS NOT NULL
+                                               WHERE puerto IS NOT NULL
 
-                                   )
+                                           )
 
-                               """)
+                                       """)
 
                             # fecha fin
 
                             cur.execute("""
 
-                                   UPDATE datos_uis
+                                           UPDATE datos_uis
 
-                                   SET fecha_fin_contrato = (
+                                           SET fecha_fin_contrato = (
 
-                                       SELECT sc.fecha_fin_contrato
+                                               SELECT sc.fecha_fin_contrato
 
-                                       FROM seguimiento_contratos sc
+                                               FROM seguimiento_contratos sc
 
-                                       WHERE sc.apartment_id = datos_uis.apartment_id
+                                               WHERE sc.apartment_id = datos_uis.apartment_id
 
-                                       AND sc.fecha_fin_contrato IS NOT NULL
+                                               AND sc.fecha_fin_contrato IS NOT NULL
 
-                                       LIMIT 1
+                                               LIMIT 1
 
-                                   )
+                                           )
 
-                                   WHERE apartment_id IN (
+                                           WHERE apartment_id IN (
 
-                                       SELECT apartment_id FROM seguimiento_contratos
+                                               SELECT apartment_id FROM seguimiento_contratos
 
-                                       WHERE fecha_fin_contrato IS NOT NULL
+                                               WHERE fecha_fin_contrato IS NOT NULL
 
-                                   )
+                                           )
 
-                               """)
+                                       """)
 
                             conn.commit()
 
@@ -6338,8 +6355,16 @@ def admin_dashboard():
 
                             st.warning("⚠️ No hay registros en 'seguimiento_contratos'.")
 
-
                         else:
+
+                            # Opcional: formatear fechas para mostrar en DD/MM/YYYY
+
+                            for col in ['fecha_inicio_contrato', 'fecha_ingreso', 'fecha_instalacion',
+                                        'fecha_fin_contrato']:
+
+                                if col in existing.columns:
+                                    existing[col] = pd.to_datetime(existing[col], errors='coerce').dt.strftime(
+                                        '%d/%m/%Y')
 
                             cols = st.multiselect("Filtra columnas a mostrar", existing.columns,
 
@@ -6348,7 +6373,6 @@ def admin_dashboard():
                                                   key="cols_existing")
 
                             st.dataframe(existing[cols], width='stretch')
-
 
                     except Exception as e:
 
