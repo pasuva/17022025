@@ -5945,27 +5945,50 @@ def admin_dashboard():
                 """
                 Convierte cualquier fecha reconocible a formato YYYY-MM-DD.
                 Si no puede, devuelve None.
+                Solo trabaja con strings o None; si recibe datetime, lo convierte a string
+                y lo reprocesa para evitar interpretaciones previas erróneas.
                 """
-
                 if pd.isna(valor) or valor in (None, '', 'NaT'):
                     return None
 
-                # Si ya es datetime, formatear
+                # Si es datetime, lo pasamos a string en formato estándar (YYYY-MM-DD)
+                # para luego reinterpretarlo. Esto puede ser peligroso si el datetime ya está mal,
+                # pero al menos evitamos formatear directamente el error.
                 if isinstance(valor, (pd.Timestamp, datetime)):
-                    return valor.strftime('%Y-%m-%d')
+                    # Convertimos a string en formato YYYY-MM-DD (que es como pandas lo representa internamente)
+                    valor = valor.strftime('%Y-%m-%d')
 
-                # Si es string, intentar parsear
+                # Aseguramos que trabajamos con string
+                valor_str = str(valor).strip()
+
+                # Lista de formatos a intentar en orden de preferencia
+                formatos = [
+                    '%d/%m/%Y',  # DD/MM/YYYY
+                    '%d-%m-%Y',  # DD-MM-YYYY
+                    '%Y-%m-%d',  # YYYY-MM-DD (formato ISO)
+                    '%m/%d/%Y',  # MM/DD/YYYY (por si acaso)
+                    '%d/%m/%y',  # DD/MM/YY
+                    '%Y/%m/%d',  # YYYY/MM/DD
+                ]
+
+                for fmt in formatos:
+                    try:
+                        fecha = datetime.strptime(valor_str, fmt)
+                        return fecha.strftime('%Y-%m-%d')
+                    except ValueError:
+                        continue
+
+                # Si ningún formato coincide, probamos con el parser flexible de pandas
                 try:
-                    # Intentar con dayfirst (para DD/MM/YYYY)
-                    fecha = pd.to_datetime(valor, dayfirst=True, errors='coerce')
+                    fecha = pd.to_datetime(valor_str, dayfirst=True, errors='coerce')
                     if pd.notna(fecha):
                         return fecha.strftime('%Y-%m-%d')
-                    # Si no, probar con inferencia automática
-                    fecha = pd.to_datetime(valor, errors='coerce')
+                    fecha = pd.to_datetime(valor_str, errors='coerce')
                     if pd.notna(fecha):
                         return fecha.strftime('%Y-%m-%d')
                 except:
                     pass
+
                 return None
 
             if st.button("🔄 Actualizar contratos"):
