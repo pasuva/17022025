@@ -19,14 +19,14 @@ from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_cookies_controller import CookieController
 
-# Librerías para Google Sheets (instalar: gspread, oauth2client)
+# Librerías para Google Sheets (instalar: gspread, google-auth)
 try:
     import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
+    from google.oauth2.service_account import Credentials
     GOOGLE_SHEETS_AVAILABLE = True
 except ImportError:
     GOOGLE_SHEETS_AVAILABLE = False
-    st.warning("Las librerías para Google Sheets no están instaladas. La funcionalidad de CONTRATOS POR TIPO no estará disponible.")
+    st.warning("Las librerías para Google Sheets no están instaladas. La funcionalidad de CONTRATOS POR TIPO no estará disponible. Instala 'gspread' y 'google-auth'.")
 
 cookie_name = "my_app"
 
@@ -118,44 +118,84 @@ def cargar_contratos_bd() -> pd.DataFrame:
         conn.close()
 
 # -------------------------------------------------------------------
-# Carga de datos desde Google Sheets (CONTRATOS POR TIPO)
+# Carga de datos desde Google Sheets (CONTRATOS POR TIPO) - AUTOMÁTICA
 # -------------------------------------------------------------------
 @st.cache_data(ttl=600, show_spinner="Cargando CONTRATOS POR TIPO desde Google Sheets...")
-def cargar_contratos_tipo(sheet_id, sheet_name="CONTRATOS POR TIPO"):
+def cargar_contratos_tipo():
     """
-    Carga la hoja especificada de Google Sheets usando credenciales de servicio.
-    Retorna un DataFrame con los datos y una columna '_key' normalizada.
+    Carga la hoja "CONTRATOS POR TIPO" del spreadsheet "CONTRATOS POR TIPO"
+    usando credenciales de servicio (archivo JSON o variable de entorno).
+    Retorna un DataFrame con las columnas 'CLIENTE', 'ID CONTRATOS' y '_key' normalizada.
     """
     if not GOOGLE_SHEETS_AVAILABLE:
-        st.error("Las librerías necesarias para Google Sheets no están instaladas. Instala 'gspread' y 'oauth2client'.")
+        st.warning("Las librerías necesarias para Google Sheets no están instaladas. No se puede cargar CONTRATOS POR TIPO.")
         return pd.DataFrame()
 
-    creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-    if not creds_json:
-        st.error("La variable GOOGLE_APPLICATION_CREDENTIALS_JSON no está definida.")
+    # --- Detectar credenciales (igual que en otros módulos) ---
+    creds = None
+    posibles_rutas = [
+        "modules/carga-contratos-verde-c5068516c7cf.json",  # Render: secret file
+        "/etc/secrets/carga-contratos-verde-c5068516c7cf.json",  # Otra ruta en Render
+        os.path.join(os.path.dirname(__file__), "carga-contratos-verde-c5068516c7cf.json"),  # Local
+    ]
+
+    ruta_encontrada = None
+    for r in posibles_rutas:
+        if os.path.exists(r):
+            ruta_encontrada = r
+            break
+
+    if ruta_encontrada:
+        try:
+            creds = Credentials.from_service_account_file(
+                ruta_encontrada,
+                scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            )
+            st.info(f"🔑 Usando credenciales desde archivo: {ruta_encontrada}")
+        except Exception as e:
+            st.warning(f"No se pudo cargar el archivo de credenciales: {e}")
+    elif "GOOGLE_APPLICATION_CREDENTIALS_JSON" in os.environ:
+        try:
+            creds_dict = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+            # Reemplazar saltos de línea escapados
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(
+                creds_dict,
+                scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            )
+            st.info("🔑 Usando credenciales desde variable de entorno GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        except Exception as e:
+            st.warning(f"Error al procesar GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
+    else:
+        st.warning("No se encontraron credenciales de Google. La verificación con CONTRATOS POR TIPO no estará disponible.")
+        return pd.DataFrame()
+
+    if creds is None:
         return pd.DataFrame()
 
     try:
-        creds_dict = json.loads(creds_json)
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-
-        # Abrir la hoja por su ID y luego la hoja por nombre
-        sheet = client.open_by_key(sheet_id).worksheet(sheet_name)
+        # Abrir el spreadsheet por nombre y la hoja por nombre
+        sheet = client.open("CONTRATOS POR TIPO").worksheet("CONTRATOS POR TIPO")
         data = sheet.get_all_records()
-        df = pd.DataFrame(data)
+        if not data:
+            st.warning("La hoja 'CONTRATOS POR TIPO' está vacía o no tiene encabezados.")
+            return pd.DataFrame()
 
-        # Normalizar la columna CLIENTE (igual que en el resto del código)
+        df = pd.DataFrame(data)
+        # Normalizar la columna CLIENTE
         if 'CLIENTE' in df.columns:
             df['_key_limpio'] = df['CLIENTE'].apply(limpiar_nombre_para_comparacion)
             df['_key'] = df['_key_limpio'].apply(normalizar_texto)
         else:
             st.warning("La hoja no tiene la columna 'CLIENTE'. No se podrá normalizar.")
             df['_key'] = ""
+
+        st.success(f"✅ CONTRATOS POR TIPO cargado: {len(df)} registros.")
         return df
     except Exception as e:
-        st.error(f"Error al cargar la hoja de cálculo: {e}")
+        st.error(f"Error al acceder a Google Sheets: {e}")
         return pd.DataFrame()
 
 # -------------------------------------------------------------------
@@ -566,26 +606,15 @@ def mostrar_auditoria():
                 return
 
             # -------------------------------------------------------------------
-            # [SOLO PARA LIKES] Configuración de Google Sheets (CONTRATOS POR TIPO)
+            # [SOLO PARA LIKES] Carga automática de CONTRATOS POR TIPO
             # -------------------------------------------------------------------
             df_contratos_tipo = pd.DataFrame()
             contratos_tipo_map = {}
             if tipo_informe == "Likes":
-                st.markdown("#### 📄 Verificación adicional con CONTRATOS POR TIPO (Google Sheets)")
-                sheet_id = st.text_input(
-                    "ID de la hoja de Google Sheets (opcional):",
-                    help="Si tienes un documento de Google Sheets con los contratos por tipo (columna CLIENTE e ID CONTRATOS), introduce su ID. Se usará para justificar clientes que no están en la BD.",
-                    key="sheet_id_likes"
-                )
-                if sheet_id.strip():
-                    df_contratos_tipo = cargar_contratos_tipo(sheet_id.strip())
-                    if not df_contratos_tipo.empty:
-                        st.success(f"Datos cargados: {len(df_contratos_tipo)} registros.")
-                        # Crear un mapa de clave normalizada a ID CONTRATOS
-                        if '_key' in df_contratos_tipo.columns and 'ID CONTRATOS' in df_contratos_tipo.columns:
-                            contratos_tipo_map = df_contratos_tipo.drop_duplicates('_key').set_index('_key')['ID CONTRATOS'].to_dict()
-                    else:
-                        st.warning("No se pudieron cargar datos de CONTRATOS POR TIPO.")
+                with st.spinner("Verificando CONTRATOS POR TIPO..."):
+                    df_contratos_tipo = cargar_contratos_tipo()
+                if not df_contratos_tipo.empty and '_key' in df_contratos_tipo.columns and 'ID CONTRATOS' in df_contratos_tipo.columns:
+                    contratos_tipo_map = df_contratos_tipo.drop_duplicates('_key').set_index('_key')['ID CONTRATOS'].to_dict()
 
             opciones_bd = df_bd.columns.tolist()
             indice_bd = opciones_bd.index('cliente') if 'cliente' in opciones_bd else 0
