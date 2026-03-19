@@ -9317,6 +9317,18 @@ def mostrar_kpis_seguimiento_contratos():
                         if 42.5 <= lat_f <= 43.8 and -7.2 <= lon_f <= -4.5:
                             return 'ASTURIAS'
 
+                        # Bounding box aproximado para GALICIA
+                        if 41.8 <= lat_f <= 43.8 and -9.3 <= lon_f < -7.2:
+                            return 'GALICIA'
+
+                        # Bounding box aproximado para PALENCIA
+                        if 41.5 <= lat_f < 42.5 and -5.0 <= lon_f < -4.0:
+                            return 'PALENCIA'
+
+                        # Bounding box aproximado para BURGOS
+                        if 41.5 <= lat_f < 42.5 and -4.0 <= lon_f <= -3.0:
+                            return 'BURGOS'
+
                         # Si cae fuera de las regiones conocidas pero tiene coordenadas
                         return 'OTRA PROVINCIA'
                     except:
