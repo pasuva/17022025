@@ -14,7 +14,12 @@ import difflib
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_cookies_controller import CookieController
-import warnings
+
+# MODIFICACIÓN: Importar librerías para Google Sheets
+import os
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 cookie_name = "my_app"
 
@@ -104,6 +109,41 @@ def cargar_contratos_bd() -> pd.DataFrame:
         return pd.DataFrame()
     finally:
         conn.close()
+
+# -------------------------------------------------------------------
+# MODIFICACIÓN: Función para cargar CONTRATOS POR TIPO desde Google Sheets
+# -------------------------------------------------------------------
+@st.cache_data(ttl=600, show_spinner="Cargando CONTRATOS POR TIPO desde Google Sheets...")
+def cargar_contratos_tipo(sheet_id, sheet_name="CONTRATOS POR TIPO"):
+    """
+    Carga la hoja especificada de Google Sheets usando credenciales de servicio.
+    Retorna un DataFrame con los datos y la clave normalizada.
+    """
+    creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+    if not creds_json:
+        st.error("La variable GOOGLE_APPLICATION_CREDENTIALS_JSON no está definida.")
+        return pd.DataFrame()
+
+    try:
+        creds_dict = json.loads(creds_json)
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+
+        sheet = client.open_by_key(sheet_id).worksheet(sheet_name)
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+
+        # Normalizar la columna CLIENTE (igual que en el resto del código)
+        if 'CLIENTE' in df.columns:
+            df['_key_limpio'] = df['CLIENTE'].apply(limpiar_nombre_para_comparacion)
+            df['_key'] = df['_key_limpio'].apply(normalizar_texto)
+        else:
+            st.warning("La hoja no tiene la columna 'CLIENTE'.")
+        return df
+    except Exception as e:
+        st.error(f"Error al cargar la hoja de cálculo: {e}")
+        return pd.DataFrame()
 
 # -------------------------------------------------------------------
 # Procesamiento de la comparación (versión simple que funcionaba para Adamo)
@@ -512,6 +552,25 @@ def mostrar_auditoria():
                 st.warning(f"No se ha configurado el nombre para {tipo_informe}. Ve a 'Cargar fichero' y selecciona las columnas.")
                 return
 
+            # MODIFICACIÓN: Solo para Likes, añadir input para Google Sheets
+            df_contratos_tipo = pd.DataFrame()
+            contratos_tipo_map = {}
+            if tipo_informe == "Likes":
+                st.markdown("#### 📄 Verificación con CONTRATOS POR TIPO (Google Sheets)")
+                sheet_id = st.text_input(
+                    "ID de la hoja de Google Sheets (opcional):",
+                    help="Si tienes un documento de Google Sheets con los contratos por tipo, introduce su ID (el código largo de la URL). Se usará para comprobar si los clientes 'Solo en Likes' aparecen allí.",
+                    key="sheet_id_likes"
+                )
+                if sheet_id.strip():
+                    df_contratos_tipo = cargar_contratos_tipo(sheet_id.strip())
+                    if not df_contratos_tipo.empty:
+                        st.success(f"Datos cargados: {len(df_contratos_tipo)} registros.")
+                        if '_key' in df_contratos_tipo.columns and 'ID CONTRATOS' in df_contratos_tipo.columns:
+                            contratos_tipo_map = df_contratos_tipo.drop_duplicates('_key').set_index('_key')['ID CONTRATOS'].to_dict()
+                    else:
+                        st.warning("No se pudieron cargar datos de CONTRATOS POR TIPO.")
+
             opciones_bd = df_bd.columns.tolist()
             indice_bd = opciones_bd.index('cliente') if 'cliente' in opciones_bd else 0
             col_bd_nombre = st.selectbox(
@@ -721,7 +780,11 @@ def mostrar_auditoria():
             with tabs[3]:  # Solo en partner
                 mostrar_tabla_con_aggrid(solo_partner, f"{tipo_informe}_solo_partner")
                 if num_solo_partner_unicos > 0:
-                    with st.expander(f"📋 Lista de clientes únicos solo en {partner_nombre_display} ({num_solo_partner_unicos}) con posibles coincidencias en BD"):
+                    # MODIFICACIÓN: Enriquecer la tabla de sugerencias para Likes con columna de CONTRATOS POR TIPO
+                    expander_title = f"📋 Lista de clientes únicos solo en {partner_nombre_display} ({num_solo_partner_unicos})"
+                    if tipo_informe == "Likes" and not df_contratos_tipo.empty:
+                        expander_title += " con verificación en CONTRATOS POR TIPO"
+                    with st.expander(expander_title):
                         data = []
                         for key in solo_partner_keys:
                             nombre_partner = partner_nombre_map.get(key, key)
@@ -730,10 +793,25 @@ def mostrar_auditoria():
                                 matches_str = ", ".join(matches)
                             else:
                                 matches_str = "Sin coincidencias cercanas"
-                            data.append({
+
+                            # MODIFICACIÓN: Solo para Likes, agregar columna de CONTRATOS POR TIPO
+                            if tipo_informe == "Likes" and contratos_tipo_map:
+                                id_contrato = contratos_tipo_map.get(key, None)
+                                if id_contrato:
+                                    contratos_info = f"Sí (ID: {id_contrato})"
+                                else:
+                                    contratos_info = "No"
+                            else:
+                                contratos_info = None  # No aplica para Bayma
+
+                            row_data = {
                                 f'Cliente en {partner_nombre_display}': nombre_partner,
                                 'Posibles coincidencias en BD': matches_str
-                            })
+                            }
+                            if contratos_info is not None:
+                                row_data['¿En CONTRATOS POR TIPO?'] = contratos_info
+                            data.append(row_data)
+
                         df_sugerencias = pd.DataFrame(data).sort_values(f'Cliente en {partner_nombre_display}')
                         st.dataframe(df_sugerencias, width='stretch', hide_index=True)
                         st.caption("Se muestran hasta 3 posibles coincidencias por nombre usando similitud difusa (corte 0.6). Revisa manualmente si alguna corresponde.")
@@ -760,7 +838,14 @@ def mostrar_auditoria():
             ❌ **Solo en {partner_nombre_display} ({num_solo_partner_unicos} clientes, {len(solo_partner)} registros):**  
             **¡ATENCIÓN!** Estos clientes aparecen en la factura de {partner_nombre_display} pero **no están en nuestra base de datos** (ni exacta ni aproximadamente).  
             → **Acción:** Revisa la lista de nombres en el expander de la pestaña "Solo en {partner_nombre_display}". Allí se muestran posibles coincidencias en la BD con un umbral más bajo (0.6) para ayudar a identificar falsos negativos.
+            """)
 
+            # MODIFICACIÓN: Añadir información sobre CONTRATOS POR TIPO si está disponible
+            if tipo_informe == "Likes" and contratos_tipo_map:
+                encontrados_en_ct = sum(1 for k in solo_partner_keys if k in contratos_tipo_map)
+                st.info(f"De los {num_solo_partner_unicos} clientes únicos solo en Likes, **{encontrados_en_ct}** aparecen en CONTRATOS POR TIPO (coincidencia exacta tras limpieza).")
+
+            st.markdown(f"""
             🔵 **Solo en BD ({num_solo_bd_unicos} clientes, {len(solo_bd)} registros):**  
             Estos clientes están en nuestra base de datos pero no aparecen en la factura de {partner_nombre_display}.  
             → **Acción:** Verificar si son clientes de solo fibra (en cuyo caso es normal) o si deberían tener también línea móvil y no se está facturando.
@@ -827,10 +912,3 @@ def mostrar_auditoria():
             if st.button("🔄 Refrescar datos de BD", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
-
-# -------------------------------------------------------------------
-# Para pruebas independientes (descomentar si se ejecuta solo)
-# -------------------------------------------------------------------
-# if __name__ == "__main__":
-#     st.set_page_config(page_title="Auditoría de facturación", layout="wide")
-#     mostrar_auditoria()
