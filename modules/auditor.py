@@ -2,7 +2,8 @@
 # Módulo para auditoría de facturación comparando contratos internos con ficheros de Adamo, Likes y Bayma.
 # Adamo: comparación simple por billing.
 # Likes y Bayma: comparación por nombre del cliente con limpieza y matching difuso.
-# Para Likes se añade verificación adicional contra hoja de Google Sheets "CONTRATOS POR TIPO".
+# Para Likes se añade verificación adicional contra hoja de Google Sheets "CONTRATOS POR TIPO",
+# y los clientes que aparecen allí se consideran justificados (no se muestran como discrepancia).
 
 import streamlit as st
 import pandas as pd
@@ -573,7 +574,7 @@ def mostrar_auditoria():
                 st.markdown("#### 📄 Verificación adicional con CONTRATOS POR TIPO (Google Sheets)")
                 sheet_id = st.text_input(
                     "ID de la hoja de Google Sheets (opcional):",
-                    help="Si tienes un documento de Google Sheets con los contratos por tipo (columna CLIENTE e ID CONTRATOS), introduce su ID. Se usará para comprobar si los clientes 'Solo en Likes' aparecen allí.",
+                    help="Si tienes un documento de Google Sheets con los contratos por tipo (columna CLIENTE e ID CONTRATOS), introduce su ID. Se usará para justificar clientes que no están en la BD.",
                     key="sheet_id_likes"
                 )
                 if sheet_id.strip():
@@ -582,7 +583,6 @@ def mostrar_auditoria():
                         st.success(f"Datos cargados: {len(df_contratos_tipo)} registros.")
                         # Crear un mapa de clave normalizada a ID CONTRATOS
                         if '_key' in df_contratos_tipo.columns and 'ID CONTRATOS' in df_contratos_tipo.columns:
-                            # Tomamos el primer ID si hay duplicados (podría haber varios contratos por cliente)
                             contratos_tipo_map = df_contratos_tipo.drop_duplicates('_key').set_index('_key')['ID CONTRATOS'].to_dict()
                     else:
                         st.warning("No se pudieron cargar datos de CONTRATOS POR TIPO.")
@@ -668,29 +668,54 @@ def mostrar_auditoria():
                                 bd_no_asignados.pop(idx)
                                 bd_nombres.pop(idx)
 
-            # Determinar conjuntos finales
+            # Determinar conjuntos iniciales
             coincidentes_keys = set(match_dict.keys())
             solo_bd_keys = {k for k in bd_keys_set if not bd_asignado[k]}
             solo_partner_keys = {k for k in partner_keys_set if not partner_asignado[k]}
 
+            # -------------------------------------------------------------------
+            # [SOLO PARA LIKES] Justificar clientes que están en CONTRATOS POR TIPO
+            # -------------------------------------------------------------------
+            justificados_ct_keys = set()
+            if tipo_informe == "Likes" and contratos_tipo_map:
+                for key in list(solo_partner_keys):
+                    if key in contratos_tipo_map:
+                        justificados_ct_keys.add(key)
+                        solo_partner_keys.remove(key)
+                        # Opcional: marcarlos como asignados para que no aparezcan en solo_partner
+                        partner_asignado[key] = True  # aunque no esté en BD, lo consideramos justificado
+
+            # Actualizar números
             num_coincidentes_unicos = len(coincidentes_keys)
             num_solo_bd_unicos = len(solo_bd_keys)
             num_solo_partner_unicos = len(solo_partner_keys)
+            num_justificados_ct = len(justificados_ct_keys)
 
             # Construir DataFrames de detalle (todas las filas)
             with st.spinner(f"Comparando datos con {tipo_informe}..."):
                 merged = df_bd.merge(df_partner, on='_key', how='outer', indicator=True, suffixes=('_bd', '_partner'))
+
                 coincidentes = merged[merged['_key'].isin(coincidentes_keys)].copy()
                 solo_bd = merged[merged['_key'].isin(solo_bd_keys) & (merged['_merge'] == 'left_only')].copy()
                 solo_partner = merged[merged['_key'].isin(solo_partner_keys) & (merged['_merge'] == 'right_only')].copy()
+                # DataFrame para justificados por contratos tipo
+                if justificados_ct_keys:
+                    justificados = merged[merged['_key'].isin(justificados_ct_keys) & (merged['_merge'] == 'right_only')].copy()
+                    # Añadir columna con ID de contrato tipo
+                    justificados['ID_CONTRATO_TIPO'] = justificados['_key'].map(contratos_tipo_map)
+                else:
+                    justificados = pd.DataFrame()
 
                 # Guardar versiones con clave para análisis de estados (antes de limpiar)
                 coincidentes_con_key = coincidentes.copy()
                 solo_bd_con_key = solo_bd.copy()
                 solo_partner_con_key = solo_partner.copy()
+                justificados_con_key = justificados.copy() if not justificados.empty else pd.DataFrame()
 
                 # Limpiar columnas auxiliares de los DataFrames que mostraremos
-                for df_temp in [coincidentes, solo_bd, solo_partner]:
+                for df_temp in [coincidentes, solo_bd, solo_partner, justificados]:
+                    if df_temp.empty:
+                        continue
                     for col in ['_key', '_key_original', '_key_limpio', '_key_original_bd', '_key_original_partner', '_key_limpio_bd', '_key_limpio_partner']:
                         if col in df_temp.columns:
                             df_temp.drop(columns=[col], inplace=True)
@@ -728,7 +753,7 @@ def mostrar_auditoria():
             # -------------------------------------------------------------------
             # Métricas resumen
             # -------------------------------------------------------------------
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
                 st.metric("Contratos en BD", len(df_bd))
             with col2:
@@ -737,7 +762,9 @@ def mostrar_auditoria():
                 st.metric("Coincidentes", f"{num_coincidentes_unicos} clientes\n({len(coincidentes)} registros)")
             with col4:
                 st.metric("Solo en BD", f"{num_solo_bd_unicos} clientes\n({len(solo_bd)} registros)")
-            st.caption(f"Solo en {partner_nombre_display}: {num_solo_partner_unicos} clientes ({len(solo_partner)} registros)")
+            with col5:
+                st.metric("Justificados CT", f"{num_justificados_ct} clientes\n({len(justificados)} registros)")
+            st.caption(f"Solo en {partner_nombre_display} (sin justificar): {num_solo_partner_unicos} clientes ({len(solo_partner)} registros)")
 
             # Mostrar alerta si hay coincidentes problemáticos
             if not coincidentes_problematicos.empty:
@@ -747,11 +774,15 @@ def mostrar_auditoria():
             # Pestañas
             # -------------------------------------------------------------------
             tab_titles = [
-                f"✅ Coincidentes ({len(coincidentes)} registros, {num_coincidentes_unicos} clientes)",
-                f"⚠️ Coincidentes no finalizados ({len(coincidentes_problematicos)} registros)",
-                f"🔵 Solo en BD ({len(solo_bd)} registros, {num_solo_bd_unicos} clientes)",
-                f"🟠 Solo en {partner_nombre_display} ({len(solo_partner)} registros, {num_solo_partner_unicos} clientes)"
+                f"✅ Coincidentes ({len(coincidentes)} reg, {num_coincidentes_unicos} cli)",
+                f"⚠️ Coincidentes no finalizados ({len(coincidentes_problematicos)} reg)",
+                f"🔵 Solo en BD ({len(solo_bd)} reg, {num_solo_bd_unicos} cli)",
+                f"🟠 Solo en {partner_nombre_display} ({len(solo_partner)} reg, {num_solo_partner_unicos} cli)"
             ]
+            # Añadir pestaña de justificados si los hay
+            if not justificados.empty:
+                tab_titles.append(f"📄 Justificados por CT ({len(justificados)} reg, {num_justificados_ct} cli)")
+
             tabs = st.tabs(tab_titles)
 
             with tabs[0]:  # Coincidentes totales
@@ -793,10 +824,10 @@ def mostrar_auditoria():
                             })
                             st.dataframe(df_nombres_fin, width='stretch', hide_index=True)
 
-            with tabs[3]:  # Solo en partner
+            with tabs[3]:  # Solo en partner (no justificados)
                 mostrar_tabla_con_aggrid(solo_partner, f"{tipo_informe}_solo_partner")
                 if num_solo_partner_unicos > 0:
-                    with st.expander(f"📋 Lista de clientes únicos solo en {partner_nombre_display} ({num_solo_partner_unicos}) con posibles coincidencias en BD y en CONTRATOS POR TIPO"):
+                    with st.expander(f"📋 Lista de clientes únicos solo en {partner_nombre_display} ({num_solo_partner_unicos}) con posibles coincidencias en BD"):
                         data = []
                         for key in solo_partner_keys:
                             nombre_partner = partner_nombre_map.get(key, key)
@@ -805,25 +836,25 @@ def mostrar_auditoria():
                                 matches_str = ", ".join(matches)
                             else:
                                 matches_str = "Sin coincidencias cercanas"
-
-                            # Verificar si aparece en CONTRATOS POR TIPO (solo para Likes)
-                            if tipo_informe == "Likes" and contratos_tipo_map:
-                                id_ct = contratos_tipo_map.get(key, None)
-                                if id_ct:
-                                    contratos_info = f"Sí (ID: {id_ct})"
-                                else:
-                                    contratos_info = "No"
-                            else:
-                                contratos_info = "No disponible"
-
                             data.append({
                                 f'Cliente en {partner_nombre_display}': nombre_partner,
-                                'Posibles coincidencias en BD': matches_str,
-                                '¿En CONTRATOS POR TIPO?': contratos_info
+                                'Posibles coincidencias en BD': matches_str
                             })
                         df_sugerencias = pd.DataFrame(data).sort_values(f'Cliente en {partner_nombre_display}')
                         st.dataframe(df_sugerencias, width='stretch', hide_index=True)
-                        st.caption("Se muestran hasta 3 posibles coincidencias por nombre usando similitud difusa (corte 0.6). Para Likes, se indica si el cliente aparece en CONTRATOS POR TIPO (coincidencia exacta tras limpieza).")
+                        st.caption("Se muestran hasta 3 posibles coincidencias por nombre usando similitud difusa (corte 0.6).")
+
+            # Pestaña adicional para justificados por contratos tipo (si existe)
+            if not justificados.empty:
+                with tabs[4]:
+                    mostrar_tabla_con_aggrid(justificados, f"{tipo_informe}_justificados_ct", columnas_extra=['ID_CONTRATO_TIPO'])
+                    if num_justificados_ct > 0:
+                        with st.expander(f"📋 Lista de clientes únicos justificados por CONTRATOS POR TIPO ({num_justificados_ct})"):
+                            df_nombres = pd.DataFrame({
+                                'Cliente': [partner_nombre_map.get(k, k) for k in justificados_ct_keys],
+                                'ID CONTRATO': [contratos_tipo_map.get(k, '') for k in justificados_ct_keys]
+                            }).sort_values('Cliente')
+                            st.dataframe(df_nombres, width='stretch', hide_index=True)
 
             # -------------------------------------------------------------------
             # Interpretación de resultados
@@ -833,7 +864,7 @@ def mostrar_auditoria():
             st.markdown(f"""
             **{partner_nombre_display}** es nuestro proveedor. El objetivo de esta auditoría es verificar que **todos los clientes que nos factura {partner_nombre_display} están dados de alta en nuestro sistema (`seguimiento_contratos`)**.
 
-            - **Clientes únicos en {partner_nombre_display}:** {num_solo_partner_unicos + num_coincidentes_unicos}  
+            - **Clientes únicos en {partner_nombre_display}:** {num_solo_partner_unicos + num_coincidentes_unicos + num_justificados_ct}  
             - **Clientes únicos en BD:** {num_solo_bd_unicos + num_coincidentes_unicos}
 
             **Lo que nos interesa:**
@@ -844,9 +875,12 @@ def mostrar_auditoria():
             ⚠️ **Coincidentes no finalizados ({len(coincidentes_problematicos)} registros):**  
             Son clientes que aparecen en la factura de {partner_nombre_display} y también en BD, pero su contrato **no está FINALIZADO**. Si se está cobrando, habría que revisar si es correcto.
 
-            ❌ **Solo en {partner_nombre_display} ({num_solo_partner_unicos} clientes, {len(solo_partner)} registros):**  
-            **¡ATENCIÓN!** Estos clientes aparecen en la factura de {partner_nombre_display} pero **no están en nuestra base de datos** (ni exacta ni aproximadamente).  
-            → **Acción:** Revisa la lista de nombres en el expander de la pestaña "Solo en {partner_nombre_display}". Allí se muestran posibles coincidencias en la BD con un umbral más bajo (0.6) para ayudar a identificar falsos negativos.
+            📄 **Justificados por CONTRATOS POR TIPO ({num_justificados_ct} clientes, {len(justificados)} registros):**  
+            Estos clientes aparecen en la factura de {partner_nombre_display} y **no están en nuestra BD**, pero **sí están en el Excel de CONTRATOS POR TIPO**. Por tanto, están justificados (probablemente son contratos de fibra u otros servicios) y no se consideran una discrepancia.
+
+            ❌ **Solo en {partner_nombre_display} sin justificar ({num_solo_partner_unicos} clientes, {len(solo_partner)} registros):**  
+            **¡ATENCIÓN!** Estos clientes aparecen en la factura de {partner_nombre_display} pero **no están en nuestra base de datos ni en CONTRATOS POR TIPO**.  
+            → **Acción:** Revisa la lista de nombres en la pestaña correspondiente. Allí se muestran posibles coincidencias en la BD con un umbral más bajo (0.6) para ayudar a identificar falsos negativos.
 
             🔵 **Solo en BD ({num_solo_bd_unicos} clientes, {len(solo_bd)} registros):**  
             Estos clientes están en nuestra base de datos pero no aparecen en la factura de {partner_nombre_display}.  
@@ -856,7 +890,7 @@ def mostrar_auditoria():
             Estos podrían ser **ingresos perdidos** si deberían estar siendo facturados por {partner_nombre_display}. Revísalos en el expander correspondiente.
 
             **Resumen de la deuda/reclamación:**  
-            - **Posible facturación indebida:** {len(coincidentes_problematicos)} registros coincidentes no finalizados + {num_solo_partner_unicos} clientes facturados sin contrato (revisar coincidencias sugeridas).
+            - **Posible facturación indebida:** {len(coincidentes_problematicos)} registros coincidentes no finalizados + {num_solo_partner_unicos} clientes facturados sin contrato ni justificación.
             - **Posible ingreso perdido:** {len(solo_bd_finalizados)} registros de clientes finalizados en BD que no están en {partner_nombre_display}.
             """)
 
@@ -864,7 +898,7 @@ def mostrar_auditoria():
             log_trazabilidad(
                 st.session_state.get("username", "auditor"),
                 f"Auditoría de facturación - {tipo_informe}",
-                f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)} regs ({num_coincidentes_unicos} cltes), Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)} regs ({num_solo_bd_unicos} cltes), Solo {tipo_informe}={len(solo_partner)} regs ({num_solo_partner_unicos} cltes), BD finalizados sin factura={len(solo_bd_finalizados)} regs ({len(solo_bd_finalizados_nombres)} cltes) (umbral_match={umbral_match if usar_match_aproximado else 'exacto'})"
+                f"Comparación con fichero {partner_filename}. Coincidentes={len(coincidentes)} regs ({num_coincidentes_unicos} cltes), Problemáticos={len(coincidentes_problematicos)}, Solo BD={len(solo_bd)} regs ({num_solo_bd_unicos} cltes), Solo {tipo_informe}={len(solo_partner)} regs ({num_solo_partner_unicos} cltes), Justificados CT={len(justificados)} regs ({num_justificados_ct} cltes), BD finalizados sin factura={len(solo_bd_finalizados)} regs ({len(solo_bd_finalizados_nombres)} cltes) (umbral_match={umbral_match if usar_match_aproximado else 'exacto'})"
             )
 
         # -------------------------------------------------------------------
@@ -885,7 +919,9 @@ def mostrar_auditoria():
                     solo_bd_finalizados.to_excel(writer, sheet_name='Solo_BD_Finalizados', index=False)
                 solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
                 solo_partner.to_excel(writer, sheet_name=f'Solo_{tipo_informe}', index=False)
-                # Si es Likes y se cargaron datos de contratos tipo, añadirlos al Excel
+                # Si es Likes y hay justificados, añadirlos al Excel
+                if tipo_informe == "Likes" and 'justificados' in locals() and not justificados.empty:
+                    justificados.to_excel(writer, sheet_name='Justificados_CT', index=False)
                 if tipo_informe == "Likes" and not df_contratos_tipo.empty:
                     df_contratos_tipo.to_excel(writer, sheet_name='Contratos_Tipo', index=False)
             output.seek(0)
@@ -903,6 +939,8 @@ def mostrar_auditoria():
             with pd.ExcelWriter(output_disc, engine='xlsxwriter') as writer:
                 solo_bd.to_excel(writer, sheet_name='Solo_BD', index=False)
                 solo_partner.to_excel(writer, sheet_name=f'Solo_{tipo_informe}', index=False)
+                if tipo_informe == "Likes" and 'justificados' in locals() and not justificados.empty:
+                    justificados.to_excel(writer, sheet_name='Justificados_CT', index=False)
             output_disc.seek(0)
 
             st.download_button(
